@@ -11,6 +11,7 @@
     "db:seed": "turbo db:seed --filter=@ai-employees/db"
   },
   "devDependencies": {
+    "next": "^15.2.0",
     "turbo": "^2.4.0",
     "typescript": "^5.7.0"
   },

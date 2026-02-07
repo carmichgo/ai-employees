@@ -2,5 +2,5 @@
   "buildCommand": "pnpm --filter @ai-employees/web build",
   "outputDirectory": "apps/web/.next",
   "installCommand": "pnpm install",
-  "framework": null
+  "framework": "nextjs"
 }
