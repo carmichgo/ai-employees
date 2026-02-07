@@ -1,0 +1,21 @@
+{
+  "name": "ai-employees",
+  "private": true,
+  "description": "AI Employee Platform — Hire AI employees powered by OpenClaw",
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "db:generate": "turbo db:generate --filter=@ai-employees/db",
+    "db:migrate": "turbo db:migrate --filter=@ai-employees/db",
+    "db:seed": "turbo db:seed --filter=@ai-employees/db"
+  },
+  "devDependencies": {
+    "turbo": "^2.4.0",
+    "typescript": "^5.7.0"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}
