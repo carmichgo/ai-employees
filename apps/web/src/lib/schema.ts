@@ -1,0 +1,131 @@
+import {
+  pgTable,
+  uuid,
+  varchar,
+  integer,
+  text,
+  boolean,
+  bigint,
+  jsonb,
+  timestamp,
+  unique,
+} from "drizzle-orm/pg-core";
+
+// ── Companies ──────────────────────────────────────────
+export const companies = pgTable("companies", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: varchar("name", { length: 255 }).notNull(),
+  slug: varchar("slug", { length: 100 }).unique().notNull(),
+  plan: varchar("plan", { length: 50 }).notNull().default("starter"),
+  maxEmployees: integer("max_employees").notNull().default(5),
+  status: varchar("status", { length: 20 }).notNull().default("active"),
+  settings: jsonb("settings").notNull().default({}),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ── Users ──────────────────────────────────────────────
+export const users = pgTable("users", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  companyId: uuid("company_id")
+    .notNull()
+    .references(() => companies.id),
+  email: varchar("email", { length: 255 }).unique().notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  passwordHash: varchar("password_hash", { length: 255 }).notNull(),
+  role: varchar("role", { length: 20 }).notNull().default("member"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ── Employees ──────────────────────────────────────────
+export const employees = pgTable("employees", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  companyId: uuid("company_id")
+    .notNull()
+    .references(() => companies.id),
+  name: varchar("name", { length: 255 }).notNull(),
+  jobTitle: varchar("job_title", { length: 255 }).notNull(),
+  templateId: varchar("template_id", { length: 100 }),
+  avatar: varchar("avatar", { length: 500 }),
+  emoji: varchar("emoji", { length: 10 }).default("🤖"),
+  status: varchar("status", { length: 20 }).notNull().default("provisioning"),
+  containerId: varchar("container_id", { length: 100 }),
+  containerName: varchar("container_name", { length: 255 }),
+  containerHost: varchar("container_host", { length: 255 }),
+  containerPort: integer("container_port").default(18789),
+  gatewayToken: varchar("gateway_token", { length: 500 }),
+  modelConfig: jsonb("model_config").notNull().default({
+    primary: "anthropic/claude-sonnet-4-20250514",
+  }),
+  persona: text("persona"),
+  goals: text("goals"),
+  toolsConfig: jsonb("tools_config").notNull().default({}),
+  sandboxConfig: jsonb("sandbox_config").notNull().default({}),
+  emailAddress: varchar("email_address", { length: 255 }),
+  provisionedAccounts: jsonb("provisioned_accounts").notNull().default({}),
+  configHash: varchar("config_hash", { length: 64 }),
+  lastHealthAt: timestamp("last_health_at", { withTimezone: true }),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ── Employee Skills ────────────────────────────────────
+export const employeeSkills = pgTable(
+  "employee_skills",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    employeeId: uuid("employee_id")
+      .notNull()
+      .references(() => employees.id, { onDelete: "cascade" }),
+    skillSlug: varchar("skill_slug", { length: 255 }).notNull(),
+    source: varchar("source", { length: 50 }).notNull().default("clawhub"),
+    enabled: boolean("enabled").notNull().default(true),
+    config: jsonb("config").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [unique("uq_employee_skill").on(table.employeeId, table.skillSlug)],
+);
+
+// ── Channel Connections ────────────────────────────────
+export const channelConnections = pgTable("channel_connections", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  employeeId: uuid("employee_id")
+    .notNull()
+    .references(() => employees.id, { onDelete: "cascade" }),
+  channelType: varchar("channel_type", { length: 50 }).notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  credentials: jsonb("credentials").notNull().default({}),
+  config: jsonb("config").notNull().default({}),
+  status: varchar("status", { length: 20 }).notNull().default("pending"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ── Audit Logs ─────────────────────────────────────────
+export const auditLogs = pgTable("audit_logs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  companyId: uuid("company_id")
+    .notNull()
+    .references(() => companies.id),
+  userId: uuid("user_id").references(() => users.id),
+  action: varchar("action", { length: 100 }).notNull(),
+  resourceType: varchar("resource_type", { length: 50 }).notNull(),
+  resourceId: uuid("resource_id").notNull(),
+  details: jsonb("details").notNull().default({}),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ── Usage Records ──────────────────────────────────────
+export const usageRecords = pgTable("usage_records", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  companyId: uuid("company_id")
+    .notNull()
+    .references(() => companies.id),
+  employeeId: uuid("employee_id").references(() => employees.id),
+  metric: varchar("metric", { length: 50 }).notNull(),
+  value: bigint("value", { mode: "number" }).notNull(),
+  periodStart: timestamp("period_start", { withTimezone: true }).notNull(),
+  periodEnd: timestamp("period_end", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});

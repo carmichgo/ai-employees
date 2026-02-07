@@ -1,4 +1,5 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+// In Vercel deployment, API routes live at the same origin
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
 class ApiClient {
   private token: string | null = null;
