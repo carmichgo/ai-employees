@@ -40,139 +40,174 @@ export default function RegisterPage() {
         alignItems: "center",
         justifyContent: "center",
         padding: 20,
+        position: "relative",
       }}
     >
-      <div className="card" style={{ padding: 40, maxWidth: 440, width: "100%" }}>
-        <div style={{ textAlign: "center", marginBottom: 32 }}>
-          <div style={{ fontSize: 40, marginBottom: 12 }}>🤖</div>
-          <h1 style={{ fontSize: 24, fontWeight: 700 }}>Create Your Company</h1>
-          <p style={{ color: "var(--text-secondary)", fontSize: 14, marginTop: 8 }}>
-            Set up your account and start hiring AI employees
+      {/* Background glow */}
+      <div
+        style={{
+          position: "absolute",
+          top: "25%",
+          left: "50%",
+          transform: "translateX(-50%)",
+          width: 500,
+          height: 300,
+          background: "radial-gradient(ellipse, rgba(169, 75, 210, 0.06) 0%, transparent 70%)",
+          pointerEvents: "none",
+        }}
+      />
+
+      <div className="animate-scale-in" style={{ maxWidth: 420, width: "100%", position: "relative" }}>
+        <div style={{ textAlign: "center", marginBottom: 40 }}>
+          <div
+            style={{
+              width: 48,
+              height: 48,
+              borderRadius: 14,
+              background: "linear-gradient(135deg, #5D79DF, #A94BD2)",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 20,
+              marginBottom: 20,
+            }}
+          >
+            A
+          </div>
+          <h1 className="heading-1" style={{ marginBottom: 8 }}>Create your account</h1>
+          <p style={{ color: "var(--text-secondary)", fontSize: 15 }}>
+            Set up your company and start hiring AI employees
           </p>
         </div>
 
-        {error && (
-          <div
-            style={{
-              background: "rgba(239, 68, 68, 0.1)",
-              border: "1px solid rgba(239, 68, 68, 0.3)",
-              borderRadius: 8,
-              padding: "10px 14px",
-              marginBottom: 20,
-              color: "var(--error)",
-              fontSize: 14,
-            }}
-          >
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <div>
-            <label style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>
-              Company Name
-            </label>
-            <input
-              className="input"
-              placeholder="Acme Inc"
-              value={form.companyName}
-              onChange={(e) => {
-                const name = e.target.value;
-                setForm({
-                  ...form,
-                  companyName: name,
-                  companySlug: name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
-                });
+        <div
+          className="card"
+          style={{
+            padding: 32,
+            borderRadius: "var(--radius-xl)",
+          }}
+        >
+          {error && (
+            <div
+              style={{
+                background: "var(--red-muted)",
+                border: "1px solid rgba(239, 68, 68, 0.2)",
+                borderRadius: "var(--radius-sm)",
+                padding: "10px 14px",
+                marginBottom: 20,
+                color: "var(--red)",
+                fontSize: 13,
               }}
-              required
-            />
-          </div>
+            >
+              {error}
+            </div>
+          )}
 
-          <div>
-            <label style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>
-              Company URL
-            </label>
-            <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
+          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+            <div>
+              <label className="input-label">Company Name</label>
               <input
                 className="input"
-                style={{ borderTopRightRadius: 0, borderBottomRightRadius: 0 }}
-                placeholder="acme"
-                value={form.companySlug}
-                onChange={(e) => setForm({ ...form, companySlug: e.target.value })}
+                placeholder="Acme Inc"
+                value={form.companyName}
+                onChange={(e) => {
+                  const name = e.target.value;
+                  setForm({
+                    ...form,
+                    companyName: name,
+                    companySlug: name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
+                  });
+                }}
                 required
               />
-              <span
-                style={{
-                  background: "var(--bg-tertiary)",
-                  border: "1px solid var(--border)",
-                  borderLeft: "none",
-                  borderRadius: "0 8px 8px 0",
-                  padding: "10px 14px",
-                  color: "var(--text-muted)",
-                  fontSize: 14,
-                  whiteSpace: "nowrap",
-                }}
-              >
-                .aiemployees.com
-              </span>
             </div>
-          </div>
 
-          <div>
-            <label style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>
-              Your Name
-            </label>
-            <input
-              className="input"
-              placeholder="Jane Smith"
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              required
-            />
-          </div>
+            <div>
+              <label className="input-label">Company URL</label>
+              <div style={{ display: "flex", alignItems: "center" }}>
+                <input
+                  className="input"
+                  style={{ borderTopRightRadius: 0, borderBottomRightRadius: 0, borderRight: "none" }}
+                  placeholder="acme"
+                  value={form.companySlug}
+                  onChange={(e) => setForm({ ...form, companySlug: e.target.value })}
+                  required
+                />
+                <span
+                  style={{
+                    background: "var(--bg-card)",
+                    border: "1px solid var(--border)",
+                    borderLeft: "none",
+                    borderRadius: "0 var(--radius-md) var(--radius-md) 0",
+                    padding: "0 14px",
+                    height: 48,
+                    display: "flex",
+                    alignItems: "center",
+                    color: "var(--text-tertiary)",
+                    fontSize: 13,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  .aiemployees.com
+                </span>
+              </div>
+            </div>
 
-          <div>
-            <label style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>
-              Email
-            </label>
-            <input
-              className="input"
-              type="email"
-              placeholder="jane@acme.com"
-              value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
-              required
-            />
-          </div>
+            <div>
+              <label className="input-label">Your Name</label>
+              <input
+                className="input"
+                placeholder="Jane Smith"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                required
+              />
+            </div>
 
-          <div>
-            <label style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>
-              Password
-            </label>
-            <input
-              className="input"
-              type="password"
-              placeholder="Min 8 characters"
-              value={form.password}
-              onChange={(e) => setForm({ ...form, password: e.target.value })}
-              required
-              minLength={8}
-            />
-          </div>
+            <div>
+              <label className="input-label">Email</label>
+              <input
+                className="input"
+                type="email"
+                placeholder="jane@acme.com"
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                required
+              />
+            </div>
 
-          <button
-            type="submit"
-            className="btn-primary"
-            disabled={loading}
-            style={{ marginTop: 8, fontSize: 16, opacity: loading ? 0.7 : 1 }}
-          >
-            {loading ? "Creating Account..." : "Create Account"}
-          </button>
-        </form>
+            <div>
+              <label className="input-label">Password</label>
+              <input
+                className="input"
+                type="password"
+                placeholder="Min 8 characters"
+                value={form.password}
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
+                required
+                minLength={8}
+              />
+            </div>
 
-        <p style={{ textAlign: "center", marginTop: 24, fontSize: 14, color: "var(--text-secondary)" }}>
+            <button
+              type="submit"
+              className="btn-primary"
+              disabled={loading}
+              style={{ marginTop: 4 }}
+            >
+              {loading ? "Creating Account..." : "Create Account"}
+            </button>
+          </form>
+        </div>
+
+        <p style={{
+          textAlign: "center",
+          marginTop: 24,
+          fontSize: 14,
+          color: "var(--text-secondary)",
+        }}>
           Already have an account?{" "}
-          <Link href="/login" style={{ color: "var(--accent)" }}>
+          <Link href="/login" style={{ color: "var(--text)", fontWeight: 500, textDecoration: "none" }}>
             Sign in
           </Link>
         </p>

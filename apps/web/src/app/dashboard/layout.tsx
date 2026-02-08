@@ -4,12 +4,13 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { LayoutDashboard, Users, UserPlus, Settings, LogOut, ChevronRight } from "lucide-react";
 
 const NAV_ITEMS = [
-  { href: "/dashboard", label: "Overview", icon: "📊" },
-  { href: "/dashboard/employees", label: "Employees", icon: "🤖" },
-  { href: "/dashboard/hire", label: "Hire New", icon: "➕" },
-  { href: "/dashboard/settings", label: "Settings", icon: "⚙️" },
+  { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
+  { href: "/dashboard/employees", label: "Employees", icon: Users },
+  { href: "/dashboard/hire", label: "Hire New", icon: UserPlus },
+  { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 
 export default function DashboardLayout({
@@ -39,27 +40,48 @@ export default function DashboardLayout({
       <aside
         style={{
           width: 240,
-          background: "var(--bg-secondary)",
+          background: "var(--bg-elevated)",
           borderRight: "1px solid var(--border)",
-          padding: "24px 0",
+          padding: "20px 0",
           display: "flex",
           flexDirection: "column",
+          position: "fixed",
+          top: 0,
+          left: 0,
+          bottom: 0,
+          zIndex: 50,
         }}
       >
         <div style={{ padding: "0 20px", marginBottom: 32 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 24 }}>🤖</span>
-            <span style={{ fontWeight: 700, fontSize: 16 }}>AI Employees</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+            <div
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 8,
+                background: "linear-gradient(135deg, #5D79DF, #A94BD2)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 14,
+                fontWeight: 700,
+              }}
+            >
+              A
+            </div>
+            <span style={{ fontWeight: 600, fontSize: 15, letterSpacing: "-0.02em" }}>
+              AI Employees
+            </span>
           </div>
           {company && (
             <div
               style={{
-                marginTop: 12,
-                fontSize: 13,
-                color: "var(--text-secondary)",
-                padding: "6px 10px",
-                background: "var(--bg-tertiary)",
-                borderRadius: 6,
+                fontSize: 12,
+                color: "var(--text-tertiary)",
+                padding: "8px 12px",
+                background: "rgba(255,255,255,0.03)",
+                borderRadius: "var(--radius-sm)",
+                border: "1px solid var(--border)",
               }}
             >
               {company.name}
@@ -67,9 +89,10 @@ export default function DashboardLayout({
           )}
         </div>
 
-        <nav style={{ flex: 1 }}>
+        <nav style={{ flex: 1, padding: "0 8px" }}>
           {NAV_ITEMS.map((item) => {
             const isActive = pathname === item.href;
+            const Icon = item.icon;
             return (
               <Link
                 key={item.href}
@@ -78,24 +101,25 @@ export default function DashboardLayout({
                   display: "flex",
                   alignItems: "center",
                   gap: 10,
-                  padding: "10px 20px",
-                  color: isActive ? "var(--accent)" : "var(--text-secondary)",
+                  padding: "10px 12px",
+                  margin: "2px 0",
+                  color: isActive ? "var(--text)" : "var(--text-secondary)",
                   textDecoration: "none",
                   fontSize: 14,
-                  fontWeight: isActive ? 600 : 400,
-                  background: isActive ? "rgba(99, 102, 241, 0.08)" : "transparent",
-                  borderRight: isActive ? "2px solid var(--accent)" : "2px solid transparent",
+                  fontWeight: isActive ? 500 : 400,
+                  background: isActive ? "rgba(255,255,255,0.06)" : "transparent",
+                  borderRadius: "var(--radius-sm)",
                   transition: "all 0.15s",
                 }}
               >
-                <span>{item.icon}</span>
+                <Icon size={16} strokeWidth={isActive ? 2 : 1.5} />
                 {item.label}
               </Link>
             );
           })}
         </nav>
 
-        <div style={{ padding: "0 20px" }}>
+        <div style={{ padding: "0 8px" }}>
           <button
             onClick={() => {
               api.clearToken();
@@ -103,22 +127,36 @@ export default function DashboardLayout({
             }}
             style={{
               width: "100%",
-              padding: "8px 14px",
+              padding: "10px 12px",
               fontSize: 13,
-              color: "var(--text-muted)",
+              color: "var(--text-tertiary)",
               background: "none",
               border: "1px solid var(--border)",
-              borderRadius: 6,
+              borderRadius: "var(--radius-sm)",
               cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              transition: "all 0.15s",
             }}
           >
+            <LogOut size={14} />
             Sign Out
           </button>
         </div>
       </aside>
 
       {/* Main content */}
-      <main style={{ flex: 1, padding: 32, overflowY: "auto" }}>{children}</main>
+      <main
+        style={{
+          flex: 1,
+          marginLeft: 240,
+          padding: "32px 40px",
+          minHeight: "100vh",
+        }}
+      >
+        {children}
+      </main>
     </div>
   );
 }
