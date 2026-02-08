@@ -7,6 +7,7 @@ import { errorHandlerPlugin } from "./plugins/error-handler.js";
 import { authRoutes } from "./routes/auth.js";
 import { employeeRoutes } from "./routes/employees.js";
 import { dashboardRoutes } from "./routes/dashboard.js";
+import { provisionRoutes } from "./routes/provision.js";
 
 export async function buildServer(config: Env) {
   const fastify = Fastify({
@@ -36,6 +37,7 @@ export async function buildServer(config: Env) {
   await fastify.register(authRoutes);
   await fastify.register(employeeRoutes);
   await fastify.register(dashboardRoutes);
+  await fastify.register(provisionRoutes);
 
   // Health check
   fastify.get("/api/health", async () => ({ status: "ok", timestamp: new Date().toISOString() }));

@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { db, companies, users } from "@ai-employees/db";
 import { registerSchema, loginSchema } from "@ai-employees/shared";

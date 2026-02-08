@@ -3,6 +3,7 @@ import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { employees } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
+import { backend, isBackendConfigured } from "@/lib/backend";
 
 export async function POST(
   request: NextRequest,
@@ -18,6 +19,7 @@ export async function POST(
 
   const { id } = await params;
 
+  // Verify ownership
   const [employee] = await db
     .select()
     .from(employees)
@@ -31,6 +33,17 @@ export async function POST(
     return NextResponse.json({ error: "Employee is not active" }, { status: 400 });
   }
 
+  // If backend is configured, delegate to DO for real container stop
+  if (isBackendConfigured()) {
+    try {
+      const result = await backend.pauseEmployee(id);
+      return NextResponse.json(result);
+    } catch (err: any) {
+      return NextResponse.json({ error: err.message }, { status: 500 });
+    }
+  }
+
+  // Demo mode fallback
   const [updated] = await db
     .update(employees)
     .set({ status: "paused", updatedAt: new Date() })

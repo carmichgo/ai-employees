@@ -15,5 +15,8 @@ COPY tsconfig.base.json ./
 COPY packages/ ./packages/
 COPY apps/api/ ./apps/api/
 
+# Build
+RUN pnpm --filter @ai-employees/api build
+
 EXPOSE 3001
-CMD ["pnpm", "--filter", "@ai-employees/api", "dev"]
+CMD ["node", "apps/api/dist/index.js"]

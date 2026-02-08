@@ -15,4 +15,7 @@ COPY tsconfig.base.json ./
 COPY packages/ ./packages/
 COPY apps/worker/ ./apps/worker/
 
-CMD ["pnpm", "--filter", "@ai-employees/worker", "dev"]
+# Build
+RUN pnpm --filter @ai-employees/worker build
+
+CMD ["node", "apps/worker/dist/index.js"]

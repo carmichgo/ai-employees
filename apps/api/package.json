@@ -14,14 +14,14 @@
     "@ai-employees/openclaw-config": "workspace:*",
     "@fastify/cors": "^10.0.0",
     "@fastify/jwt": "^9.0.0",
-    "bcrypt": "^5.1.0",
+    "bcryptjs": "^2.4.3",
     "bullmq": "^5.30.0",
     "fastify": "^5.2.0",
     "ioredis": "^5.4.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {
-    "@types/bcrypt": "^5.0.0",
+    "@types/bcryptjs": "^2.4.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"
   }

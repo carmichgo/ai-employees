@@ -6,6 +6,7 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(16),
   JWT_EXPIRES_IN: z.string().default("7d"),
   ENCRYPTION_KEY: z.string().min(32),
+  INTERSERVICE_SECRET: z.string().min(32).describe("Shared secret for Vercel-to-DO API auth"),
   OPENCLAW_IMAGE: z.string().default("openclaw:latest"),
   OPENCLAW_NETWORK: z.string().default("ai-employees-internal"),
   API_PORT: z.coerce.number().default(3001),

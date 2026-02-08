@@ -4,6 +4,7 @@ import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { employees, companies } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
+import { backend, isBackendConfigured } from "@/lib/backend";
 import {
   createEmployeeSchema,
   getJobTemplate,
@@ -56,7 +57,26 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
   const input = createEmployeeSchema.parse(body);
 
-  // Check limits
+  // If DO backend is configured, delegate provisioning to it
+  if (isBackendConfigured()) {
+    try {
+      const result = await backend.provisionEmployee({
+        companyId: session.companyId,
+        name: input.name,
+        jobTitle: input.jobTitle,
+        templateId: input.templateId || undefined,
+        persona: input.persona || undefined,
+        goals: input.goals || undefined,
+        channels: input.channels || [],
+        modelConfig: input.modelConfig,
+      });
+      return NextResponse.json(result, { status: 201 });
+    } catch (err: any) {
+      return NextResponse.json({ error: err.message }, { status: 500 });
+    }
+  }
+
+  // Fallback: demo mode — no real provisioning
   const [company] = await db
     .select()
     .from(companies)
@@ -80,7 +100,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Merge template
   let persona = input.persona;
   let goals = input.goals;
   let emoji = "🤖";
@@ -108,7 +127,7 @@ export async function POST(request: NextRequest) {
       goals,
       modelConfig: input.modelConfig || { primary: "anthropic/claude-sonnet-4-20250514" },
       gatewayToken,
-      status: "active", // In Vercel demo, mark as active immediately
+      status: "active",
       containerName: `ai-emp-${company.slug}-${slugify(input.name)}-${crypto.randomBytes(3).toString("hex")}`,
     })
     .returning();
@@ -116,7 +135,7 @@ export async function POST(request: NextRequest) {
   return NextResponse.json(
     {
       employee: sanitize(employee),
-      message: `${input.name} is being onboarded! They'll be ready in a few moments.`,
+      message: `${input.name} has been hired! (demo mode — no OpenClaw container)`,
     },
     { status: 201 },
   );

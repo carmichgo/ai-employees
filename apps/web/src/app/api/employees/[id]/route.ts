@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { employees } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
 import { updateEmployeeSchema } from "@ai-employees/shared";
+import { backend, isBackendConfigured } from "@/lib/backend";
 
 async function authenticate(request: NextRequest) {
   const token =
@@ -100,6 +101,17 @@ export async function DELETE(
     return NextResponse.json({ error: "Employee not found" }, { status: 404 });
   }
 
+  // If backend is configured, delegate to DO for real container teardown
+  if (isBackendConfigured()) {
+    try {
+      const result = await backend.terminateEmployee(id);
+      return NextResponse.json(result);
+    } catch (err: any) {
+      return NextResponse.json({ error: err.message }, { status: 500 });
+    }
+  }
+
+  // Demo mode fallback
   const [updated] = await db
     .update(employees)
     .set({ status: "terminated", updatedAt: new Date() })
