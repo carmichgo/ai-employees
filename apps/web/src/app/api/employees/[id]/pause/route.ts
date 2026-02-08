@@ -3,7 +3,7 @@ import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { employees } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
-import { backend, isBackendConfigured } from "@/lib/backend";
+import { getCompanyBackend, createBackendClient } from "@/lib/backend";
 
 export async function POST(
   request: NextRequest,
@@ -33,9 +33,11 @@ export async function POST(
     return NextResponse.json({ error: "Employee is not active" }, { status: 400 });
   }
 
-  // If backend is configured, delegate to DO for real container stop
-  if (isBackendConfigured()) {
+  // If company has an active droplet, delegate to it
+  const backendConfig = await getCompanyBackend(session.companyId);
+  if (backendConfig) {
     try {
+      const backend = createBackendClient(backendConfig);
       const result = await backend.pauseEmployee(id);
       return NextResponse.json(result);
     } catch (err: any) {

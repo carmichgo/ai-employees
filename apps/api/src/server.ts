@@ -39,7 +39,8 @@ export async function buildServer(config: Env) {
   await fastify.register(dashboardRoutes);
   await fastify.register(provisionRoutes);
 
-  // Health check
+  // Health check (used by Vercel to verify droplet readiness)
+  fastify.get("/health", async () => ({ status: "ok", timestamp: new Date().toISOString() }));
   fastify.get("/api/health", async () => ({ status: "ok", timestamp: new Date().toISOString() }));
 
   return fastify;

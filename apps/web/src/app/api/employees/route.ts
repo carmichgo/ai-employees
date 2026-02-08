@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "node:crypto";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { employees, companies } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
-import { backend, isBackendConfigured } from "@/lib/backend";
+import { getCompanyBackend, createBackendClient } from "@/lib/backend";
+import { createCompanyDroplet, isDropletProvisioningEnabled } from "@/lib/digitalocean";
 import {
   createEmployeeSchema,
   getJobTemplate,
@@ -57,9 +58,13 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
   const input = createEmployeeSchema.parse(body);
 
-  // If DO backend is configured, delegate provisioning to it
-  if (isBackendConfigured()) {
+  // Check if company has an active droplet backend
+  const backendConfig = await getCompanyBackend(session.companyId);
+
+  if (backendConfig) {
+    // Droplet is active — delegate provisioning to it
     try {
+      const backend = createBackendClient(backendConfig);
       const result = await backend.provisionEmployee({
         companyId: session.companyId,
         name: input.name,
@@ -76,7 +81,95 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Fallback: demo mode — no real provisioning
+  // No active droplet — check if we should auto-provision one
+  if (isDropletProvisioningEnabled()) {
+    // Get company to check droplet status
+    const [company] = await db
+      .select()
+      .from(companies)
+      .where(eq(companies.id, session.companyId))
+      .limit(1);
+
+    if (!company) {
+      return NextResponse.json({ error: "Company not found" }, { status: 404 });
+    }
+
+    if (company.dropletStatus === "provisioning") {
+      return NextResponse.json(
+        {
+          error: "Your infrastructure is still being set up. This usually takes 2-3 minutes. Please try again shortly.",
+          dropletStatus: "provisioning",
+        },
+        { status: 503 },
+      );
+    }
+
+    // Auto-provision a droplet for this company
+    try {
+      await createCompanyDroplet(session.companyId);
+
+      // Create employee record with "provisioning" status — it'll be processed
+      // once the droplet is ready (the dashboard will poll)
+      const planLimits = PLAN_LIMITS[company.plan as PlanTier] || PLAN_LIMITS.starter;
+      const current = await db
+        .select()
+        .from(employees)
+        .where(eq(employees.companyId, session.companyId));
+      const activeCount = current.filter((e) => e.status !== "terminated").length;
+
+      if (activeCount >= planLimits.maxEmployees) {
+        return NextResponse.json(
+          { error: `Employee limit reached (${planLimits.maxEmployees} for ${company.plan} plan)` },
+          { status: 403 },
+        );
+      }
+
+      let persona = input.persona;
+      let goals = input.goals;
+      let emoji = "🤖";
+
+      if (input.templateId) {
+        const template = getJobTemplate(input.templateId);
+        if (template) {
+          persona = persona || template.persona;
+          goals = goals || template.goals;
+          emoji = template.emoji;
+        }
+      }
+
+      const gatewayToken = crypto.randomBytes(32).toString("hex");
+
+      const [employee] = await db
+        .insert(employees)
+        .values({
+          companyId: session.companyId,
+          name: input.name,
+          jobTitle: input.jobTitle,
+          templateId: input.templateId,
+          emoji,
+          persona,
+          goals,
+          modelConfig: input.modelConfig || { primary: "anthropic/claude-sonnet-4-20250514" },
+          gatewayToken,
+          status: "provisioning",
+          containerName: `ai-emp-${company.slug}-${slugify(input.name)}-${crypto.randomBytes(3).toString("hex")}`,
+        })
+        .returning();
+
+      return NextResponse.json(
+        {
+          employee: sanitize(employee),
+          message: `${input.name} is being hired! Setting up dedicated infrastructure — this takes 2-3 minutes.`,
+          dropletStatus: "provisioning",
+        },
+        { status: 201 },
+      );
+    } catch (err: any) {
+      return NextResponse.json({ error: err.message }, { status: 500 });
+    }
+  }
+
+  // Demo mode fallback — no real provisioning
   const [company] = await db
     .select()
     .from(companies)

@@ -137,6 +137,27 @@ class ApiClient {
   async getDashboard() {
     return this.request<{ company: any; employees: any }>("/api/dashboard/overview");
   }
+
+  // Droplet management
+  async getDropletStatus() {
+    return this.request<{ droplet: { id: string | null; ip: string | null; region: string | null; size: string | null; status: string } }>(
+      "/api/companies/droplet",
+    );
+  }
+
+  async provisionDroplet() {
+    return this.request<{ message: string; dropletId: string }>(
+      "/api/companies/droplet",
+      { method: "POST" },
+    );
+  }
+
+  async destroyDroplet() {
+    return this.request<{ message: string }>(
+      "/api/companies/droplet",
+      { method: "DELETE" },
+    );
+  }
 }
 
 export class ApiError extends Error {

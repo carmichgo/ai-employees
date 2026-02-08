@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { employees } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
 import { updateEmployeeSchema } from "@ai-employees/shared";
-import { backend, isBackendConfigured } from "@/lib/backend";
+import { getCompanyBackend, createBackendClient } from "@/lib/backend";
 
 async function authenticate(request: NextRequest) {
   const token =
@@ -101,9 +101,11 @@ export async function DELETE(
     return NextResponse.json({ error: "Employee not found" }, { status: 404 });
   }
 
-  // If backend is configured, delegate to DO for real container teardown
-  if (isBackendConfigured()) {
+  // If company has an active droplet, delegate for real container teardown
+  const backendConfig = await getCompanyBackend(session.companyId);
+  if (backendConfig) {
     try {
+      const backend = createBackendClient(backendConfig);
       const result = await backend.terminateEmployee(id);
       return NextResponse.json(result);
     } catch (err: any) {
