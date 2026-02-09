@@ -18,5 +18,8 @@ COPY apps/api/ ./apps/api/
 # Build all workspace dependencies then the API (turbo handles dependency order)
 RUN pnpm turbo build --filter=@ai-employees/api
 
+# Patch package.json main fields from src/index.ts → dist/index.js for Node.js runtime
+RUN sed -i 's|"main": "src/index.ts"|"main": "dist/index.js"|g' packages/*/package.json
+
 EXPOSE 3001
 CMD ["node", "apps/api/dist/index.js"]

@@ -18,4 +18,7 @@ COPY apps/worker/ ./apps/worker/
 # Build all workspace dependencies then the worker (turbo handles dependency order)
 RUN pnpm turbo build --filter=@ai-employees/worker
 
+# Patch package.json main fields from src/index.ts → dist/index.js for Node.js runtime
+RUN sed -i 's|"main": "src/index.ts"|"main": "dist/index.js"|g' packages/*/package.json
+
 CMD ["node", "apps/worker/dist/index.js"]
