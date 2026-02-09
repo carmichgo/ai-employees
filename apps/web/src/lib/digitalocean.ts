@@ -136,18 +136,17 @@ API_PORT=3001
 PLATFORM_URL=${params.platformUrl}
 ENVEOF
 
-# Diagnostics before clone
-echo "Git version: $(git --version)"
-echo "Testing DNS: $(host github.com 2>&1 || true)"
-echo "Testing HTTPS: $(curl -sI https://github.com 2>&1 | head -1 || true)"
-echo "Branch: ${params.repoBranch}"
-echo "Repo: ${params.repoUrl}"
-
-# Clone repo (with verbose output for debugging)
-if ! git clone --depth 1 --branch "${params.repoBranch}" "${params.repoUrl}" /opt/ai-employees/app 2>&1; then
-  report "clone-failed" "error" "git clone failed - see init log"
+# Download repo as tarball (faster and more reliable than git clone)
+TARBALL_URL="https://github.com/carmichgo/ai-employees/archive/refs/heads/${params.repoBranch}.tar.gz"
+echo "Downloading from: $TARBALL_URL"
+if ! curl -sfL "$TARBALL_URL" -o /tmp/repo.tar.gz; then
+  report "clone-failed" "error" "tarball download failed"
   exit 1
 fi
+
+mkdir -p /opt/ai-employees/app
+tar xzf /tmp/repo.tar.gz --strip-components=1 -C /opt/ai-employees/app
+rm /tmp/repo.tar.gz
 
 cd /opt/ai-employees/app
 cp /opt/ai-employees/.env .env
