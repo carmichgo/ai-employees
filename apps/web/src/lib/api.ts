@@ -154,7 +154,7 @@ class ApiClient {
 
   // Droplet management
   async getDropletStatus() {
-    return this.request<{ droplet: { id: string | null; ip: string | null; region: string | null; size: string | null; status: string } }>(
+    return this.request<{ droplet: { id: string | null; ip: string | null; region: string | null; size: string | null; status: string; phase: string | null } }>(
       "/api/companies/droplet",
     );
   }
