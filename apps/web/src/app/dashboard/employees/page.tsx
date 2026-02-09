@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
-import { Plus, Users, ChevronRight } from "lucide-react";
+import { Plus, Users, ChevronRight, MessageCircle } from "lucide-react";
 
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState<any[]>([]);
@@ -120,7 +120,27 @@ export default function EmployeesPage() {
                   </div>
                 </div>
 
-                <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  {emp.status === "active" && (
+                    <Link
+                      href={`/dashboard/employees/${emp.id}/chat`}
+                      onClick={(e) => e.stopPropagation()}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: 32,
+                        height: 32,
+                        borderRadius: 8,
+                        background: "rgba(93, 121, 223, 0.1)",
+                        border: "1px solid rgba(93, 121, 223, 0.2)",
+                        color: "var(--blue)",
+                        transition: "all 0.15s",
+                      }}
+                    >
+                      <MessageCircle size={14} />
+                    </Link>
+                  )}
                   <div className={`status-badge status-${emp.status}`}>
                     <span className="status-dot" />
                     <span style={{ textTransform: "capitalize" }}>{emp.status}</span>

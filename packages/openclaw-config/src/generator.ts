@@ -1,6 +1,13 @@
 /**
  * Generates an OpenClaw configuration (openclaw.json) for a single employee deployment.
  * Each employee gets their own isolated OpenClaw instance.
+ *
+ * Every employee automatically gets:
+ *   - Webchat channel (for dashboard chat interface)
+ *   - HTTP chat completions endpoint (OpenAI-compatible API)
+ *   - Email channel (auto-provisioned address)
+ *   - Browser tool access
+ * Plus any additional channels selected during hiring.
  */
 
 export interface EmployeeInput {
@@ -10,6 +17,7 @@ export interface EmployeeInput {
   emoji?: string;
   persona?: string | null;
   goals?: string | null;
+  companySlug?: string;
   modelConfig: { primary: string; fallbacks?: string[] };
   toolsConfig: { profile?: string; allow?: string[]; deny?: string[] };
   sandboxConfig: Record<string, unknown>;
@@ -83,6 +91,9 @@ export function generateOpenClawConfig(
 ): OpenClawConfig {
   const agentId = slugify(employee.name);
 
+  // Always include webchat channel for dashboard chat interface
+  const allChannels = ensureDefaultChannels(employee.channels);
+
   const config: OpenClawConfig = {
     gateway: {
       auth: { token: gatewayToken },
@@ -117,8 +128,8 @@ export function generateOpenClawConfig(
         },
       ],
     },
-    channels: buildChannels(employee.channels),
-    bindings: buildBindings(agentId, employee.channels),
+    channels: buildChannels(allChannels),
+    bindings: buildBindings(agentId, allChannels),
   };
 
   return config;
@@ -148,7 +159,41 @@ export function generateSoulMd(employee: EmployeeInput): string {
   parts.push("- Tag relevant team members when their input is needed");
   parts.push("");
 
+  parts.push("## Capabilities");
+  parts.push("- You can send and receive emails");
+  parts.push("- You can browse the web and research topics");
+  parts.push("- You can create documents and reports");
+  parts.push("- You can communicate via chat, email, and other channels");
+  parts.push("- You have access to a sandboxed computer environment");
+  parts.push("");
+
   return parts.join("\n");
+}
+
+/** Generate an email address for the employee */
+export function generateEmployeeEmail(
+  employeeName: string,
+  companySlug: string,
+): string {
+  const nameSlug = slugify(employeeName);
+  return `${nameSlug}@${companySlug}.ai-employees.com`;
+}
+
+/** Ensure webchat channel is always present */
+function ensureDefaultChannels(channels: ChannelInput[]): ChannelInput[] {
+  const result = [...channels];
+
+  // Always add webchat if not already present
+  const hasWebchat = result.some((c) => c.type === "webchat");
+  if (!hasWebchat) {
+    result.push({
+      type: "webchat",
+      credentials: {},
+      config: { welcomeMessage: "Hello! How can I help you today?" },
+    });
+  }
+
+  return result;
 }
 
 function buildChannels(channels: ChannelInput[]): Record<string, ChannelConfig> {

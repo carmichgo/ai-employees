@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
-import { ArrowLeft, Pause, Play, Trash2, Loader2, Server, Mail, Cpu, Clock, Calendar } from "lucide-react";
+import { ArrowLeft, Pause, Play, Trash2, Loader2, Server, Mail, Cpu, Clock, Calendar, MessageCircle } from "lucide-react";
 import Link from "next/link";
 
 export default function EmployeeDetailPage() {
@@ -121,6 +121,15 @@ export default function EmployeeDetailPage() {
         </div>
 
         <div style={{ display: "flex", gap: 8 }}>
+          {(employee.status === "active" || employee.status === "paused") && (
+            <Link
+              href={`/dashboard/employees/${employeeId}/chat`}
+              className="btn-primary btn-sm"
+              style={{ gap: 6, textDecoration: "none" }}
+            >
+              <MessageCircle size={14} /> Chat
+            </Link>
+          )}
           {employee.status === "active" && (
             <button className="btn-secondary btn-sm" onClick={handlePause} disabled={actionLoading} style={{ gap: 6 }}>
               <Pause size={14} /> Pause

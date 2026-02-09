@@ -127,6 +127,20 @@ class ApiClient {
     });
   }
 
+  async chatWithEmployee(
+    id: string,
+    message: string,
+    conversationHistory?: Array<{ role: string; content: string }>,
+  ) {
+    return this.request<{ reply: string; mode: string; usage?: any }>(
+      `/api/employees/${id}/chat`,
+      {
+        method: "POST",
+        body: JSON.stringify({ message, conversationHistory }),
+      },
+    );
+  }
+
   async getTemplates() {
     return this.request<{ templates: any[]; categories: string[] }>(
       "/api/employees/templates",

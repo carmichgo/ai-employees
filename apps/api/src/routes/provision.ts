@@ -188,4 +188,57 @@ export async function provisionRoutes(fastify: FastifyInstance) {
 
     return { employee: sanitize(employee) };
   });
+
+  // POST /internal/employees/:id/chat — proxy chat to OpenClaw container
+  fastify.post<{ Params: { id: string } }>("/internal/employees/:id/chat", async (request, reply) => {
+    const { id } = request.params;
+    const body = request.body as {
+      messages: Array<{ role: string; content: string }>;
+    };
+
+    const employee = await db.query.employees.findFirst({
+      where: eq(employees.id, id),
+    });
+    if (!employee) return reply.status(404).send({ error: "Employee not found" });
+    if (employee.status !== "active") {
+      return reply.status(400).send({ error: `Employee is ${employee.status}` });
+    }
+    if (!employee.containerHost || !employee.containerPort) {
+      return reply.status(400).send({ error: "Container not ready" });
+    }
+
+    // Forward to OpenClaw's OpenAI-compatible chat completions endpoint
+    const containerUrl = `http://${employee.containerHost}:${employee.containerPort}/v1/chat/completions`;
+
+    try {
+      const res = await fetch(containerUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${employee.gatewayToken}`,
+        },
+        body: JSON.stringify({
+          model: (employee.modelConfig as { primary: string }).primary,
+          messages: body.messages,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.text();
+        return reply.status(res.status).send({ error: `OpenClaw error: ${err}` });
+      }
+
+      const data = await res.json();
+      const assistantMessage = data.choices?.[0]?.message?.content || "No response";
+
+      return {
+        reply: assistantMessage,
+        mode: "live",
+        usage: data.usage,
+      };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      return reply.status(502).send({ error: `Container unreachable: ${message}` });
+    }
+  });
 }

@@ -1,9 +1,10 @@
 import { eq } from "drizzle-orm";
-import { db, employees } from "@ai-employees/db";
+import { db, employees, companies } from "@ai-employees/db";
 import { CONTAINER_RESOURCES, type PlanTier } from "@ai-employees/shared";
 import {
   generateOpenClawConfig,
   generateSoulMd,
+  generateEmployeeEmail,
   type EmployeeInput,
 } from "@ai-employees/openclaw-config";
 import { docker, ensureNetwork, ensureImage } from "../docker/client.js";
@@ -28,12 +29,21 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
   });
   if (!employee) throw new Error(`Employee ${employeeId} not found`);
 
+  // Get company for slug and plan
+  const company = await db.query.companies.findFirst({
+    where: eq(companies.id, data.companyId),
+  });
+  if (!company) throw new Error(`Company ${data.companyId} not found`);
+
   try {
     // Update status
     await db
       .update(employees)
       .set({ status: "provisioning", updatedAt: new Date() })
       .where(eq(employees.id, employeeId));
+
+    // Generate employee email
+    const emailAddress = generateEmployeeEmail(employee.name, company.slug);
 
     // Ensure Docker network exists
     await ensureNetwork(OPENCLAW_NETWORK);
@@ -45,6 +55,13 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     const volumeName = `ai-emp-data-${employeeId}`;
     await docker.createVolume({ Name: volumeName });
 
+    // Build channel inputs from the selected channel types
+    const channelInputs = data.channels.map((type) => ({
+      type,
+      credentials: {},
+      config: {},
+    }));
+
     // Generate OpenClaw config
     const employeeInput: EmployeeInput = {
       id: employee.id,
@@ -53,20 +70,18 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
       emoji: employee.emoji || undefined,
       persona: employee.persona,
       goals: employee.goals,
+      companySlug: company.slug,
       modelConfig: employee.modelConfig as { primary: string; fallbacks?: string[] },
       toolsConfig: employee.toolsConfig as Record<string, unknown>,
       sandboxConfig: employee.sandboxConfig as Record<string, unknown>,
-      channels: [], // Channels configured separately
+      channels: channelInputs,
     };
 
     const config = generateOpenClawConfig(employeeInput, employee.gatewayToken!);
     const soulMd = generateSoulMd(employeeInput);
 
     // Determine resource limits based on company plan
-    const company = await db.query.companies.findFirst({
-      where: eq(employees.companyId, data.companyId),
-    });
-    const plan = (company?.plan as PlanTier) || "starter";
+    const plan = (company.plan as PlanTier) || "starter";
     const resources = CONTAINER_RESOURCES[plan] || CONTAINER_RESOURCES.starter;
 
     // Create the container
@@ -77,6 +92,9 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
         `OPENCLAW_GATEWAY_TOKEN=${employee.gatewayToken}`,
         `OPENCLAW_CONFIG=${JSON.stringify(config)}`,
         `OPENCLAW_SOUL_MD=${soulMd}`,
+        `EMPLOYEE_EMAIL=${emailAddress}`,
+        `EMPLOYEE_NAME=${employee.name}`,
+        `EMPLOYEE_JOB_TITLE=${employee.jobTitle}`,
       ],
       HostConfig: {
         Binds: [`${volumeName}:/home/node/.openclaw`],
@@ -102,20 +120,21 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     // Get container info for host/port
     const info = await container.inspect();
 
-    // Update DB with container details
+    // Update DB with container details + email
     await db
       .update(employees)
       .set({
         containerId: info.Id,
         containerHost: info.NetworkSettings.Networks?.[OPENCLAW_NETWORK]?.IPAddress || null,
         containerPort: 18789,
+        emailAddress,
         status: "active",
         updatedAt: new Date(),
       })
       .where(eq(employees.id, employeeId));
 
     console.log(
-      `[provision] Employee ${employee.name} (${employeeId}) is now active at ${info.NetworkSettings.Networks?.[OPENCLAW_NETWORK]?.IPAddress}:18789`,
+      `[provision] Employee ${employee.name} (${employeeId}) is now active at ${info.NetworkSettings.Networks?.[OPENCLAW_NETWORK]?.IPAddress}:18789 — email: ${emailAddress}`,
     );
   } catch (error) {
     console.error(`[provision] Failed to provision employee ${employeeId}:`, error);
