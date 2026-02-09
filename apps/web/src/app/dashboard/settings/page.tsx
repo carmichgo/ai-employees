@@ -166,7 +166,7 @@ export default function SettingsPage() {
               <span style={{
                 fontSize: 12,
                 fontWeight: 600,
-                color: droplet.phase === "ready" ? "#22c55e" : "#f59e0b",
+                color: droplet.phase === "ready" ? "#22c55e" : droplet.phase === "failed" ? "#ef4444" : "#f59e0b",
                 display: "flex",
                 alignItems: "center",
                 gap: 6,
@@ -190,7 +190,7 @@ export default function SettingsPage() {
                     backgroundColor: "#22c55e",
                   }} />
                 )}
-                {droplet.phase === "provisioning" ? "Building..." : droplet.phase === "ready" ? "Ready" : droplet.phase}
+                {droplet.phase === "provisioning" ? "Building..." : droplet.phase === "ready" ? "Ready" : droplet.phase === "failed" ? "Build Failed" : droplet.phase}
               </span>
             </div>
           )}

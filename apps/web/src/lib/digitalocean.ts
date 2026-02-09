@@ -95,23 +95,39 @@ ufw --force enable
 
 # Start a lightweight Python health server immediately
 # This allows the platform to detect the droplet as "active" right away
+# It reads /opt/ai-employees/status to report actual build phase
 cat > /opt/health-server.py << 'PYEOF'
-import http.server, json, socketserver
+import http.server, json, socketserver, os
+
+STATUS_FILE = "/opt/ai-employees/status"
+
+def get_phase():
+    try:
+        with open(STATUS_FILE) as f:
+            status = f.read().strip()
+        if status == "READY":
+            return "ready"
+        elif status.startswith("PHASE2_FAILED"):
+            return "failed"
+        else:
+            return "provisioning"
+    except:
+        return "provisioning"
 
 class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
+        phase = get_phase()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
         if self.path == "/health" or self.path == "/api/health":
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(json.dumps({"status": "ok", "phase": "provisioning"}).encode())
+            self.wfile.write(json.dumps({"status": "ok", "phase": phase}).encode())
+        elif self.path == "/phase":
+            self.wfile.write(json.dumps({"phase": phase}).encode())
         else:
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(json.dumps({"status": "provisioning"}).encode())
+            self.wfile.write(json.dumps({"status": phase}).encode())
     def log_message(self, format, *args):
-        pass  # silence logs
+        pass
 
 socketserver.TCPServer.allow_reuse_address = True
 httpd = socketserver.TCPServer(("0.0.0.0", 3001), H)
@@ -121,7 +137,7 @@ PYEOF
 mkdir -p /opt/ai-employees
 
 python3 /opt/health-server.py &
-HEALTH_PID=$!
+HEALTH_PID=\$!
 echo "Placeholder health server started on :3001 (PID \$HEALTH_PID)"
 
 # Report ready immediately so the platform marks this as active
