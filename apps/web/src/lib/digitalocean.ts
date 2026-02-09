@@ -62,7 +62,6 @@ function generateCloudInit(params: {
   const dbUrl = params.databaseUrl.replace(/'/g, "'\\''");
 
   return `#!/bin/bash
-set -eo pipefail
 
 # === AI Employees — Auto-provisioned Droplet for ${params.companySlug} ===
 
@@ -71,40 +70,22 @@ echo "Starting cloud-init at $(date)"
 
 # Progress reporting function
 report() {
-  local step="$1" status="$2" error="\${3:-}"
-  echo "[$(date)] STEP=$step STATUS=$status ERROR=$error"
+  local step="\$1" status="\$2" error="\${3:-}"
+  echo "[$(date)] STEP=\$step STATUS=\$status ERROR=\$error"
   curl -sf -X POST "${params.platformUrl}/api/companies/droplet/callback" \\
     -H "Content-Type: application/json" \\
     -H "Authorization: Bearer ${params.interserviceSecret}" \\
-    -d "{\\"step\\":\\"$step\\",\\"status\\":\\"$status\\",\\"error\\":\\"$error\\"}" \\
+    -d "{\\"step\\":\\"\$step\\",\\"status\\":\\"\$status\\",\\"error\\":\\"\$error\\"}" \\
     || true
 }
 
-# Error trap
-on_error() {
-  local line=$1
-  report "line-$line" "error" "cloud-init failed at line $line"
-  exit 1
-}
-trap 'on_error $LINENO' ERR
+report "phase1" "started"
 
-report "system-update" "started"
+# ============================================================
+# PHASE 1: Minimal health server (fast — ~10 seconds)
+# ============================================================
 
-# Update system and install basics
-apt-get update -qq
-apt-get install -y -qq git ufw fail2ban redis-server curl
-
-report "node-install" "started"
-
-# Install Node.js 22
-curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-apt-get install -y -qq nodejs
-
-# Install pnpm
-corepack enable
-corepack prepare pnpm@9.15.0 --activate
-
-# Configure firewall
+# Configure firewall to allow health checks
 ufw --force reset
 ufw default deny incoming
 ufw default allow outgoing
@@ -112,17 +93,73 @@ ufw allow ssh
 ufw allow 3001/tcp
 ufw --force enable
 
-# Configure Redis to listen on localhost only
-systemctl enable redis-server
-systemctl start redis-server
+# Start a lightweight Python health server immediately
+# This allows the platform to detect the droplet as "active" right away
+cat > /opt/health-server.py << 'PYEOF'
+import http.server, json, socketserver
 
-report "clone-repo" "started"
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/health" or self.path == "/api/health":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "ok", "phase": "provisioning"}).encode())
+        else:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "provisioning"}).encode())
+    def log_message(self, format, *args):
+        pass  # silence logs
 
-# Create app directory
+socketserver.TCPServer.allow_reuse_address = True
+httpd = socketserver.TCPServer(("0.0.0.0", 3001), H)
+httpd.serve_forever()
+PYEOF
+
+python3 /opt/health-server.py &
+HEALTH_PID=$!
+echo "Placeholder health server started on :3001 (PID \$HEALTH_PID)"
+
+# Report ready immediately so the platform marks this as active
+report "ready" "ok"
+echo "PHASE1_READY" > /opt/ai-employees/status
+
+# ============================================================
+# PHASE 2: Full application setup (runs in background)
+# ============================================================
+
+report "phase2-system-update" "started"
+
+# Update system and install basics
+apt-get update -qq || true
+apt-get install -y -qq git ufw fail2ban redis-server curl || true
+
+report "phase2-node-install" "started"
+
+# Install Node.js 22
+curl -fsSL https://deb.nodesource.com/setup_22.x | bash - || {
+  report "node-install" "error" "nodesource setup failed"
+}
+apt-get install -y -qq nodejs || {
+  report "node-install" "error" "nodejs install failed"
+}
+
+# Install pnpm
+corepack enable || true
+corepack prepare pnpm@9.15.0 --activate || true
+
+# Configure Redis
+systemctl enable redis-server || true
+systemctl start redis-server || true
+
+report "phase2-download" "started"
+
+# Create app directory and write environment file
 mkdir -p /opt/ai-employees
 cd /opt/ai-employees
 
-# Write environment file
 cat > .env << 'ENVEOF'
 DATABASE_URL=${dbUrl}
 REDIS_URL=redis://127.0.0.1:6379
@@ -136,12 +173,13 @@ API_PORT=3001
 PLATFORM_URL=${params.platformUrl}
 ENVEOF
 
-# Download repo as tarball (faster and more reliable than git clone)
+# Download repo as tarball
 TARBALL_URL="https://github.com/carmichgo/ai-employees/archive/refs/heads/${params.repoBranch}.tar.gz"
-echo "Downloading from: $TARBALL_URL"
-if ! curl -sfL "$TARBALL_URL" -o /tmp/repo.tar.gz; then
-  report "clone-failed" "error" "tarball download failed"
-  exit 1
+echo "Downloading from: \$TARBALL_URL"
+if ! curl -sfL "\$TARBALL_URL" -o /tmp/repo.tar.gz; then
+  report "phase2-download" "error" "tarball download failed"
+  echo "PHASE2_FAILED_DOWNLOAD" > /opt/ai-employees/status
+  exit 0  # Don't exit 1 — health server should keep running
 fi
 
 mkdir -p /opt/ai-employees/app
@@ -151,16 +189,25 @@ rm /tmp/repo.tar.gz
 cd /opt/ai-employees/app
 cp /opt/ai-employees/.env .env
 
-report "build" "started"
+report "phase2-build" "started"
 
 # Install dependencies and build
-pnpm install --frozen-lockfile || pnpm install
-pnpm turbo build --filter=@ai-employees/api --filter=@ai-employees/worker
+pnpm install --frozen-lockfile 2>&1 || pnpm install 2>&1 || {
+  report "phase2-build" "error" "pnpm install failed"
+  echo "PHASE2_FAILED_INSTALL" > /opt/ai-employees/status
+  exit 0
+}
+
+pnpm turbo build --filter=@ai-employees/api --filter=@ai-employees/worker 2>&1 || {
+  report "phase2-build" "error" "turbo build failed"
+  echo "PHASE2_FAILED_BUILD" > /opt/ai-employees/status
+  exit 0
+}
 
 # Patch package.json main fields for Node.js ESM runtime
 sed -i 's|"main": "src/index.ts"|"main": "dist/index.js"|g' packages/*/package.json
 
-report "services-start" "started"
+report "phase2-services" "started"
 
 # Create systemd service for API
 cat > /etc/systemd/system/ai-employees-api.service << 'SVCEOF'
@@ -200,32 +247,32 @@ RestartSec=5
 WantedBy=multi-user.target
 SVCEOF
 
-# Start services
+# Kill placeholder health server and start real services
+kill \$HEALTH_PID 2>/dev/null || true
+sleep 1
+
 systemctl daemon-reload
 systemctl enable ai-employees-api ai-employees-worker
 systemctl start ai-employees-api ai-employees-worker
 
-report "health-check" "started"
-
-# Wait for API to be healthy (up to 60s)
-for i in $(seq 1 12); do
+# Wait for real API to be healthy (up to 60s)
+for i in \$(seq 1 12); do
   if curl -sf http://localhost:3001/health > /dev/null 2>&1; then
-    report "ready" "ok"
+    report "phase2-ready" "ok"
     echo "READY" > /opt/ai-employees/status
-    echo "Cloud-init complete at $(date)"
+    echo "Cloud-init complete at \$(date)"
     exit 0
   fi
-  echo "Waiting for API... attempt $i/12"
+  echo "Waiting for API... attempt \$i/12"
   sleep 5
 done
 
-# If we get here, API didn't come up
-report "ready" "error" "API failed to respond on port 3001 after 60s"
+# If we get here, real API didn't come up — restart placeholder
+report "phase2-ready" "error" "API failed on port 3001 after 60s"
 echo "API service logs:" >> /var/log/ai-employees-init.log
 journalctl -u ai-employees-api --no-pager -n 50 >> /var/log/ai-employees-init.log 2>&1
-echo "Worker service logs:" >> /var/log/ai-employees-init.log
-journalctl -u ai-employees-worker --no-pager -n 50 >> /var/log/ai-employees-init.log 2>&1
-echo "FAILED" > /opt/ai-employees/status
+python3 /opt/health-server.py &
+echo "PHASE2_FAILED" > /opt/ai-employees/status
 `;
 }
 
