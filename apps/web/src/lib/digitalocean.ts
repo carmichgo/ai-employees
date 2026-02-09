@@ -363,6 +363,7 @@ export async function createCompanyDroplet(companyId: string): Promise<{
 export async function pollDropletStatus(companyId: string): Promise<{
   status: string;
   ip: string | null;
+  phase: string | null;
 }> {
   const [company] = await db
     .select()
@@ -371,11 +372,13 @@ export async function pollDropletStatus(companyId: string): Promise<{
     .limit(1);
 
   if (!company || !company.dropletId) {
-    return { status: "none", ip: null };
+    return { status: "none", ip: null, phase: null };
   }
 
+  // Even if already "active", check what phase the API is in
   if (company.dropletStatus === "active" && company.dropletIp) {
-    return { status: "active", ip: company.dropletIp };
+    const apiCheck = await checkDropletApi(company.dropletIp, company.interserviceSecret || "");
+    return { status: "active", ip: company.dropletIp, phase: apiCheck.phase };
   }
 
   try {
@@ -390,10 +393,9 @@ export async function pollDropletStatus(companyId: string): Promise<{
     const ip = publicNet?.ip_address || null;
 
     if (droplet.status === "active" && ip) {
-      // Check if the API is reachable
-      const apiReady = await checkDropletApi(ip, company.interserviceSecret || "");
+      const apiCheck = await checkDropletApi(ip, company.interserviceSecret || "");
 
-      if (apiReady) {
+      if (apiCheck.ok) {
         await db
           .update(companies)
           .set({
@@ -403,7 +405,7 @@ export async function pollDropletStatus(companyId: string): Promise<{
           })
           .where(eq(companies.id, companyId));
 
-        return { status: "active", ip };
+        return { status: "active", ip, phase: apiCheck.phase };
       }
 
       // Droplet is running but API isn't ready yet
@@ -412,30 +414,34 @@ export async function pollDropletStatus(companyId: string): Promise<{
         .set({ dropletIp: ip, updatedAt: new Date() })
         .where(eq(companies.id, companyId));
 
-      return { status: "booting", ip };
+      return { status: "booting", ip, phase: null };
     }
 
-    return { status: "provisioning", ip };
+    return { status: "provisioning", ip, phase: null };
   } catch {
-    return { status: "error", ip: null };
+    return { status: "error", ip: null, phase: null };
   }
 }
 
-/** Check if the droplet's API is responding */
-async function checkDropletApi(ip: string, _secret: string): Promise<boolean> {
+/** Check if the droplet's API is responding and what phase it's in */
+async function checkDropletApi(ip: string, _secret: string): Promise<{ ok: boolean; phase: string | null }> {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
 
-    // /health is on the root Fastify instance, no auth required
     const res = await fetch(`http://${ip}:3001/health`, {
       signal: controller.signal,
     });
 
     clearTimeout(timeout);
-    return res.ok;
+    if (!res.ok) return { ok: false, phase: null };
+
+    const body = await res.json().catch(() => ({}));
+    // Placeholder returns { phase: "provisioning" }, real API returns { status: "ok", timestamp: "..." }
+    const phase = body.phase || (body.timestamp ? "ready" : "unknown");
+    return { ok: true, phase };
   } catch {
-    return false;
+    return { ok: false, phase: null };
   }
 }
 

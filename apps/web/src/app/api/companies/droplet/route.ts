@@ -33,8 +33,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Company not found" }, { status: 404 });
   }
 
-  // If droplet is provisioning, poll DO for updates
-  if (company.dropletStatus === "provisioning" || company.dropletStatus === "booting") {
+  // Poll for updates (including phase info even when active)
+  if (company.dropletStatus === "provisioning" || company.dropletStatus === "booting" || company.dropletStatus === "active") {
     const result = await pollDropletStatus(session.companyId);
     return NextResponse.json({
       droplet: {
@@ -43,6 +43,7 @@ export async function GET(request: NextRequest) {
         region: company.dropletRegion,
         size: company.dropletSize,
         status: result.status,
+        phase: result.phase,
       },
     });
   }
@@ -54,6 +55,7 @@ export async function GET(request: NextRequest) {
       region: company.dropletRegion,
       size: company.dropletSize,
       status: company.dropletStatus || "none",
+      phase: null,
     },
   });
 }

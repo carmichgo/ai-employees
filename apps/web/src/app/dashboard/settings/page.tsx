@@ -32,9 +32,13 @@ export default function SettingsPage() {
       const data = await api.getDropletStatus();
       setDroplet(data.droplet);
 
-      // Auto-poll while provisioning
-      if (data.droplet.status === "provisioning" || data.droplet.status === "booting") {
-        setTimeout(loadDroplet, 5000);
+      // Auto-poll while provisioning or while Phase 2 is still building
+      if (
+        data.droplet.status === "provisioning" ||
+        data.droplet.status === "booting" ||
+        (data.droplet.status === "active" && data.droplet.phase === "provisioning")
+      ) {
+        setTimeout(loadDroplet, 10000);
       }
     } catch {
       setDroplet({ status: "none" });
@@ -155,6 +159,41 @@ export default function SettingsPage() {
               {dropletStatusInfo.label}
             </span>
           </div>
+
+          {droplet?.status === "active" && droplet?.phase && (
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: 13, color: "var(--text-tertiary)" }}>Services</span>
+              <span style={{
+                fontSize: 12,
+                fontWeight: 600,
+                color: droplet.phase === "ready" ? "#22c55e" : "#f59e0b",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+              }}>
+                {droplet.phase === "provisioning" && (
+                  <span style={{
+                    display: "inline-block",
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    backgroundColor: "#f59e0b",
+                    animation: "pulse 1.5s ease-in-out infinite",
+                  }} />
+                )}
+                {droplet.phase === "ready" && (
+                  <span style={{
+                    display: "inline-block",
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    backgroundColor: "#22c55e",
+                  }} />
+                )}
+                {droplet.phase === "provisioning" ? "Building..." : droplet.phase === "ready" ? "Ready" : droplet.phase}
+              </span>
+            </div>
+          )}
 
           {droplet?.ip && (
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
