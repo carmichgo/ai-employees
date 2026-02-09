@@ -62,16 +62,39 @@ function generateCloudInit(params: {
   const dbUrl = params.databaseUrl.replace(/'/g, "'\\''");
 
   return `#!/bin/bash
-set -euo pipefail
+set -eo pipefail
 
 # === AI Employees — Auto-provisioned Droplet for ${params.companySlug} ===
 
 exec > /var/log/ai-employees-init.log 2>&1
 echo "Starting cloud-init at $(date)"
 
+# Progress reporting function
+report() {
+  local step="$1" status="$2" error="\${3:-}"
+  echo "[$(date)] STEP=$step STATUS=$status ERROR=$error"
+  curl -sf -X POST "${params.platformUrl}/api/companies/droplet/callback" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer ${params.interserviceSecret}" \
+    -d "{\\"step\\":\\"$step\\",\\"status\\":\\"$status\\",\\"error\\":\\"$error\\"}" \
+    || true
+}
+
+# Error trap
+on_error() {
+  local line=$1
+  report "line-$line" "error" "cloud-init failed at line $line"
+  exit 1
+}
+trap 'on_error $LINENO' ERR
+
+report "system-update" "started"
+
 # Update system
 apt-get update -qq
 apt-get upgrade -y -qq
+
+report "docker-install" "started"
 
 # Install Docker
 if ! command -v docker &> /dev/null; then
@@ -85,6 +108,8 @@ if ! docker compose version &> /dev/null; then
   apt-get install -y -qq docker-compose-plugin
 fi
 
+report "tools-install" "started"
+
 # Install tools
 apt-get install -y -qq git ufw fail2ban
 
@@ -97,6 +122,8 @@ ufw allow 80/tcp
 ufw allow 443/tcp
 ufw allow 3001/tcp
 ufw --force enable
+
+report "clone-repo" "started"
 
 # Create app directory
 mkdir -p /opt/ai-employees
@@ -121,12 +148,30 @@ git clone --depth 1 --branch ${params.repoBranch} ${params.repoUrl} /opt/ai-empl
 cd /opt/ai-employees/app
 cp /opt/ai-employees/.env .env
 
-# Build and start
-docker compose up -d --build
+report "docker-build" "started"
 
-# Signal readiness
-echo "READY" > /opt/ai-employees/status
-echo "Cloud-init complete at $(date)"
+# Build and start
+docker compose up -d --build 2>&1 | tail -50
+
+report "docker-health" "started"
+
+# Wait for API to be healthy (up to 120s)
+for i in $(seq 1 24); do
+  if curl -sf http://localhost:3001/health > /dev/null 2>&1; then
+    report "ready" "ok"
+    echo "READY" > /opt/ai-employees/status
+    echo "Cloud-init complete at $(date)"
+    exit 0
+  fi
+  echo "Waiting for API... attempt $i/24"
+  sleep 5
+done
+
+# If we get here, API didn't come up
+report "ready" "error" "API failed to respond on port 3001 after 120s"
+echo "Docker container logs:" >> /var/log/ai-employees-init.log
+docker compose logs --tail=100 >> /var/log/ai-employees-init.log 2>&1
+echo "FAILED" > /opt/ai-employees/status
 `;
 }
 
@@ -169,6 +214,16 @@ export async function createCompanyDroplet(companyId: string): Promise<{
     repoBranch: REPO_BRANCH,
   });
 
+  // Get SSH keys from DO account (if any) so the user can SSH in for debugging
+  let sshKeys: number[] = [];
+  try {
+    const keysRes = await doFetch("/account/keys");
+    const keysData = await keysRes.json();
+    sshKeys = (keysData.ssh_keys || []).map((k: { id: number }) => k.id);
+  } catch {
+    // No SSH keys, that's ok
+  }
+
   // Create the droplet via DO API
   const res = await doFetch("/droplets", {
     method: "POST",
@@ -180,6 +235,7 @@ export async function createCompanyDroplet(companyId: string): Promise<{
       user_data: userData,
       tags: ["ai-employees", `company:${company.slug}`],
       monitoring: true,
+      ...(sshKeys.length > 0 ? { ssh_keys: sshKeys } : {}),
     }),
   });
 
