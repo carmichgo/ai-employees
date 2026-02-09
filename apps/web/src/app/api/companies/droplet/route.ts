@@ -33,8 +33,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Company not found" }, { status: 404 });
   }
 
-  // Poll for updates (including phase info even when active)
-  if (company.dropletStatus === "provisioning" || company.dropletStatus === "booting" || company.dropletStatus === "active") {
+  // Poll for updates (including phase info even when active or errored)
+  if (company.dropletStatus === "provisioning" || company.dropletStatus === "booting" || company.dropletStatus === "active" || company.dropletStatus === "error") {
     const result = await pollDropletStatus(session.companyId);
     return NextResponse.json({
       droplet: {

@@ -375,10 +375,22 @@ export async function pollDropletStatus(companyId: string): Promise<{
     return { status: "none", ip: null, phase: null };
   }
 
-  // Even if already "active", check what phase the API is in
-  if (company.dropletStatus === "active" && company.dropletIp) {
+  // If active or error with an IP, check what phase the API is in
+  // This also allows recovery from "error" state if the health endpoint is still responding
+  if ((company.dropletStatus === "active" || company.dropletStatus === "error") && company.dropletIp) {
     const apiCheck = await checkDropletApi(company.dropletIp, company.interserviceSecret || "");
-    return { status: "active", ip: company.dropletIp, phase: apiCheck.phase };
+    if (apiCheck.ok) {
+      // Health endpoint responding — mark as active if it was in error state
+      if (company.dropletStatus === "error") {
+        await db
+          .update(companies)
+          .set({ dropletStatus: "active", updatedAt: new Date() })
+          .where(eq(companies.id, companyId));
+      }
+      return { status: "active", ip: company.dropletIp, phase: apiCheck.phase };
+    }
+    // Health endpoint not responding — keep current status
+    return { status: company.dropletStatus, ip: company.dropletIp, phase: null };
   }
 
   try {

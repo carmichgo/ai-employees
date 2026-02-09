@@ -47,8 +47,9 @@ export async function POST(request: NextRequest) {
       .where(eq(companies.id, company.id));
   }
 
-  // If there's an error, mark the droplet as errored
-  if (body.status === "error") {
+  // Only set error status for Phase 1 failures (before placeholder is running)
+  // Phase 2 errors (prefixed with "phase2-") are non-fatal since the placeholder is still serving
+  if (body.status === "error" && !body.step.startsWith("phase2")) {
     await db
       .update(companies)
       .set({
