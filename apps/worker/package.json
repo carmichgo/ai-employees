@@ -10,10 +10,11 @@
   },
   "dependencies": {
     "@ai-employees/db": "workspace:*",
-    "@ai-employees/shared": "workspace:*",
     "@ai-employees/openclaw-config": "workspace:*",
+    "@ai-employees/shared": "workspace:*",
     "bullmq": "^5.30.0",
     "dockerode": "^4.0.0",
+    "drizzle-orm": "^0.38.0",
     "ioredis": "^5.4.0"
   },
   "devDependencies": {

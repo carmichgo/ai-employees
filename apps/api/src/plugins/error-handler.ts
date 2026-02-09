@@ -10,9 +10,10 @@ export async function errorHandlerPlugin(fastify: FastifyInstance) {
       });
     }
 
-    if (error.statusCode) {
-      return reply.status(error.statusCode).send({
-        error: error.message,
+    const fastifyError = error as { statusCode?: number; message: string };
+    if (fastifyError.statusCode) {
+      return reply.status(fastifyError.statusCode).send({
+        error: fastifyError.message,
       });
     }
 

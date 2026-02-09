@@ -228,7 +228,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
         return reply.status(res.status).send({ error: `OpenClaw error: ${err}` });
       }
 
-      const data = await res.json();
+      const data = await res.json() as { choices?: { message?: { content?: string } }[]; usage?: unknown };
       const assistantMessage = data.choices?.[0]?.message?.content || "No response";
 
       return {
