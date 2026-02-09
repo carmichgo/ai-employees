@@ -197,7 +197,7 @@ export default function SettingsPage() {
                 <RefreshCw size={12} /> Refresh
               </button>
             )}
-            {droplet?.status === "active" && (
+            {(droplet?.status === "active" || droplet?.status === "booting" || droplet?.status === "provisioning" || droplet?.status === "error") && (
               <button
                 className="btn-danger btn-sm"
                 onClick={handleDestroy}
