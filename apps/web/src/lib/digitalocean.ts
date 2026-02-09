@@ -54,6 +54,13 @@ function generateCloudInit(params: {
   repoUrl: string;
   repoBranch: string;
 }): string {
+  // Generate secrets in JS so they're embedded as actual values
+  const jwtSecret = crypto.randomBytes(32).toString("hex");
+  const encryptionKey = crypto.randomBytes(32).toString("hex");
+
+  // Escape any special chars in the database URL for shell
+  const dbUrl = params.databaseUrl.replace(/'/g, "'\\''");
+
   return `#!/bin/bash
 set -euo pipefail
 
@@ -95,13 +102,13 @@ ufw --force enable
 mkdir -p /opt/ai-employees
 cd /opt/ai-employees
 
-# Write environment file
+# Write environment file (all values pre-generated)
 cat > .env << 'ENVEOF'
-DATABASE_URL=${params.databaseUrl}
+DATABASE_URL=${dbUrl}
 REDIS_URL=redis://redis:6379
-JWT_SECRET=$(openssl rand -hex 32)
+JWT_SECRET=${jwtSecret}
 JWT_EXPIRES_IN=7d
-ENCRYPTION_KEY=$(openssl rand -hex 32)
+ENCRYPTION_KEY=${encryptionKey}
 INTERSERVICE_SECRET=${params.interserviceSecret}
 OPENCLAW_IMAGE=openclaw:latest
 OPENCLAW_NETWORK=ai-employees-internal
@@ -258,13 +265,13 @@ export async function pollDropletStatus(companyId: string): Promise<{
 }
 
 /** Check if the droplet's API is responding */
-async function checkDropletApi(ip: string, secret: string): Promise<boolean> {
+async function checkDropletApi(ip: string, _secret: string): Promise<boolean> {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
 
+    // /health is on the root Fastify instance, no auth required
     const res = await fetch(`http://${ip}:3001/health`, {
-      headers: { "x-interservice-secret": secret },
       signal: controller.signal,
     });
 
