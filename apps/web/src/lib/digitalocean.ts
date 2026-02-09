@@ -136,8 +136,19 @@ API_PORT=3001
 PLATFORM_URL=${params.platformUrl}
 ENVEOF
 
-# Clone repo
-git clone --depth 1 --branch ${params.repoBranch} ${params.repoUrl} /opt/ai-employees/app
+# Diagnostics before clone
+echo "Git version: $(git --version)"
+echo "Testing DNS: $(host github.com 2>&1 || true)"
+echo "Testing HTTPS: $(curl -sI https://github.com 2>&1 | head -1 || true)"
+echo "Branch: ${params.repoBranch}"
+echo "Repo: ${params.repoUrl}"
+
+# Clone repo (with verbose output for debugging)
+if ! git clone --depth 1 --branch "${params.repoBranch}" "${params.repoUrl}" /opt/ai-employees/app 2>&1; then
+  report "clone-failed" "error" "git clone failed - see init log"
+  exit 1
+fi
+
 cd /opt/ai-employees/app
 cp /opt/ai-employees/.env .env
 
