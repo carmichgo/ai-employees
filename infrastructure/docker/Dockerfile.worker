@@ -10,12 +10,12 @@ COPY packages/openclaw-config/package.json ./packages/openclaw-config/
 COPY apps/worker/package.json ./apps/worker/
 RUN pnpm install --frozen-lockfile || pnpm install
 
-# Copy source
-COPY tsconfig.base.json ./
+# Copy source + turbo config
+COPY tsconfig.base.json turbo.json ./
 COPY packages/ ./packages/
 COPY apps/worker/ ./apps/worker/
 
-# Build
-RUN pnpm --filter @ai-employees/worker build
+# Build all workspace dependencies then the worker (turbo handles dependency order)
+RUN pnpm turbo build --filter=@ai-employees/worker
 
 CMD ["node", "apps/worker/dist/index.js"]
