@@ -73,10 +73,10 @@ echo "Starting cloud-init at $(date)"
 report() {
   local step="$1" status="$2" error="\${3:-}"
   echo "[$(date)] STEP=$step STATUS=$status ERROR=$error"
-  curl -sf -X POST "${params.platformUrl}/api/companies/droplet/callback" \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer ${params.interserviceSecret}" \
-    -d "{\\"step\\":\\"$step\\",\\"status\\":\\"$status\\",\\"error\\":\\"$error\\"}" \
+  curl -sf -X POST "${params.platformUrl}/api/companies/droplet/callback" \\
+    -H "Content-Type: application/json" \\
+    -H "Authorization: Bearer ${params.interserviceSecret}" \\
+    -d "{\\"step\\":\\"$step\\",\\"status\\":\\"$status\\",\\"error\\":\\"$error\\"}" \\
     || true
 }
 
@@ -90,38 +90,31 @@ trap 'on_error $LINENO' ERR
 
 report "system-update" "started"
 
-# Update system
+# Update system and install basics
 apt-get update -qq
-apt-get upgrade -y -qq
+apt-get install -y -qq git ufw fail2ban redis-server curl
 
-report "docker-install" "started"
+report "node-install" "started"
 
-# Install Docker
-if ! command -v docker &> /dev/null; then
-  curl -fsSL https://get.docker.com | sh
-  systemctl enable docker
-  systemctl start docker
-fi
+# Install Node.js 22
+curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+apt-get install -y -qq nodejs
 
-# Install Docker Compose plugin
-if ! docker compose version &> /dev/null; then
-  apt-get install -y -qq docker-compose-plugin
-fi
-
-report "tools-install" "started"
-
-# Install tools
-apt-get install -y -qq git ufw fail2ban
+# Install pnpm
+corepack enable
+corepack prepare pnpm@9.15.0 --activate
 
 # Configure firewall
 ufw --force reset
 ufw default deny incoming
 ufw default allow outgoing
 ufw allow ssh
-ufw allow 80/tcp
-ufw allow 443/tcp
 ufw allow 3001/tcp
 ufw --force enable
+
+# Configure Redis to listen on localhost only
+systemctl enable redis-server
+systemctl start redis-server
 
 report "clone-repo" "started"
 
@@ -129,10 +122,10 @@ report "clone-repo" "started"
 mkdir -p /opt/ai-employees
 cd /opt/ai-employees
 
-# Write environment file (all values pre-generated)
+# Write environment file
 cat > .env << 'ENVEOF'
 DATABASE_URL=${dbUrl}
-REDIS_URL=redis://redis:6379
+REDIS_URL=redis://127.0.0.1:6379
 JWT_SECRET=${jwtSecret}
 JWT_EXPIRES_IN=7d
 ENCRYPTION_KEY=${encryptionKey}
@@ -143,34 +136,85 @@ API_PORT=3001
 PLATFORM_URL=${params.platformUrl}
 ENVEOF
 
-# Clone repo and start services
+# Clone repo
 git clone --depth 1 --branch ${params.repoBranch} ${params.repoUrl} /opt/ai-employees/app
 cd /opt/ai-employees/app
 cp /opt/ai-employees/.env .env
 
-report "docker-build" "started"
+report "build" "started"
 
-# Build and start
-docker compose up -d --build 2>&1 | tail -50
+# Install dependencies and build
+pnpm install --frozen-lockfile || pnpm install
+pnpm turbo build --filter=@ai-employees/api --filter=@ai-employees/worker
 
-report "docker-health" "started"
+# Patch package.json main fields for Node.js ESM runtime
+sed -i 's|"main": "src/index.ts"|"main": "dist/index.js"|g' packages/*/package.json
 
-# Wait for API to be healthy (up to 120s)
-for i in $(seq 1 24); do
+report "services-start" "started"
+
+# Create systemd service for API
+cat > /etc/systemd/system/ai-employees-api.service << 'SVCEOF'
+[Unit]
+Description=AI Employees API
+After=network.target redis-server.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/ai-employees/app
+EnvironmentFile=/opt/ai-employees/.env
+ExecStart=/usr/bin/node apps/api/dist/index.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+
+# Create systemd service for Worker
+cat > /etc/systemd/system/ai-employees-worker.service << 'SVCEOF'
+[Unit]
+Description=AI Employees Worker
+After=network.target redis-server.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/ai-employees/app
+EnvironmentFile=/opt/ai-employees/.env
+ExecStart=/usr/bin/node apps/worker/dist/index.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+
+# Start services
+systemctl daemon-reload
+systemctl enable ai-employees-api ai-employees-worker
+systemctl start ai-employees-api ai-employees-worker
+
+report "health-check" "started"
+
+# Wait for API to be healthy (up to 60s)
+for i in $(seq 1 12); do
   if curl -sf http://localhost:3001/health > /dev/null 2>&1; then
     report "ready" "ok"
     echo "READY" > /opt/ai-employees/status
     echo "Cloud-init complete at $(date)"
     exit 0
   fi
-  echo "Waiting for API... attempt $i/24"
+  echo "Waiting for API... attempt $i/12"
   sleep 5
 done
 
 # If we get here, API didn't come up
-report "ready" "error" "API failed to respond on port 3001 after 120s"
-echo "Docker container logs:" >> /var/log/ai-employees-init.log
-docker compose logs --tail=100 >> /var/log/ai-employees-init.log 2>&1
+report "ready" "error" "API failed to respond on port 3001 after 60s"
+echo "API service logs:" >> /var/log/ai-employees-init.log
+journalctl -u ai-employees-api --no-pager -n 50 >> /var/log/ai-employees-init.log 2>&1
+echo "Worker service logs:" >> /var/log/ai-employees-init.log
+journalctl -u ai-employees-worker --no-pager -n 50 >> /var/log/ai-employees-init.log 2>&1
 echo "FAILED" > /opt/ai-employees/status
 `;
 }
