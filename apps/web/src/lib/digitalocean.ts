@@ -118,6 +118,8 @@ httpd = socketserver.TCPServer(("0.0.0.0", 3001), H)
 httpd.serve_forever()
 PYEOF
 
+mkdir -p /opt/ai-employees
+
 python3 /opt/health-server.py &
 HEALTH_PID=$!
 echo "Placeholder health server started on :3001 (PID \$HEALTH_PID)"
@@ -140,15 +142,16 @@ report "phase2-node-install" "started"
 
 # Install Node.js 22
 curl -fsSL https://deb.nodesource.com/setup_22.x | bash - || {
-  report "node-install" "error" "nodesource setup failed"
+  report "phase2-node-install" "error" "nodesource setup failed"
 }
 apt-get install -y -qq nodejs || {
-  report "node-install" "error" "nodejs install failed"
+  report "phase2-node-install" "error" "nodejs install failed"
 }
 
-# Install pnpm
-corepack enable || true
-corepack prepare pnpm@9.15.0 --activate || true
+# Install pnpm (try corepack first, fallback to npm)
+corepack enable 2>/dev/null && corepack prepare pnpm@9.15.0 --activate 2>/dev/null || {
+  npm install -g pnpm@9.15.0 || true
+}
 
 # Configure Redis
 systemctl enable redis-server || true
