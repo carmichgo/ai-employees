@@ -54,6 +54,7 @@ function generateCloudInit(params: {
   repoUrl: string;
   repoBranch: string;
   anthropicApiKey: string;
+  braveApiKey: string;
 }): string {
   // Generate secrets in JS so they're embedded as actual values
   const jwtSecret = crypto.randomBytes(32).toString("hex");
@@ -225,6 +226,7 @@ OPENCLAW_NETWORK=ai-employees-internal
 API_PORT=3001
 PLATFORM_URL=${params.platformUrl}
 ANTHROPIC_API_KEY=${params.anthropicApiKey}
+BRAVE_API_KEY=${params.braveApiKey}
 ENVEOF
 
 # Download repo — try tarball first, then git clone as fallback
@@ -342,7 +344,7 @@ sleep 2
 echo "Testing API startup..."
 cd /opt/ai-employees/app
 source /opt/ai-employees/.env
-export DATABASE_URL REDIS_URL JWT_SECRET JWT_EXPIRES_IN ENCRYPTION_KEY INTERSERVICE_SECRET OPENCLAW_IMAGE OPENCLAW_NETWORK API_PORT PLATFORM_URL ANTHROPIC_API_KEY NODE_ENV=production
+export DATABASE_URL REDIS_URL JWT_SECRET JWT_EXPIRES_IN ENCRYPTION_KEY INTERSERVICE_SECRET OPENCLAW_IMAGE OPENCLAW_NETWORK API_PORT PLATFORM_URL ANTHROPIC_API_KEY BRAVE_API_KEY NODE_ENV=production
 timeout 10 /usr/bin/node apps/api/dist/index.js > /tmp/api-test.log 2>&1 &
 TEST_PID=\$!
 sleep 5
@@ -437,6 +439,7 @@ export async function createCompanyDroplet(companyId: string): Promise<{
   const size = PLAN_DROPLET_SIZES[company.plan] || PLAN_DROPLET_SIZES.starter;
 
   const anthropicApiKey = process.env.ANTHROPIC_API_KEY || "";
+  const braveApiKey = process.env.BRAVE_API_KEY || "";
 
   const userData = generateCloudInit({
     companySlug: company.slug,
@@ -446,6 +449,7 @@ export async function createCompanyDroplet(companyId: string): Promise<{
     repoUrl: REPO_URL,
     repoBranch: REPO_BRANCH,
     anthropicApiKey,
+    braveApiKey,
   });
 
   // Get SSH keys from DO account (if any) so the user can SSH in for debugging

@@ -14,6 +14,7 @@ import { docker, ensureNetwork, ensureImage } from "../docker/client.js";
 const OPENCLAW_IMAGE = process.env.OPENCLAW_IMAGE || "ghcr.io/openclaw/openclaw:latest";
 const OPENCLAW_NETWORK = process.env.OPENCLAW_NETWORK || "ai-employees-internal";
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
+const BRAVE_API_KEY = process.env.BRAVE_API_KEY || "";
 
 export interface ProvisionJobData {
   employeeId: string;
@@ -107,6 +108,7 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
         `NODE_OPTIONS=--max-old-space-size=1536`,
         `OPENCLAW_GATEWAY_TOKEN=${employee.gatewayToken}`,
         `ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}`,
+        ...(BRAVE_API_KEY ? [`BRAVE_API_KEY=${BRAVE_API_KEY}`] : []),
         `EMPLOYEE_EMAIL=${emailAddress}`,
         `EMPLOYEE_NAME=${employee.name}`,
         `EMPLOYEE_JOB_TITLE=${employee.jobTitle}`,
