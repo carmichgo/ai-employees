@@ -91,8 +91,8 @@ export function generateOpenClawConfig(
 ): OpenClawConfig {
   const agentId = slugify(employee.name);
 
-  // Always include webchat channel for dashboard chat interface
-  const allChannels = ensureDefaultChannels(employee.channels);
+  // Chat works via gateway HTTP API (/v1/chat/completions), not a channel
+  const allChannels = employee.channels;
 
   const config: OpenClawConfig = {
     gateway: {
@@ -196,66 +196,35 @@ function ensureDefaultChannels(channels: ChannelInput[]): ChannelInput[] {
   return result;
 }
 
+// Valid OpenClaw channel types
+const VALID_OPENCLAW_CHANNELS = new Set([
+  "slack", "discord", "telegram", "whatsapp", "signal", "matrix",
+  "google-chat", "teams", "bluebubbles", "zalo",
+]);
+
+/** Filter to only channels OpenClaw supports (email, browser, webchat are not real channels) */
+function filterValidChannels(channels: ChannelInput[]): ChannelInput[] {
+  return channels.filter((ch) => VALID_OPENCLAW_CHANNELS.has(ch.type));
+}
+
 function buildChannels(channels: ChannelInput[]): Record<string, ChannelConfig> {
   const result: Record<string, ChannelConfig> = {};
 
-  for (const ch of channels) {
-    switch (ch.type) {
-      case "slack":
-        result.slack = {
-          enabled: true,
-          ...ch.credentials,
-          ...ch.config,
-        };
-        break;
-      case "discord":
-        result.discord = {
-          enabled: true,
-          ...ch.credentials,
-          ...ch.config,
-        };
-        break;
-      case "telegram":
-        result.telegram = {
-          enabled: true,
-          ...ch.credentials,
-          ...ch.config,
-        };
-        break;
-      case "whatsapp":
-        result.whatsapp = {
-          enabled: true,
-          ...ch.credentials,
-          ...ch.config,
-        };
-        break;
-      case "email":
-        result.email = {
-          enabled: true,
-          ...ch.credentials,
-          ...ch.config,
-        };
-        break;
-      case "webchat":
-        result.webchat = {
-          enabled: true,
-          ...ch.config,
-        };
-        break;
-      default:
-        result[ch.type] = {
-          enabled: true,
-          ...ch.credentials,
-          ...ch.config,
-        };
-    }
+  for (const ch of filterValidChannels(channels)) {
+    result[ch.type] = {
+      enabled: true,
+      ...ch.credentials,
+      ...ch.config,
+    };
   }
 
   return result;
 }
 
 function buildBindings(agentId: string, channels: ChannelInput[]): BindingConfig[] {
-  return channels.map((ch) => ({
+  const valid = filterValidChannels(channels);
+  if (valid.length === 0) return [];
+  return valid.map((ch) => ({
     agentId,
     match: {
       channel: ch.type,
