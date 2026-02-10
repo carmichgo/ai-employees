@@ -100,6 +100,7 @@ cat > /opt/health-server.py << 'PYEOF'
 import http.server, json, socketserver, os
 
 STATUS_FILE = "/opt/ai-employees/status"
+LOG_FILE = "/var/log/ai-employees-init.log"
 
 def get_phase():
     try:
@@ -108,11 +109,19 @@ def get_phase():
         if status == "READY":
             return "ready"
         elif status.startswith("PHASE2_FAILED"):
-            return "failed"
+            return status
         else:
             return "provisioning"
     except:
         return "provisioning"
+
+def get_logs(tail=100):
+    try:
+        with open(LOG_FILE) as f:
+            lines = f.readlines()
+        return "".join(lines[-tail:])
+    except:
+        return "No logs available"
 
 class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
@@ -122,6 +131,8 @@ class H(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         if self.path == "/health" or self.path == "/api/health":
             self.wfile.write(json.dumps({"status": "ok", "phase": phase}).encode())
+        elif self.path == "/logs":
+            self.wfile.write(json.dumps({"phase": phase, "logs": get_logs()}).encode())
         elif self.path == "/phase":
             self.wfile.write(json.dumps({"phase": phase}).encode())
         else:
