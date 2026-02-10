@@ -306,9 +306,33 @@ RestartSec=5
 WantedBy=multi-user.target
 SVCEOF
 
-# Kill placeholder health server and start real services
+# Kill placeholder health server — force kill all python on port 3001
 kill \$HEALTH_PID 2>/dev/null || true
-sleep 1
+# Also kill by port in case PID is stale
+fuser -k 3001/tcp 2>/dev/null || true
+sleep 2
+
+# First, test if the API can start at all (capture errors)
+echo "Testing API startup..."
+cd /opt/ai-employees/app
+source /opt/ai-employees/.env
+export DATABASE_URL REDIS_URL JWT_SECRET JWT_EXPIRES_IN ENCRYPTION_KEY INTERSERVICE_SECRET OPENCLAW_IMAGE OPENCLAW_NETWORK API_PORT PLATFORM_URL
+timeout 10 /usr/bin/node apps/api/dist/index.js > /tmp/api-test.log 2>&1 &
+TEST_PID=\$!
+sleep 5
+
+if curl -sf http://localhost:3001/health > /dev/null 2>&1; then
+  echo "Direct test: API started successfully!"
+  kill \$TEST_PID 2>/dev/null || true
+  fuser -k 3001/tcp 2>/dev/null || true
+  sleep 1
+else
+  echo "Direct test: API failed to start. Output:"
+  kill \$TEST_PID 2>/dev/null || true
+  cat /tmp/api-test.log 2>/dev/null || true
+  fuser -k 3001/tcp 2>/dev/null || true
+  sleep 1
+fi
 
 systemctl daemon-reload
 systemctl enable ai-employees-api ai-employees-worker
@@ -326,10 +350,14 @@ for i in \$(seq 1 12); do
   sleep 5
 done
 
-# If we get here, real API didn't come up — restart placeholder
+# If we get here, real API didn't come up — capture detailed errors
 report "phase2-ready" "error" "API failed on port 3001 after 60s"
-echo "API service logs:" >> /var/log/ai-employees-init.log
+echo "=== systemctl status ===" >> /var/log/ai-employees-init.log
+systemctl status ai-employees-api --no-pager >> /var/log/ai-employees-init.log 2>&1
+echo "=== journalctl ===" >> /var/log/ai-employees-init.log
 journalctl -u ai-employees-api --no-pager -n 50 >> /var/log/ai-employees-init.log 2>&1
+echo "=== direct test output ===" >> /var/log/ai-employees-init.log
+cat /tmp/api-test.log >> /var/log/ai-employees-init.log 2>&1
 python3 /opt/health-server.py &
 echo "PHASE2_FAILED" > /opt/ai-employees/status
 `;
