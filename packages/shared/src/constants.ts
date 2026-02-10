@@ -5,9 +5,9 @@ export const PLAN_LIMITS = {
 } as const;
 
 export const CONTAINER_RESOURCES = {
-  starter: { memory: "1g", cpus: "0.5" },
-  professional: { memory: "2g", cpus: "1.0" },
-  enterprise: { memory: "4g", cpus: "2.0" },
+  starter: { memory: "2g", cpus: "1.0" },
+  professional: { memory: "4g", cpus: "2.0" },
+  enterprise: { memory: "8g", cpus: "4.0" },
 } as const;
 
 export const EMPLOYEE_STATUSES = [

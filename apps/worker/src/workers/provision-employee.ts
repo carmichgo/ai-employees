@@ -103,6 +103,7 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
       Cmd: ["node", "openclaw.mjs", "gateway", "--bind", "lan", "--allow-unconfigured"],
       Env: [
         `HOME=/home/node`,
+        `NODE_OPTIONS=--max-old-space-size=1536`,
         `OPENCLAW_GATEWAY_TOKEN=${employee.gatewayToken}`,
         `ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}`,
         `EMPLOYEE_EMAIL=${emailAddress}`,
