@@ -131,6 +131,7 @@ class ApiClient {
   async getEmployeeEmail(id: string) {
     return this.request<{
       email: {
+        provider: string;
         address: string;
         imapHost: string;
         imapPort: number;
@@ -143,6 +144,7 @@ class ApiClient {
   }
 
   async saveEmployeeEmail(id: string, data: {
+    provider: string;
     address: string;
     imapHost?: string;
     imapPort?: number;

@@ -47,6 +47,7 @@ export async function GET(
   // Mask the password
   return NextResponse.json({
     email: {
+      provider: email.provider || "custom",
       address: email.address,
       imapHost: email.imapHost,
       imapPort: email.imapPort,
@@ -90,6 +91,7 @@ export async function PUT(
   const accounts = (employee.provisionedAccounts as Record<string, unknown>) || {};
 
   const emailConfig = {
+    provider: body.provider || "custom",
     address: body.address,
     imapHost: body.imapHost || body.smtpHost, // Default IMAP to same as SMTP
     imapPort: body.imapPort || 993,
@@ -117,6 +119,7 @@ export async function PUT(
   return NextResponse.json({
     message: "Email credentials saved",
     email: {
+      provider: emailConfig.provider,
       address: emailConfig.address,
       imapHost: emailConfig.imapHost,
       imapPort: emailConfig.imapPort,

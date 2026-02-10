@@ -172,11 +172,11 @@ export function generateSoulMd(employee: EmployeeInput): string {
   parts.push("");
   parts.push("### Email");
   parts.push("- If your email credentials are configured (check EMAIL_ADDRESS env var), you can send and receive emails");
-  parts.push("- Use `exec` to send emails via the `curl` command with SMTP, or use Python's `smtplib`/`imaplib`");
   parts.push("- Your email credentials are available as environment variables: EMAIL_ADDRESS, EMAIL_SMTP_HOST, EMAIL_SMTP_PORT, EMAIL_IMAP_HOST, EMAIL_IMAP_PORT, EMAIL_USERNAME, EMAIL_PASSWORD");
-  parts.push("- To check for new emails, use Python's `imaplib` to connect to your IMAP server");
-  parts.push("- To send an email, use Python's `smtplib` to connect to your SMTP server");
-  parts.push("- You can also use the `browser` tool to access your email via webmail (Gmail, Outlook, etc.)");
+  parts.push("- EMAIL_PROVIDER tells you the provider (gmail, outlook, yahoo, zoho, icloud, custom)");
+  parts.push("- EMAIL_WEBMAIL contains the webmail URL if available — you can use the `browser` tool to log in and access your inbox directly");
+  parts.push("- **Preferred method**: Use the `browser` tool to access your webmail (e.g., navigate to EMAIL_WEBMAIL, log in with your credentials)");
+  parts.push("- **Alternative**: Use Python's `smtplib` to send emails and `imaplib` to read emails programmatically");
   parts.push("");
   parts.push("### Scheduling");
   parts.push("- Use `cron` to schedule recurring tasks (e.g., daily reports, periodic checks)");

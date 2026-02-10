@@ -240,13 +240,26 @@ function parseCpus(cpus: string): number {
   return Math.floor(parseFloat(cpus) * 1e9);
 }
 
+/** Webmail URLs by provider for browser-based email access */
+const PROVIDER_WEBMAIL: Record<string, string> = {
+  gmail: "https://mail.google.com",
+  outlook: "https://outlook.live.com",
+  yahoo: "https://mail.yahoo.com",
+  zoho: "https://mail.zoho.com",
+  icloud: "https://www.icloud.com/mail",
+};
+
 /** Build email env vars from provisionedAccounts.email if configured */
 function buildEmailEnvVars(accounts: Record<string, unknown> | null): string[] {
   if (!accounts?.email) return [];
   const email = accounts.email as Record<string, unknown>;
   if (!email.address || !email.smtpHost || !email.username || !email.password) return [];
 
+  const provider = (email.provider as string) || "custom";
+  const webmail = PROVIDER_WEBMAIL[provider] || "";
+
   return [
+    `EMAIL_PROVIDER=${provider}`,
     `EMAIL_ADDRESS=${email.address}`,
     `EMAIL_SMTP_HOST=${email.smtpHost}`,
     `EMAIL_SMTP_PORT=${email.smtpPort || 587}`,
@@ -254,5 +267,6 @@ function buildEmailEnvVars(accounts: Record<string, unknown> | null): string[] {
     `EMAIL_IMAP_PORT=${email.imapPort || 993}`,
     `EMAIL_USERNAME=${email.username}`,
     `EMAIL_PASSWORD=${email.password}`,
+    ...(webmail ? [`EMAIL_WEBMAIL=${webmail}`] : []),
   ];
 }
