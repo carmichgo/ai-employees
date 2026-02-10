@@ -196,10 +196,12 @@ function ensureDefaultChannels(channels: ChannelInput[]): ChannelInput[] {
   return result;
 }
 
-// Valid OpenClaw channel types
+// Valid OpenClaw channel types (from https://docs.openclaw.ai/channels/index)
+// WebChat uses gateway directly (no channel config), email/browser are not channels
 const VALID_OPENCLAW_CHANNELS = new Set([
-  "slack", "discord", "telegram", "whatsapp", "signal", "matrix",
-  "google-chat", "teams", "bluebubbles", "zalo",
+  "whatsapp", "telegram", "discord", "slack", "feishu", "google-chat",
+  "mattermost", "signal", "bluebubbles", "imessage", "teams", "line",
+  "nextcloud-talk", "matrix", "nostr", "tlon", "twitch", "zalo", "zalo-personal",
 ]);
 
 /** Filter to only channels OpenClaw supports (email, browser, webchat are not real channels) */
