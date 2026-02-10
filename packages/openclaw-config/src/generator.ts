@@ -54,15 +54,13 @@ export function generateOpenClawConfig(
       },
     },
 
-    // Browser: real (non-headless) for Instagram, LinkedIn, etc. that block headless
+    // Browser profiles for CDP/Chrome automation
     browser: {
       defaultProfile: "openclaw",
       profiles: {
         openclaw: {
-          headless: false,
-          noSandbox: true,
+          color: "#4A90D9",
         },
-        chrome: {},
       },
     },
 
