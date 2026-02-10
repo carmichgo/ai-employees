@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
-import { ArrowLeft, Pause, Play, Trash2, Loader2, Server, Mail, Cpu, Clock, Calendar, MessageCircle } from "lucide-react";
+import { ArrowLeft, Pause, Play, Trash2, Loader2, Server, Mail, Cpu, Clock, Calendar, MessageCircle, Save, X, Eye, EyeOff } from "lucide-react";
 import Link from "next/link";
 
 export default function EmployeeDetailPage() {
@@ -13,6 +13,22 @@ export default function EmployeeDetailPage() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
 
+  // Email config state
+  const [emailConfig, setEmailConfig] = useState<any>(null);
+  const [emailEditing, setEmailEditing] = useState(false);
+  const [emailSaving, setEmailSaving] = useState(false);
+  const [emailForm, setEmailForm] = useState({
+    address: "",
+    smtpHost: "",
+    smtpPort: "587",
+    imapHost: "",
+    imapPort: "993",
+    username: "",
+    password: "",
+  });
+  const [showPassword, setShowPassword] = useState(false);
+  const [emailNotice, setEmailNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
   const employeeId = params.id as string;
 
   useEffect(() => {
@@ -20,6 +36,21 @@ export default function EmployeeDetailPage() {
       setEmployee(res.employee);
       setLoading(false);
     });
+    // Load email config
+    api.getEmployeeEmail(employeeId).then((res) => {
+      if (res.email) {
+        setEmailConfig(res.email);
+        setEmailForm({
+          address: res.email.address || "",
+          smtpHost: res.email.smtpHost || "",
+          smtpPort: String(res.email.smtpPort || 587),
+          imapHost: res.email.imapHost || "",
+          imapPort: String(res.email.imapPort || 993),
+          username: res.email.username || "",
+          password: "",
+        });
+      }
+    }).catch(() => {});
   }, [employeeId]);
 
   const handlePause = async () => {
@@ -47,6 +78,44 @@ export default function EmployeeDetailPage() {
     } catch (err: any) {
       alert(`Failed to terminate: ${err.message}`);
       setActionLoading(false);
+    }
+  };
+
+  const handleSaveEmail = async () => {
+    setEmailSaving(true);
+    setEmailNotice(null);
+    try {
+      const res = await api.saveEmployeeEmail(employeeId, {
+        address: emailForm.address,
+        smtpHost: emailForm.smtpHost,
+        smtpPort: parseInt(emailForm.smtpPort) || 587,
+        imapHost: emailForm.imapHost || emailForm.smtpHost,
+        imapPort: parseInt(emailForm.imapPort) || 993,
+        username: emailForm.username,
+        password: emailForm.password,
+      });
+      setEmailConfig(res.email);
+      setEmailEditing(false);
+      setEmailNotice({ type: "success", message: "Email credentials saved" });
+      // Update employee email display
+      setEmployee((prev: any) => ({ ...prev, emailAddress: emailForm.address }));
+    } catch (err: any) {
+      setEmailNotice({ type: "error", message: err.message });
+    } finally {
+      setEmailSaving(false);
+    }
+  };
+
+  const handleRemoveEmail = async () => {
+    if (!confirm("Remove email credentials? The employee will lose email access.")) return;
+    try {
+      await api.removeEmployeeEmail(employeeId);
+      setEmailConfig(null);
+      setEmailForm({ address: "", smtpHost: "", smtpPort: "587", imapHost: "", imapPort: "993", username: "", password: "" });
+      setEmailEditing(false);
+      setEmailNotice({ type: "success", message: "Email credentials removed" });
+    } catch (err: any) {
+      setEmailNotice({ type: "error", message: err.message });
     }
   };
 
@@ -250,7 +319,7 @@ export default function EmployeeDetailPage() {
       </div>
 
       {/* Technical details */}
-      <div className="card" style={{ padding: 20 }}>
+      <div className="card" style={{ padding: 20, marginBottom: 16 }}>
         <p className="label" style={{ marginBottom: 16 }}>Technical Details</p>
         <div
           style={{
@@ -280,6 +349,211 @@ export default function EmployeeDetailPage() {
             );
           })}
         </div>
+      </div>
+
+      {/* Email Credentials */}
+      <div className="card" style={{ padding: 20 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Mail size={14} style={{ color: "var(--text-tertiary)" }} />
+            <p className="label" style={{ margin: 0 }}>Email Account</p>
+          </div>
+          {!emailEditing && (
+            <button
+              className="btn-secondary btn-sm"
+              onClick={() => setEmailEditing(true)}
+              style={{ fontSize: 12 }}
+            >
+              {emailConfig ? "Edit" : "Set Up"}
+            </button>
+          )}
+        </div>
+
+        {emailNotice && (
+          <div style={{
+            padding: "8px 12px",
+            borderRadius: 6,
+            marginBottom: 12,
+            fontSize: 12,
+            background: emailNotice.type === "success" ? "rgba(34, 197, 94, 0.1)" : "rgba(239, 68, 68, 0.1)",
+            color: emailNotice.type === "success" ? "#22c55e" : "#ef4444",
+          }}>
+            {emailNotice.message}
+          </div>
+        )}
+
+        {!emailEditing && !emailConfig && (
+          <div style={{ fontSize: 13, color: "var(--text-tertiary)", lineHeight: 1.6 }}>
+            No email configured. Set up email credentials so this employee can send and receive emails.
+            Create an email account for them on your company&apos;s email provider (Google Workspace, Outlook, etc.) and enter the credentials here.
+          </div>
+        )}
+
+        {!emailEditing && emailConfig && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 13 }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span style={{ color: "var(--text-tertiary)" }}>Address</span>
+              <span style={{ fontFamily: "monospace", fontSize: 12 }}>{emailConfig.address}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span style={{ color: "var(--text-tertiary)" }}>SMTP</span>
+              <span style={{ fontFamily: "monospace", fontSize: 12 }}>{emailConfig.smtpHost}:{emailConfig.smtpPort}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span style={{ color: "var(--text-tertiary)" }}>IMAP</span>
+              <span style={{ fontFamily: "monospace", fontSize: 12 }}>{emailConfig.imapHost}:{emailConfig.imapPort}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span style={{ color: "var(--text-tertiary)" }}>Username</span>
+              <span style={{ fontFamily: "monospace", fontSize: 12 }}>{emailConfig.username}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span style={{ color: "var(--text-tertiary)" }}>Password</span>
+              <span style={{ fontFamily: "monospace", fontSize: 12 }}>{emailConfig.hasPassword ? "********" : "Not set"}</span>
+            </div>
+          </div>
+        )}
+
+        {emailEditing && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ fontSize: 12, color: "var(--text-tertiary)", marginBottom: 4 }}>
+              Create an email account on your provider (Gmail, Outlook, etc.) and enter the IMAP/SMTP credentials below.
+              For Gmail, use an App Password instead of your regular password.
+            </div>
+
+            <div>
+              <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Email Address</label>
+              <input
+                type="email"
+                placeholder="sarah@yourcompany.com"
+                value={emailForm.address}
+                onChange={(e) => setEmailForm((f) => ({ ...f, address: e.target.value }))}
+                className="input"
+                style={{ width: "100%", fontSize: 13 }}
+              />
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "3fr 1fr", gap: 8 }}>
+              <div>
+                <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>SMTP Host</label>
+                <input
+                  type="text"
+                  placeholder="smtp.gmail.com"
+                  value={emailForm.smtpHost}
+                  onChange={(e) => setEmailForm((f) => ({ ...f, smtpHost: e.target.value }))}
+                  className="input"
+                  style={{ width: "100%", fontSize: 13 }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Port</label>
+                <input
+                  type="text"
+                  placeholder="587"
+                  value={emailForm.smtpPort}
+                  onChange={(e) => setEmailForm((f) => ({ ...f, smtpPort: e.target.value }))}
+                  className="input"
+                  style={{ width: "100%", fontSize: 13 }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "3fr 1fr", gap: 8 }}>
+              <div>
+                <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>IMAP Host</label>
+                <input
+                  type="text"
+                  placeholder="imap.gmail.com"
+                  value={emailForm.imapHost}
+                  onChange={(e) => setEmailForm((f) => ({ ...f, imapHost: e.target.value }))}
+                  className="input"
+                  style={{ width: "100%", fontSize: 13 }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Port</label>
+                <input
+                  type="text"
+                  placeholder="993"
+                  value={emailForm.imapPort}
+                  onChange={(e) => setEmailForm((f) => ({ ...f, imapPort: e.target.value }))}
+                  className="input"
+                  style={{ width: "100%", fontSize: 13 }}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Username</label>
+              <input
+                type="text"
+                placeholder="sarah@yourcompany.com"
+                value={emailForm.username}
+                onChange={(e) => setEmailForm((f) => ({ ...f, username: e.target.value }))}
+                className="input"
+                style={{ width: "100%", fontSize: 13 }}
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Password / App Password</label>
+              <div style={{ position: "relative" }}>
+                <input
+                  type={showPassword ? "text" : "password"}
+                  placeholder={emailConfig?.hasPassword ? "Leave blank to keep current" : "Enter password"}
+                  value={emailForm.password}
+                  onChange={(e) => setEmailForm((f) => ({ ...f, password: e.target.value }))}
+                  className="input"
+                  style={{ width: "100%", fontSize: 13, paddingRight: 36 }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  style={{
+                    position: "absolute",
+                    right: 8,
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    color: "var(--text-tertiary)",
+                    padding: 4,
+                  }}
+                >
+                  {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+              <button
+                className="btn-primary btn-sm"
+                onClick={handleSaveEmail}
+                disabled={emailSaving || !emailForm.address || !emailForm.smtpHost || !emailForm.username || (!emailForm.password && !emailConfig?.hasPassword)}
+                style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
+              >
+                <Save size={12} /> {emailSaving ? "Saving..." : "Save"}
+              </button>
+              <button
+                className="btn-secondary btn-sm"
+                onClick={() => { setEmailEditing(false); setEmailNotice(null); }}
+                style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
+              >
+                <X size={12} /> Cancel
+              </button>
+              {emailConfig && (
+                <button
+                  className="btn-danger btn-sm"
+                  onClick={handleRemoveEmail}
+                  style={{ fontSize: 12, marginLeft: "auto" }}
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -127,6 +127,42 @@ class ApiClient {
     });
   }
 
+  // Employee email credentials
+  async getEmployeeEmail(id: string) {
+    return this.request<{
+      email: {
+        address: string;
+        imapHost: string;
+        imapPort: number;
+        smtpHost: string;
+        smtpPort: number;
+        username: string;
+        hasPassword: boolean;
+      } | null;
+    }>(`/api/employees/${id}/email`);
+  }
+
+  async saveEmployeeEmail(id: string, data: {
+    address: string;
+    imapHost?: string;
+    imapPort?: number;
+    smtpHost: string;
+    smtpPort?: number;
+    username: string;
+    password: string;
+  }) {
+    return this.request<{ message: string; email: any }>(`/api/employees/${id}/email`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async removeEmployeeEmail(id: string) {
+    return this.request<{ message: string }>(`/api/employees/${id}/email`, {
+      method: "DELETE",
+    });
+  }
+
   async getChatHistory(id: string) {
     return this.request<{
       messages: Array<{

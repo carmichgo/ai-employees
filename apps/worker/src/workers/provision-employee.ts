@@ -114,6 +114,8 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
         `EMPLOYEE_EMAIL=${emailAddress}`,
         `EMPLOYEE_NAME=${employee.name}`,
         `EMPLOYEE_JOB_TITLE=${employee.jobTitle}`,
+        // Email IMAP/SMTP credentials (if configured by company owner)
+        ...buildEmailEnvVars(employee.provisionedAccounts as Record<string, unknown>),
       ],
       HostConfig: {
         Binds: [
@@ -236,4 +238,21 @@ function parseMemory(mem: string): number {
 
 function parseCpus(cpus: string): number {
   return Math.floor(parseFloat(cpus) * 1e9);
+}
+
+/** Build email env vars from provisionedAccounts.email if configured */
+function buildEmailEnvVars(accounts: Record<string, unknown> | null): string[] {
+  if (!accounts?.email) return [];
+  const email = accounts.email as Record<string, unknown>;
+  if (!email.address || !email.smtpHost || !email.username || !email.password) return [];
+
+  return [
+    `EMAIL_ADDRESS=${email.address}`,
+    `EMAIL_SMTP_HOST=${email.smtpHost}`,
+    `EMAIL_SMTP_PORT=${email.smtpPort || 587}`,
+    `EMAIL_IMAP_HOST=${email.imapHost || email.smtpHost}`,
+    `EMAIL_IMAP_PORT=${email.imapPort || 993}`,
+    `EMAIL_USERNAME=${email.username}`,
+    `EMAIL_PASSWORD=${email.password}`,
+  ];
 }

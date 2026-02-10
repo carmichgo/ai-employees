@@ -443,7 +443,7 @@ function SettingsContent() {
             )}
           </div>
 
-          {/* Email — coming soon */}
+          {/* Email — per-employee config */}
           <div
             style={{
               display: "flex",
@@ -453,7 +453,6 @@ function SettingsContent() {
               borderRadius: 10,
               border: "1px solid var(--border)",
               background: "var(--bg-secondary)",
-              opacity: 0.6,
             }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -461,13 +460,11 @@ function SettingsContent() {
               <div>
                 <div style={{ fontSize: 13, fontWeight: 600 }}>Email</div>
                 <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
-                  Dedicated email addresses for employees
+                  Configure per employee — add IMAP/SMTP credentials on each employee&apos;s page
                 </div>
               </div>
             </div>
-            <span style={{ fontSize: 11, color: "var(--text-tertiary)", fontWeight: 500 }}>
-              Coming soon
-            </span>
+            <CheckCircle2 size={16} style={{ color: "#22c55e", flexShrink: 0 }} />
           </div>
 
           {/* Discord — coming soon */}
