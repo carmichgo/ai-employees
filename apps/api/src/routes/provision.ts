@@ -208,6 +208,11 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     if (employee.containerHost && employee.containerPort) {
       const containerUrl = `http://${employee.containerHost}:${employee.containerPort}/v1/chat/completions`;
       try {
+        // Prepend system message with employee identity
+        const messages = [
+          { role: "system", content: buildSystemPrompt(employee) },
+          ...body.messages,
+        ];
         const res = await fetch(containerUrl, {
           method: "POST",
           headers: {
@@ -216,7 +221,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
           },
           body: JSON.stringify({
             model: (employee.modelConfig as { primary: string }).primary,
-            messages: body.messages,
+            messages,
           }),
         });
         if (!res.ok) {
