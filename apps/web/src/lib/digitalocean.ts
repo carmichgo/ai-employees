@@ -409,8 +409,25 @@ export async function createCompanyDroplet(companyId: string): Promise<{
     .limit(1);
 
   if (!company) throw new Error("Company not found");
-  if (company.dropletStatus === "active") throw new Error("Company already has an active droplet");
   if (company.dropletStatus === "provisioning") throw new Error("Droplet is already being provisioned");
+
+  // If there's a stale "active" droplet, verify it actually exists on DO
+  if (company.dropletStatus === "active" && company.dropletId) {
+    try {
+      await doFetch(`/droplets/${company.dropletId}`);
+      throw new Error("Company already has an active droplet");
+    } catch (err: any) {
+      // Droplet doesn't exist on DO — clean up and allow re-provisioning
+      if (!err.message.includes("already has an active droplet")) {
+        await db
+          .update(companies)
+          .set({ dropletId: null, dropletIp: null, dropletStatus: "destroyed", interserviceSecret: null, updatedAt: new Date() })
+          .where(eq(companies.id, companyId));
+      } else {
+        throw err;
+      }
+    }
+  }
 
   const interserviceSecret = crypto.randomBytes(32).toString("hex");
   const databaseUrl = process.env.DATABASE_URL;
@@ -547,6 +564,12 @@ export async function pollDropletStatus(companyId: string): Promise<{
 
     return { status: "provisioning", ip, phase: null };
   } catch {
+    // DO API failed — droplet may have been destroyed externally
+    // Update DB so the user can re-provision without having to "destroy" first
+    await db
+      .update(companies)
+      .set({ dropletStatus: "error", updatedAt: new Date() })
+      .where(eq(companies.id, companyId));
     return { status: "error", ip: null, phase: null };
   }
 }
