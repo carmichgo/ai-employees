@@ -1,5 +1,46 @@
 import { NextRequest, NextResponse } from "next/server";
 import { neon } from "@neondatabase/serverless";
+import { signToken } from "@/lib/auth";
+
+// GET /api/setup?secret=xxx — get admin token for first user of a company
+export async function GET(request: NextRequest) {
+  const secret = request.nextUrl.searchParams.get("secret");
+  if (secret !== process.env.SETUP_SECRET) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const slug = request.nextUrl.searchParams.get("slug");
+  const sql = neon(process.env.DATABASE_URL!);
+
+  try {
+    // Find company and first user
+    const rows = await sql`
+      SELECT u.id as user_id, u.email, u.role, c.id as company_id, c.slug, c.droplet_id, c.droplet_status
+      FROM users u JOIN companies c ON u.company_id = c.id
+      WHERE (${ slug || '' } = '' OR c.slug = ${ slug || '' })
+      ORDER BY u.created_at ASC LIMIT 1
+    `;
+
+    if (rows.length === 0) {
+      return NextResponse.json({ error: "No users found" }, { status: 404 });
+    }
+
+    const row = rows[0];
+    const token = await signToken({
+      userId: row.user_id as string,
+      companyId: row.company_id as string,
+      role: row.role as string,
+    });
+
+    return NextResponse.json({
+      token,
+      user: { id: row.user_id, email: row.email, role: row.role },
+      company: { id: row.company_id, slug: row.slug, dropletId: row.droplet_id, dropletStatus: row.droplet_status },
+    });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
 
 // One-time setup endpoint to create tables
 // Hit this once after deploying to initialize the database
