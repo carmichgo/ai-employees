@@ -41,8 +41,13 @@ export default function EmployeeDetailPage() {
       return;
     }
     setActionLoading(true);
-    await api.terminateEmployee(employeeId);
-    router.push("/dashboard/employees");
+    try {
+      await api.terminateEmployee(employeeId);
+      router.push("/dashboard/employees");
+    } catch (err: any) {
+      alert(`Failed to terminate: ${err.message}`);
+      setActionLoading(false);
+    }
   };
 
   if (loading || !employee) {

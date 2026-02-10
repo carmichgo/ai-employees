@@ -101,19 +101,18 @@ export async function DELETE(
     return NextResponse.json({ error: "Employee not found" }, { status: 404 });
   }
 
-  // If company has an active droplet, delegate for real container teardown
+  // Try backend teardown if droplet is active (best-effort — don't block on failure)
   const backendConfig = await getCompanyBackend(session.companyId);
   if (backendConfig) {
     try {
       const backend = createBackendClient(backendConfig);
-      const result = await backend.terminateEmployee(id);
-      return NextResponse.json(result);
-    } catch (err: any) {
-      return NextResponse.json({ error: err.message }, { status: 500 });
+      await backend.terminateEmployee(id);
+    } catch {
+      // Backend teardown failed — still mark as terminated in DB
     }
   }
 
-  // Demo mode fallback
+  // Always mark as terminated in the DB
   const [updated] = await db
     .update(employees)
     .set({ status: "terminated", updatedAt: new Date() })
