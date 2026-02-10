@@ -94,20 +94,28 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     // Write OpenClaw config + soul.md to a host directory that gets bind-mounted
     const configDir = `/opt/ai-employees/openclaw-configs/${employeeId}`;
     mkdirSync(`${configDir}/workspace`, { recursive: true });
+    mkdirSync(`${configDir}/workspace/uploads`, { recursive: true });
     writeFileSync(`${configDir}/openclaw.json`, JSON.stringify(config, null, 2));
     writeFileSync(`${configDir}/SOUL.md`, soulMd);
     writeFileSync(`${configDir}/workspace/SOUL.md`, soulMd);
+
+    // Write init script that installs CLI tools before starting OpenClaw
+    writeFileSync(`${configDir}/init.sh`, generateInitScript());
+
     // Fix permissions for the node user (uid 1000) inside the container
     execSync(`chown -R 1000:1000 ${configDir}`);
+    execSync(`chmod +x ${configDir}/init.sh`);
 
-    // Create the container — runs OpenClaw gateway with LAN binding
+    // Create the container — init script installs tools then starts OpenClaw
     const container = await docker.createContainer({
       Image: OPENCLAW_IMAGE,
       name: employee.containerName!,
-      Cmd: ["node", "openclaw.mjs", "gateway", "--bind", "lan", "--allow-unconfigured"],
+      Cmd: ["sh", "-c", "bash /home/node/.openclaw/init.sh"],
+      User: "0", // Run as root so init script can install packages, then drops to node
       Env: [
         `HOME=/home/node`,
         `NODE_OPTIONS=--max-old-space-size=1536`,
+        `DISPLAY=:99`, // Virtual display for real (non-headless) browser via Xvfb
         `OPENCLAW_GATEWAY_TOKEN=${employee.gatewayToken}`,
         `ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}`,
         ...(BRAVE_API_KEY ? [`BRAVE_API_KEY=${BRAVE_API_KEY}`] : []),
@@ -238,6 +246,46 @@ function parseMemory(mem: string): number {
 
 function parseCpus(cpus: string): number {
   return Math.floor(parseFloat(cpus) * 1e9);
+}
+
+/** Generate container init script that installs CLI tools and starts OpenClaw */
+function generateInitScript(): string {
+  return `#!/bin/bash
+set -e
+
+echo "[init] Installing tools..."
+
+# Install system packages (Xvfb for real browser, git, etc.)
+apt-get update -qq 2>/dev/null && apt-get install -y -qq xvfb git curl wget jq python3 python3-pip 2>/dev/null || true
+
+# Start Xvfb virtual display for non-headless browser
+Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp &
+export DISPLAY=:99
+
+# Install himalaya (email CLI for IMAP/SMTP)
+if ! command -v himalaya &>/dev/null; then
+  echo "[init] Installing himalaya..."
+  curl -sSL https://github.com/pimalaya/himalaya/releases/latest/download/himalaya-x86_64-linux-gnu.tar.gz | tar xz -C /usr/local/bin/ 2>/dev/null || true
+fi
+
+# Install GitHub CLI (gh)
+if ! command -v gh &>/dev/null; then
+  echo "[init] Installing GitHub CLI..."
+  curl -sSL https://github.com/cli/cli/releases/latest/download/gh_2.67.0_linux_amd64.tar.gz | tar xz -C /tmp/ 2>/dev/null && cp /tmp/gh_*/bin/gh /usr/local/bin/ 2>/dev/null || true
+fi
+
+# Install Python packages for image/data processing
+pip install --quiet Pillow matplotlib 2>/dev/null || true
+
+# Ensure workspace uploads directory exists
+mkdir -p /home/node/.openclaw/workspace/uploads
+chown -R 1000:1000 /home/node/.openclaw/workspace
+
+echo "[init] Tools installed, starting OpenClaw..."
+
+# Drop privileges and start OpenClaw as node user
+exec su -s /bin/sh node -c 'cd /home/node && exec node openclaw.mjs gateway --bind lan --allow-unconfigured'
+`;
 }
 
 /** Webmail URLs by provider for browser-based email access */

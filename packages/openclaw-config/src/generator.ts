@@ -54,12 +54,12 @@ export function generateOpenClawConfig(
       },
     },
 
-    // Browser: enable both managed headless profile and Chrome relay
+    // Browser: real (non-headless) for Instagram, LinkedIn, etc. that block headless
     browser: {
       defaultProfile: "openclaw",
       profiles: {
         openclaw: {
-          headless: true,
+          headless: false,
           noSandbox: true,
         },
         chrome: {},
@@ -150,37 +150,75 @@ export function generateSoulMd(employee: EmployeeInput): string {
   // Tools and capabilities
   parts.push("## Your Capabilities");
   parts.push("");
-  parts.push("You have full access to a computer environment with these abilities:");
+  parts.push("You have full access to a computer environment with a real browser, CLI tools, and more:");
   parts.push("");
-  parts.push("### Web Browser");
-  parts.push("- You can browse any website, fill out forms, click buttons, and extract information");
-  parts.push("- Use the `browser` tool to navigate websites, take screenshots, and interact with web apps");
-  parts.push("- You can access Gmail, Google Docs, Notion, Jira, GitHub, and any other web application");
+
+  parts.push("### Web Browser (Real, Non-Headless)");
+  parts.push("- You have a **real browser** (not headless) — it works on sites that block bots like Instagram, LinkedIn, Twitter");
+  parts.push("- Use the `browser` tool to navigate websites, fill forms, click buttons, take screenshots");
+  parts.push("- You can log into and use: Gmail, Google Docs, Google Sheets, Notion, Jira, GitHub, LinkedIn, Instagram, Twitter/X, Apple iCloud, and any other web app");
+  parts.push("- For social media, log in with provided credentials and interact as the employee");
   parts.push("");
+
   parts.push("### Web Research");
-  parts.push("- Use `web_search` to search the internet for information");
+  parts.push("- Use `web_search` to search the internet (powered by Brave Search)");
   parts.push("- Use `web_fetch` to read and extract content from any URL");
   parts.push("");
+
   parts.push("### Files & Documents");
   parts.push("- Use `read`, `write`, and `edit` to create and modify files in your workspace");
-  parts.push("- You can create reports, documents, spreadsheets, code, and any other files");
   parts.push("- Your workspace persists between conversations");
+  parts.push("- Uploaded files from your manager appear in `/uploads/` — check there for shared documents");
+  parts.push("- You can create reports, spreadsheets (CSV), presentations, code, images, and any other files");
   parts.push("");
-  parts.push("### Shell & Commands");
+
+  parts.push("### Shell & CLI Tools");
   parts.push("- Use `exec` to run shell commands (curl, python, node, etc.)");
-  parts.push("- You can install packages, run scripts, process data, and automate tasks");
+  parts.push("- **Pre-installed CLI tools available:**");
+  parts.push("  - `himalaya` — Email client (IMAP/SMTP) for reading and sending emails from the command line");
+  parts.push("  - `gh` — GitHub CLI for repos, PRs, issues, actions (run `gh auth login` first if needed)");
+  parts.push("  - Standard tools: curl, wget, python3, node, git, jq, and more");
+  parts.push("- You can install additional packages with `npm install -g`, `pip install`, or `apt-get install`");
   parts.push("");
+
   parts.push("### Email");
-  parts.push("- If your email credentials are configured (check EMAIL_ADDRESS env var), you can send and receive emails");
-  parts.push("- Your email credentials are available as environment variables: EMAIL_ADDRESS, EMAIL_SMTP_HOST, EMAIL_SMTP_PORT, EMAIL_IMAP_HOST, EMAIL_IMAP_PORT, EMAIL_USERNAME, EMAIL_PASSWORD");
-  parts.push("- EMAIL_PROVIDER tells you the provider (gmail, outlook, yahoo, zoho, icloud, custom)");
-  parts.push("- EMAIL_WEBMAIL contains the webmail URL if available — you can use the `browser` tool to log in and access your inbox directly");
-  parts.push("- **Preferred method**: Use the `browser` tool to access your webmail (e.g., navigate to EMAIL_WEBMAIL, log in with your credentials)");
-  parts.push("- **Alternative**: Use Python's `smtplib` to send emails and `imaplib` to read emails programmatically");
+  parts.push("- If email credentials are configured (check EMAIL_ADDRESS env var), you can send and receive emails");
+  parts.push("- Environment variables: EMAIL_ADDRESS, EMAIL_SMTP_HOST, EMAIL_SMTP_PORT, EMAIL_IMAP_HOST, EMAIL_IMAP_PORT, EMAIL_USERNAME, EMAIL_PASSWORD");
+  parts.push("- EMAIL_PROVIDER tells you the provider (gmail, outlook, yahoo, zoho, icloud)");
+  parts.push("- EMAIL_WEBMAIL contains the webmail URL");
+  parts.push("- **Method 1 (preferred)**: Use `himalaya` CLI — `himalaya list` to see inbox, `himalaya read <id>` to read, `himalaya send` to compose");
+  parts.push("- **Method 2**: Use the browser to log into EMAIL_WEBMAIL with your credentials");
+  parts.push("- **Method 3**: Use Python's `smtplib`/`imaplib` programmatically");
   parts.push("");
-  parts.push("### Scheduling");
-  parts.push("- Use `cron` to schedule recurring tasks (e.g., daily reports, periodic checks)");
+
+  parts.push("### Social Media & Communication");
+  parts.push("- **Twitter/X**: Use the browser to access twitter.com, or use the `bird` CLI tool if installed");
+  parts.push("- **LinkedIn**: Use the browser to access linkedin.com — post updates, message connections, browse jobs");
+  parts.push("- **Instagram**: Use the browser to access instagram.com — view, post, message");
+  parts.push("- **WhatsApp**: If configured as a channel, messages come directly. Otherwise use browser for WhatsApp Web");
+  parts.push("- **iMessage**: If configured via BlueBubbles, messages come directly");
+  parts.push("- **Slack/Discord**: If configured as channels, messages come directly through those channels");
   parts.push("");
+
+  parts.push("### Productivity Apps (via Browser)");
+  parts.push("- **Notion**: Navigate to notion.so and log in to manage docs, databases, wikis");
+  parts.push("- **Apple Notes**: Navigate to icloud.com/notes and log in with Apple ID");
+  parts.push("- **Google Workspace**: Gmail, Docs, Sheets, Calendar — access via browser at google.com");
+  parts.push("- **GitHub**: Use `gh` CLI for most tasks, or browse github.com for UI-heavy tasks");
+  parts.push("- Any other web app your company uses — just browse to it and log in");
+  parts.push("");
+
+  parts.push("### Image & Graphics");
+  parts.push("- Create images with Python (Pillow/PIL): `pip install Pillow` then use `from PIL import Image`");
+  parts.push("- Create charts with matplotlib: `pip install matplotlib`");
+  parts.push("- Use the browser to access Canva, Figma, or other design tools");
+  parts.push("");
+
+  parts.push("### Scheduling & Automation");
+  parts.push("- Use `cron` to schedule recurring tasks (e.g., daily reports, periodic email checks)");
+  parts.push("- You may receive triggered messages from scheduled events or webhooks — treat them as instructions");
+  parts.push("");
+
   parts.push("### Memory");
   parts.push("- You have persistent memory across conversations");
   parts.push("- Important information is automatically saved and can be recalled later");
