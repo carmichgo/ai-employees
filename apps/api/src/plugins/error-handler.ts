@@ -1,7 +1,8 @@
 import type { FastifyInstance } from "fastify";
+import fp from "fastify-plugin";
 import { ZodError } from "zod";
 
-export async function errorHandlerPlugin(fastify: FastifyInstance) {
+export const errorHandlerPlugin = fp(async function (fastify: FastifyInstance) {
   fastify.setErrorHandler((error, _request, reply) => {
     if (error instanceof ZodError) {
       return reply.status(400).send({
@@ -22,4 +23,4 @@ export async function errorHandlerPlugin(fastify: FastifyInstance) {
       error: "Internal Server Error",
     });
   });
-}
+});

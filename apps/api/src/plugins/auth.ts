@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import fp from "fastify-plugin";
 
 export interface JwtPayload {
   userId: string;
@@ -6,7 +7,7 @@ export interface JwtPayload {
   role: string;
 }
 
-export async function authPlugin(fastify: FastifyInstance) {
+export const authPlugin = fp(async function (fastify: FastifyInstance) {
   fastify.decorate(
     "authenticate",
     async function (request: FastifyRequest, reply: FastifyReply) {
@@ -17,7 +18,7 @@ export async function authPlugin(fastify: FastifyInstance) {
       }
     },
   );
-}
+});
 
 declare module "fastify" {
   interface FastifyInstance {
