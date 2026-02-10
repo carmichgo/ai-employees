@@ -45,14 +45,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "No droplet IP", slug: companySlug }, { status: 404 });
   }
 
-  return fetchLogs(company.dropletIp);
+  const endpoint = request.nextUrl.searchParams.get("endpoint") || "logs";
+  return fetchLogs(company.dropletIp, endpoint);
 }
 
-async function fetchLogs(ip: string) {
+async function fetchLogs(ip: string, endpoint = "logs") {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
-    const res = await fetch(`http://${ip}:3001/logs`, {
+    const res = await fetch(`http://${ip}:3001/${endpoint}`, {
       signal: controller.signal,
     });
     clearTimeout(timeout);
