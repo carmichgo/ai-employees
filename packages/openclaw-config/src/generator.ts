@@ -54,17 +54,6 @@ export function generateOpenClawConfig(
       },
     },
 
-    // Browser profiles for CDP/Chrome automation
-    browser: {
-      defaultProfile: "openclaw",
-      profiles: {
-        openclaw: {
-          color: "#4A90D9",
-          cdpPort: 9222,
-        },
-      },
-    },
-
     agents: {
       defaults: {
         model: { primary: employee.modelConfig.primary },
