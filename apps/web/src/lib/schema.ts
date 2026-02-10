@@ -138,6 +138,25 @@ export const auditLogs = pgTable("audit_logs", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// ── Triggers ──────────────────────────────────────────
+export const triggers = pgTable("triggers", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  employeeId: uuid("employee_id")
+    .notNull()
+    .references(() => employees.id, { onDelete: "cascade" }),
+  companyId: uuid("company_id")
+    .notNull()
+    .references(() => companies.id),
+  type: varchar("type", { length: 20 }).notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  config: jsonb("config").notNull().default({}),
+  enabled: boolean("enabled").notNull().default(true),
+  webhookToken: varchar("webhook_token", { length: 100 }),
+  lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // ── Usage Records ──────────────────────────────────────
 export const usageRecords = pgTable("usage_records", {
   id: uuid("id").primaryKey().defaultRandom(),

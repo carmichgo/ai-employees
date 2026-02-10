@@ -10,6 +10,8 @@ import { authRoutes } from "./routes/auth.js";
 import { employeeRoutes } from "./routes/employees.js";
 import { dashboardRoutes } from "./routes/dashboard.js";
 import { provisionRoutes } from "./routes/provision.js";
+import { fileRoutes } from "./routes/files.js";
+import { triggerRoutes } from "./routes/triggers.js";
 
 export async function buildServer(config: Env) {
   const isDev = process.env.NODE_ENV !== "production";
@@ -43,6 +45,8 @@ export async function buildServer(config: Env) {
   await fastify.register(employeeRoutes);
   await fastify.register(dashboardRoutes);
   await fastify.register(provisionRoutes);
+  await fastify.register(fileRoutes, { prefix: "/internal" });
+  await fastify.register(triggerRoutes);
 
   // Health check (used by Vercel to verify droplet readiness)
   fastify.get("/health", async () => ({ status: "ok", timestamp: new Date().toISOString() }));

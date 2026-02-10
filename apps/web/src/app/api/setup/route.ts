@@ -138,6 +138,30 @@ export async function POST(request: NextRequest) {
       )
     `;
 
+    await sql`
+      CREATE TABLE IF NOT EXISTS triggers (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+        company_id UUID NOT NULL REFERENCES companies(id),
+        type VARCHAR(20) NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        config JSONB NOT NULL DEFAULT '{}',
+        enabled BOOLEAN NOT NULL DEFAULT true,
+        webhook_token VARCHAR(100),
+        last_run_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `;
+
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_triggers_employee_id ON triggers(employee_id)
+    `;
+
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_triggers_webhook_token ON triggers(webhook_token) WHERE webhook_token IS NOT NULL
+    `;
+
     return NextResponse.json({ success: true, message: "All tables created" });
   } catch (error: any) {
     console.error("Setup error:", error);

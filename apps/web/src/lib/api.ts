@@ -248,6 +248,84 @@ class ApiClient {
     );
   }
 
+  // Employee files
+  async listFiles(employeeId: string) {
+    return this.request<{
+      files: Array<{ name: string; size: number; uploadedAt: string; mimeType?: string }>;
+    }>(`/api/employees/${employeeId}/files`);
+  }
+
+  async uploadFile(employeeId: string, file: File) {
+    const token = this.getToken();
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const res = await fetch(`${API_URL}/api/employees/${employeeId}/files`, {
+      method: "POST",
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: formData,
+    });
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new ApiError(res.status, body.error || "Upload failed");
+    }
+    return res.json();
+  }
+
+  async deleteFile(employeeId: string, filename: string) {
+    return this.request<{ message: string }>(
+      `/api/employees/${employeeId}/files?name=${encodeURIComponent(filename)}`,
+      { method: "DELETE" },
+    );
+  }
+
+  // Employee triggers
+  async listTriggers(employeeId: string) {
+    return this.request<{
+      triggers: Array<{
+        id: string;
+        type: string;
+        name: string;
+        config: Record<string, unknown>;
+        enabled: boolean;
+        webhookToken: string | null;
+        lastRunAt: string | null;
+        createdAt: string;
+      }>;
+    }>(`/api/employees/${employeeId}/triggers`);
+  }
+
+  async createTrigger(
+    employeeId: string,
+    data: { type: string; name: string; config: Record<string, unknown>; enabled?: boolean },
+  ) {
+    return this.request<{ trigger: any }>(`/api/employees/${employeeId}/triggers`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateTrigger(
+    employeeId: string,
+    triggerId: string,
+    data: { name?: string; config?: Record<string, unknown>; enabled?: boolean },
+  ) {
+    return this.request<{ trigger: any }>(
+      `/api/employees/${employeeId}/triggers?triggerId=${triggerId}`,
+      { method: "PATCH", body: JSON.stringify(data) },
+    );
+  }
+
+  async deleteTrigger(employeeId: string, triggerId: string) {
+    return this.request<{ message: string }>(
+      `/api/employees/${employeeId}/triggers?triggerId=${triggerId}`,
+      { method: "DELETE" },
+    );
+  }
+
   getSlackInstallUrl(): string {
     const token = this.getToken();
     // The install route is a redirect, so we navigate to it directly
