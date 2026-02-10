@@ -203,18 +203,47 @@ API_PORT=3001
 PLATFORM_URL=${params.platformUrl}
 ENVEOF
 
-# Download repo as tarball
+# Download repo — try tarball first, then git clone as fallback
 TARBALL_URL="https://github.com/carmichgo/ai-employees/archive/refs/heads/${params.repoBranch}.tar.gz"
 echo "Downloading from: \$TARBALL_URL"
-if ! curl -sfL "\$TARBALL_URL" -o /tmp/repo.tar.gz; then
-  report "phase2-download" "error" "tarball download failed"
-  echo "PHASE2_FAILED_DOWNLOAD" > /opt/ai-employees/status
-  exit 0  # Don't exit 1 — health server should keep running
-fi
 
 mkdir -p /opt/ai-employees/app
-tar xzf /tmp/repo.tar.gz --strip-components=1 -C /opt/ai-employees/app
-rm /tmp/repo.tar.gz
+DOWNLOAD_OK=false
+
+# Method 1: curl tarball (verbose error reporting)
+HTTP_CODE=\$(curl -sL -w "%{http_code}" "\$TARBALL_URL" -o /tmp/repo.tar.gz 2>/dev/null)
+echo "Tarball download HTTP code: \$HTTP_CODE"
+if [ "\$HTTP_CODE" = "200" ] && [ -s /tmp/repo.tar.gz ]; then
+  tar xzf /tmp/repo.tar.gz --strip-components=1 -C /opt/ai-employees/app && DOWNLOAD_OK=true
+  rm -f /tmp/repo.tar.gz
+fi
+
+# Method 2: git clone if tarball failed
+if [ "\$DOWNLOAD_OK" = "false" ]; then
+  echo "Tarball failed, trying git clone..."
+  rm -f /tmp/repo.tar.gz
+  if git clone --depth 1 --branch "${params.repoBranch}" "https://github.com/carmichgo/ai-employees.git" /tmp/repo-clone 2>&1; then
+    cp -r /tmp/repo-clone/* /opt/ai-employees/app/
+    cp -r /tmp/repo-clone/.* /opt/ai-employees/app/ 2>/dev/null || true
+    rm -rf /tmp/repo-clone
+    DOWNLOAD_OK=true
+  fi
+fi
+
+# Method 3: wget if both failed
+if [ "\$DOWNLOAD_OK" = "false" ]; then
+  echo "Git clone failed too, trying wget..."
+  if wget -q "\$TARBALL_URL" -O /tmp/repo.tar.gz 2>&1; then
+    tar xzf /tmp/repo.tar.gz --strip-components=1 -C /opt/ai-employees/app && DOWNLOAD_OK=true
+    rm -f /tmp/repo.tar.gz
+  fi
+fi
+
+if [ "\$DOWNLOAD_OK" = "false" ]; then
+  report "phase2-download" "error" "all download methods failed (HTTP=\$HTTP_CODE)"
+  echo "PHASE2_FAILED_DOWNLOAD" > /opt/ai-employees/status
+  exit 0
+fi
 
 cd /opt/ai-employees/app
 cp /opt/ai-employees/.env .env
