@@ -279,6 +279,7 @@ Wants=redis-server.service
 Type=simple
 WorkingDirectory=/opt/ai-employees/app
 EnvironmentFile=/opt/ai-employees/.env
+Environment=NODE_ENV=production
 ExecStart=/usr/bin/node apps/api/dist/index.js
 Restart=always
 RestartSec=5
@@ -298,6 +299,7 @@ Wants=redis-server.service
 Type=simple
 WorkingDirectory=/opt/ai-employees/app
 EnvironmentFile=/opt/ai-employees/.env
+Environment=NODE_ENV=production
 ExecStart=/usr/bin/node apps/worker/dist/index.js
 Restart=always
 RestartSec=5
@@ -316,7 +318,7 @@ sleep 2
 echo "Testing API startup..."
 cd /opt/ai-employees/app
 source /opt/ai-employees/.env
-export DATABASE_URL REDIS_URL JWT_SECRET JWT_EXPIRES_IN ENCRYPTION_KEY INTERSERVICE_SECRET OPENCLAW_IMAGE OPENCLAW_NETWORK API_PORT PLATFORM_URL
+export DATABASE_URL REDIS_URL JWT_SECRET JWT_EXPIRES_IN ENCRYPTION_KEY INTERSERVICE_SECRET OPENCLAW_IMAGE OPENCLAW_NETWORK API_PORT PLATFORM_URL NODE_ENV=production
 timeout 10 /usr/bin/node apps/api/dist/index.js > /tmp/api-test.log 2>&1 &
 TEST_PID=\$!
 sleep 5

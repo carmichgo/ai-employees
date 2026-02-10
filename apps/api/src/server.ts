@@ -10,12 +10,15 @@ import { dashboardRoutes } from "./routes/dashboard.js";
 import { provisionRoutes } from "./routes/provision.js";
 
 export async function buildServer(config: Env) {
+  const isDev = process.env.NODE_ENV !== "production";
   const fastify = Fastify({
     logger: {
       level: "info",
-      transport: {
-        target: "pino-pretty",
-      },
+      ...(isDev && {
+        transport: {
+          target: "pino-pretty",
+        },
+      }),
     },
   });
 
