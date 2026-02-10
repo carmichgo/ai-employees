@@ -20,6 +20,7 @@ export interface ProvisionJobData {
   employeeId: string;
   companyId: string;
   channels: string[];
+  channelCredentials?: Record<string, Record<string, unknown>>;
 }
 
 export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
@@ -59,10 +60,11 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     const volumeName = `ai-emp-data-${employeeId}`;
     await docker.createVolume({ Name: volumeName });
 
-    // Build channel inputs from the selected channel types
+    // Build channel inputs — merge credentials from company integrations
+    const channelCreds = data.channelCredentials || {};
     const channelInputs = data.channels.map((type) => ({
       type,
-      credentials: {},
+      credentials: channelCreds[type] || {},
       config: {},
     }));
 

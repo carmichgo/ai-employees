@@ -40,6 +40,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       persona?: string;
       goals?: string;
       channels?: string[];
+      channelCredentials?: Record<string, Record<string, unknown>>;
       modelConfig?: { primary: string };
     };
 
@@ -104,6 +105,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       employeeId: employee.id,
       companyId: body.companyId,
       channels: body.channels || [],
+      channelCredentials: body.channelCredentials || {},
     });
 
     return reply.status(201).send({

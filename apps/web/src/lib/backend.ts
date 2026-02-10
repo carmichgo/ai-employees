@@ -82,6 +82,7 @@ export function createBackendClient(config: CompanyBackendConfig) {
       persona?: string;
       goals?: string;
       channels?: string[];
+      channelCredentials?: Record<string, Record<string, unknown>>;
       modelConfig?: { primary: string };
     }) {
       const res = await backendFetch(config, "/internal/employees/provision", {

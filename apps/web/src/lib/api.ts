@@ -190,6 +190,32 @@ class ApiClient {
       "/api/companies/droplet/logs",
     );
   }
+
+  // Integrations
+  async getIntegrations() {
+    return this.request<{
+      integrations: Record<string, {
+        connected: boolean;
+        teamId?: string;
+        teamName?: string;
+        connectedAt?: string;
+      }>;
+    }>("/api/integrations");
+  }
+
+  async disconnectIntegration(type: string) {
+    return this.request<{ message: string }>(
+      `/api/integrations?type=${type}`,
+      { method: "DELETE" },
+    );
+  }
+
+  getSlackInstallUrl(): string {
+    const token = this.getToken();
+    // The install route is a redirect, so we navigate to it directly
+    // We pass the token as a cookie, but also support bearer auth
+    return `${API_URL}/api/integrations/slack/install`;
+  }
 }
 
 export class ApiError extends Error {

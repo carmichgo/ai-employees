@@ -64,6 +64,9 @@ export async function POST(request: NextRequest) {
   if (backendConfig) {
     // Droplet is active — delegate provisioning to it
     try {
+      // Pull channel credentials from company settings for connected integrations
+      const channelCredentials = await getChannelCredentials(session.companyId, input.channels || []);
+
       const backend = createBackendClient(backendConfig);
       const result = await backend.provisionEmployee({
         companyId: session.companyId,
@@ -73,6 +76,7 @@ export async function POST(request: NextRequest) {
         persona: input.persona || undefined,
         goals: input.goals || undefined,
         channels: input.channels || [],
+        channelCredentials,
         modelConfig: input.modelConfig,
       });
       return NextResponse.json(result, { status: 201 });
@@ -232,4 +236,41 @@ export async function POST(request: NextRequest) {
     },
     { status: 201 },
   );
+}
+
+/**
+ * Pull channel credentials from company settings for selected channels.
+ * Only returns credentials for integrations that are actually connected.
+ */
+async function getChannelCredentials(
+  companyId: string,
+  selectedChannels: string[],
+): Promise<Record<string, Record<string, unknown>>> {
+  if (selectedChannels.length === 0) return {};
+
+  const [company] = await db
+    .select()
+    .from(companies)
+    .where(eq(companies.id, companyId))
+    .limit(1);
+
+  if (!company) return {};
+
+  const settings = (company.settings as Record<string, unknown>) || {};
+  const integrations = (settings.integrations as Record<string, unknown>) || {};
+  const creds: Record<string, Record<string, unknown>> = {};
+
+  // Slack: pull bot token from company integration
+  if (selectedChannels.includes("slack") && integrations.slack) {
+    const slack = integrations.slack as Record<string, unknown>;
+    if (slack.connected && slack.botToken) {
+      creds.slack = {
+        botToken: slack.botToken,
+        appToken: (process.env.SLACK_APP_TOKEN || "").trim(),
+        signingSecret: (process.env.SLACK_SIGNING_SECRET || "").trim(),
+      };
+    }
+  }
+
+  return creds;
 }
