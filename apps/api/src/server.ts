@@ -79,5 +79,40 @@ export async function buildServer(config: Env) {
     }
   });
 
+  // Hot code update — pulls latest code, rebuilds, and restarts services
+  // This avoids having to destroy + re-provision the droplet for every code change
+  fastify.get("/update", async () => {
+    try {
+      const appDir = "/opt/ai-employees/app";
+      const log: string[] = [];
+
+      log.push("Fetching latest code...");
+      const branch = execSync("git rev-parse --abbrev-ref HEAD", { cwd: appDir, timeout: 5000 }).toString().trim();
+      log.push(`Branch: ${branch}`);
+
+      execSync(`git pull origin ${branch}`, { cwd: appDir, timeout: 30000 });
+      log.push("Git pull complete");
+
+      log.push("Installing dependencies...");
+      execSync("pnpm install --frozen-lockfile 2>&1 || pnpm install 2>&1", { cwd: appDir, timeout: 120000 });
+      log.push("Dependencies installed");
+
+      log.push("Building...");
+      execSync("pnpm turbo build --filter=@ai-employees/api --filter=@ai-employees/worker 2>&1", { cwd: appDir, timeout: 120000 });
+      log.push("Build complete");
+
+      // Patch package.json main fields for Node.js ESM runtime
+      execSync("sed -i 's|\"main\": \"src/index.ts\"|\"main\": \"dist/index.js\"|g' packages/*/package.json", { cwd: appDir, timeout: 5000 });
+
+      log.push("Restarting services...");
+      execSync("systemctl restart ai-employees-api ai-employees-worker", { timeout: 10000 });
+      log.push("Services restarted");
+
+      return { success: true, log };
+    } catch (e: any) {
+      return { success: false, error: e.message, stderr: e.stderr?.toString()?.slice(-500) };
+    }
+  });
+
   return fastify;
 }
