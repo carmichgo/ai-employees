@@ -97,6 +97,22 @@ export async function POST(request: NextRequest) {
     `;
 
     await sql`
+      CREATE TABLE IF NOT EXISTS chat_messages (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+        user_id UUID NOT NULL REFERENCES users(id),
+        role VARCHAR(20) NOT NULL,
+        content TEXT NOT NULL,
+        mode VARCHAR(20),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `;
+
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_chat_messages_employee_id ON chat_messages(employee_id, created_at DESC)
+    `;
+
+    await sql`
       CREATE TABLE IF NOT EXISTS audit_logs (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         company_id UUID NOT NULL REFERENCES companies(id),

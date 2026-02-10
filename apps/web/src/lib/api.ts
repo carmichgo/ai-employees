@@ -127,6 +127,18 @@ class ApiClient {
     });
   }
 
+  async getChatHistory(id: string) {
+    return this.request<{
+      messages: Array<{
+        id: string;
+        role: string;
+        content: string;
+        mode: string | null;
+        createdAt: string;
+      }>;
+    }>(`/api/employees/${id}/chat`);
+  }
+
   async chatWithEmployee(
     id: string,
     message: string,

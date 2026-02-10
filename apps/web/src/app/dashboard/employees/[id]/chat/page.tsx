@@ -26,19 +26,49 @@ export default function EmployeeChatPage() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    api.getEmployee(employeeId).then((res) => {
-      setEmployee(res.employee);
+    async function init() {
+      const empRes = await api.getEmployee(employeeId);
+      setEmployee(empRes.employee);
+
+      // Load conversation history from DB
+      try {
+        const historyRes = await api.getChatHistory(employeeId);
+        if (historyRes.messages.length > 0) {
+          setMessages(
+            historyRes.messages.map((m) => ({
+              id: m.id,
+              role: m.role as "user" | "assistant",
+              content: m.content,
+              timestamp: new Date(m.createdAt),
+              mode: m.mode || undefined,
+            })),
+          );
+        } else {
+          // No history — show welcome message
+          setMessages([
+            {
+              id: "welcome",
+              role: "assistant",
+              content: `Hi! I'm ${empRes.employee.name}, your ${empRes.employee.jobTitle}. How can I help you today?`,
+              timestamp: new Date(),
+            },
+          ]);
+        }
+      } catch {
+        // Table might not exist yet — show welcome message
+        setMessages([
+          {
+            id: "welcome",
+            role: "assistant",
+            content: `Hi! I'm ${empRes.employee.name}, your ${empRes.employee.jobTitle}. How can I help you today?`,
+            timestamp: new Date(),
+          },
+        ]);
+      }
+
       setLoading(false);
-      // Add welcome message
-      setMessages([
-        {
-          id: "welcome",
-          role: "assistant",
-          content: `Hi! I'm ${res.employee.name}, your ${res.employee.jobTitle}. How can I help you today?`,
-          timestamp: new Date(),
-        },
-      ]);
-    });
+    }
+    init();
   }, [employeeId]);
 
   const scrollToBottom = useCallback(() => {

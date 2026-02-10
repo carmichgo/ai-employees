@@ -4,13 +4,13 @@
  * POST /api/employees/[id]/chat — send a message, get a response
  * GET  /api/employees/[id]/chat — get conversation history
  *
- * Uses OpenClaw's OpenAI-compatible chat completions endpoint.
- * Routes through the company's droplet API which forwards to the container.
+ * Messages are persisted to the chat_messages table so conversations
+ * survive page refreshes.
  */
 import { NextRequest, NextResponse } from "next/server";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { employees, companies } from "@/lib/schema";
+import { employees, companies, chatMessages } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
 
 async function authenticate(request: NextRequest) {
@@ -19,6 +19,48 @@ async function authenticate(request: NextRequest) {
     request.headers.get("authorization")?.replace("Bearer ", "");
   if (!token) return null;
   return verifyToken(token);
+}
+
+// GET /api/employees/[id]/chat — get conversation history
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const session = await authenticate(request);
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { id } = await params;
+
+  // Verify employee belongs to user's company
+  const [employee] = await db
+    .select()
+    .from(employees)
+    .where(and(eq(employees.id, id), eq(employees.companyId, session.companyId)))
+    .limit(1);
+
+  if (!employee) {
+    return NextResponse.json({ error: "Employee not found" }, { status: 404 });
+  }
+
+  // Load last 100 messages, ordered newest first then reverse
+  const limit = parseInt(request.nextUrl.searchParams.get("limit") || "100");
+  const rows = await db
+    .select({
+      id: chatMessages.id,
+      role: chatMessages.role,
+      content: chatMessages.content,
+      mode: chatMessages.mode,
+      createdAt: chatMessages.createdAt,
+    })
+    .from(chatMessages)
+    .where(and(eq(chatMessages.employeeId, id), eq(chatMessages.userId, session.userId)))
+    .orderBy(desc(chatMessages.createdAt))
+    .limit(limit);
+
+  // Reverse to oldest-first for the UI
+  rows.reverse();
+
+  return NextResponse.json({ messages: rows });
 }
 
 // POST /api/employees/[id]/chat — send a message
@@ -59,6 +101,14 @@ export async function POST(
     return NextResponse.json({ error: "Message is required" }, { status: 400 });
   }
 
+  // Save user message to DB
+  await db.insert(chatMessages).values({
+    employeeId: id,
+    userId: session.userId,
+    role: "user",
+    content: message,
+  });
+
   // Get company for droplet info
   const [company] = await db
     .select()
@@ -67,22 +117,24 @@ export async function POST(
     .limit(1);
 
   if (!company || company.dropletStatus !== "active" || !company.dropletIp) {
-    // Demo mode — return a simulated response
-    return NextResponse.json({
-      reply: generateDemoReply(employee, message),
+    const reply = generateDemoReply(employee, message);
+    await db.insert(chatMessages).values({
+      employeeId: id,
+      userId: session.userId,
+      role: "assistant",
+      content: reply,
       mode: "demo",
     });
+    return NextResponse.json({ reply, mode: "demo" });
   }
 
   // Route to OpenClaw container via the company's droplet
-  // The API on the droplet proxies to the container's chat completions endpoint
   try {
     const messages = [
       ...(conversationHistory || []),
       { role: "user", content: message },
     ];
 
-    // Call the droplet's chat proxy endpoint
     const res = await fetch(
       `http://${company.dropletIp}:3001/internal/employees/${id}/chat`,
       {
@@ -104,6 +156,18 @@ export async function POST(
     }
 
     const data = await res.json();
+
+    // Save assistant reply to DB
+    if (data.reply) {
+      await db.insert(chatMessages).values({
+        employeeId: id,
+        userId: session.userId,
+        role: "assistant",
+        content: data.reply,
+        mode: data.mode || "live",
+      });
+    }
+
     return NextResponse.json(data);
   } catch (err: any) {
     return NextResponse.json(
