@@ -172,6 +172,12 @@ class ApiClient {
       { method: "DELETE" },
     );
   }
+
+  async getDropletLogs() {
+    return this.request<{ phase: string; logs: string }>(
+      "/api/companies/droplet/logs",
+    );
+  }
 }
 
 export class ApiError extends Error {

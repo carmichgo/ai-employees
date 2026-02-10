@@ -18,6 +18,8 @@ export default function SettingsPage() {
   const [user, setUser] = useState<any>(null);
   const [droplet, setDroplet] = useState<any>(null);
   const [dropletLoading, setDropletLoading] = useState(false);
+  const [buildLogs, setBuildLogs] = useState<string | null>(null);
+  const [logsLoading, setLogsLoading] = useState(false);
 
   useEffect(() => {
     api.me().then((data) => {
@@ -246,7 +248,42 @@ export default function SettingsPage() {
                 <Trash2 size={12} /> Destroy
               </button>
             )}
+            {droplet?.status === "active" && (
+              <button
+                className="btn-secondary btn-sm"
+                onClick={async () => {
+                  setLogsLoading(true);
+                  try {
+                    const data = await api.getDropletLogs();
+                    setBuildLogs(data.logs);
+                  } catch {
+                    setBuildLogs("Failed to fetch logs");
+                  } finally {
+                    setLogsLoading(false);
+                  }
+                }}
+                disabled={logsLoading}
+                style={{ fontSize: 12 }}
+              >
+                {logsLoading ? "Loading..." : "View Build Logs"}
+              </button>
+            )}
           </div>
+
+          {buildLogs && (
+            <div style={{
+              marginTop: 12,
+              padding: 12,
+              backgroundColor: "var(--bg-secondary)",
+              borderRadius: 8,
+              maxHeight: 300,
+              overflow: "auto",
+            }}>
+              <pre style={{ fontSize: 11, whiteSpace: "pre-wrap", wordBreak: "break-all", margin: 0, fontFamily: "monospace", color: "var(--text-secondary)" }}>
+                {buildLogs}
+              </pre>
+            </div>
+          )}
         </div>
         <style>{`@keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: 0.3 } }`}</style>
       </div>
