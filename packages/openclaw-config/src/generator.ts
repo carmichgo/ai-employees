@@ -82,27 +82,37 @@ export function generateOpenClawConfig(
             name: employee.name,
             emoji: employee.emoji || "🤖",
           },
-          // Enable all tool groups — this employee should be fully capable
+          // Enable all tool groups + individual OpenClaw built-in tools/skills
           tools: {
             allow: [
-              // File system
+              // Core tool groups
               "group:fs",
-              // Shell execution
               "group:runtime",
-              // Browser automation (CDP/Chrome)
-              "browser",
-              // Web search and fetch
               "group:web",
-              // Session management (sub-tasks, history)
               "group:sessions",
-              // Persistent memory
               "group:memory",
-              // Scheduling (cron jobs for background work)
               "group:automation",
-              // Messaging (Slack, Discord, etc.)
               "group:messaging",
+              // Browser automation (real, non-headless CDP/Chrome)
+              "browser",
               // Image analysis
               "image",
+              // Canvas (design/drawing)
+              "canvas",
+              // Lobster (media/content)
+              "lobster",
+              // Email: himalaya (IMAP/SMTP CLI)
+              "himalaya",
+              // Social media
+              "bird",       // Twitter/X
+              "wacli",      // WhatsApp
+              "imessage",   // iMessage
+              // Productivity
+              "notion",
+              "apple-notes",
+              "google",     // Google Workspace (Docs, Sheets, Calendar, etc.)
+              // Developer tools
+              "github",     // GitHub CLI (gh)
             ],
           },
         },
@@ -148,80 +158,78 @@ export function generateSoulMd(employee: EmployeeInput): string {
   parts.push("");
 
   // Tools and capabilities
-  parts.push("## Your Capabilities");
+  parts.push("## Your Tools & Capabilities");
   parts.push("");
-  parts.push("You have full access to a computer environment with a real browser, CLI tools, and more:");
+  parts.push("You have a full suite of built-in tools. Use them proactively — don't wait to be asked.");
   parts.push("");
 
-  parts.push("### Web Browser (Real, Non-Headless)");
-  parts.push("- You have a **real browser** (not headless) — it works on sites that block bots like Instagram, LinkedIn, Twitter");
-  parts.push("- Use the `browser` tool to navigate websites, fill forms, click buttons, take screenshots");
-  parts.push("- You can log into and use: Gmail, Google Docs, Google Sheets, Notion, Jira, GitHub, LinkedIn, Instagram, Twitter/X, Apple iCloud, and any other web app");
-  parts.push("- For social media, log in with provided credentials and interact as the employee");
+  parts.push("### Browser (Real, Non-Headless)");
+  parts.push("- Use the `browser` tool — you have a **real browser** (not headless), so it works on sites that block bots (Instagram, LinkedIn, Twitter, etc.)");
+  parts.push("- Navigate websites, fill forms, click buttons, take screenshots, log into any web app");
+  parts.push("- Works with: Gmail, Google Docs/Sheets, Notion, Jira, GitHub, LinkedIn, Instagram, Twitter/X, Apple iCloud, and any other web app");
   parts.push("");
 
   parts.push("### Web Research");
-  parts.push("- Use `web_search` to search the internet (powered by Brave Search)");
-  parts.push("- Use `web_fetch` to read and extract content from any URL");
+  parts.push("- `web_search` — search the internet");
+  parts.push("- `web_fetch` — read and extract content from any URL");
   parts.push("");
 
   parts.push("### Files & Documents");
-  parts.push("- Use `read`, `write`, and `edit` to create and modify files in your workspace");
-  parts.push("- Your workspace persists between conversations");
-  parts.push("- Uploaded files from your manager appear in `/uploads/` — check there for shared documents");
-  parts.push("- You can create reports, spreadsheets (CSV), presentations, code, images, and any other files");
+  parts.push("- `read`, `write`, `edit` — create and modify files in your persistent workspace");
+  parts.push("- Uploaded files from your manager appear in `/uploads/`");
+  parts.push("- Create reports, spreadsheets (CSV), code, images, and any other files");
   parts.push("");
 
-  parts.push("### Shell & CLI Tools");
-  parts.push("- Use `exec` to run shell commands (curl, python, node, etc.)");
-  parts.push("- **Pre-installed CLI tools available:**");
-  parts.push("  - `himalaya` — Email client (IMAP/SMTP) for reading and sending emails from the command line");
-  parts.push("  - `gh` — GitHub CLI for repos, PRs, issues, actions (run `gh auth login` first if needed)");
-  parts.push("  - Standard tools: curl, wget, python3, node, git, jq, and more");
-  parts.push("- You can install additional packages with `npm install -g`, `pip install`, or `apt-get install`");
+  parts.push("### Shell");
+  parts.push("- `exec` — run any shell command (curl, python, node, git, jq, etc.)");
+  parts.push("- You can install additional packages when needed");
   parts.push("");
 
-  parts.push("### Email");
-  parts.push("- If email credentials are configured (check EMAIL_ADDRESS env var), you can send and receive emails");
-  parts.push("- Environment variables: EMAIL_ADDRESS, EMAIL_SMTP_HOST, EMAIL_SMTP_PORT, EMAIL_IMAP_HOST, EMAIL_IMAP_PORT, EMAIL_USERNAME, EMAIL_PASSWORD");
-  parts.push("- EMAIL_PROVIDER tells you the provider (gmail, outlook, yahoo, zoho, icloud)");
-  parts.push("- EMAIL_WEBMAIL contains the webmail URL");
-  parts.push("- **Method 1 (preferred)**: Use `himalaya` CLI — `himalaya list` to see inbox, `himalaya read <id>` to read, `himalaya send` to compose");
-  parts.push("- **Method 2**: Use the browser to log into EMAIL_WEBMAIL with your credentials");
-  parts.push("- **Method 3**: Use Python's `smtplib`/`imaplib` programmatically");
+  parts.push("### Email — `himalaya`");
+  parts.push("- Built-in email client for IMAP/SMTP");
+  parts.push("- If email credentials are configured (check EMAIL_ADDRESS env var):");
+  parts.push("  - Use `himalaya` to list inbox, read messages, send emails");
+  parts.push("  - Or use the browser to log into EMAIL_WEBMAIL");
+  parts.push("- Env vars: EMAIL_ADDRESS, EMAIL_SMTP_HOST, EMAIL_SMTP_PORT, EMAIL_IMAP_HOST, EMAIL_IMAP_PORT, EMAIL_USERNAME, EMAIL_PASSWORD, EMAIL_PROVIDER, EMAIL_WEBMAIL");
   parts.push("");
 
-  parts.push("### Social Media & Communication");
-  parts.push("- **Twitter/X**: Use the browser to access twitter.com, or use the `bird` CLI tool if installed");
-  parts.push("- **LinkedIn**: Use the browser to access linkedin.com — post updates, message connections, browse jobs");
-  parts.push("- **Instagram**: Use the browser to access instagram.com — view, post, message");
-  parts.push("- **WhatsApp**: If configured as a channel, messages come directly. Otherwise use browser for WhatsApp Web");
-  parts.push("- **iMessage**: If configured via BlueBubbles, messages come directly");
-  parts.push("- **Slack/Discord**: If configured as channels, messages come directly through those channels");
+  parts.push("### Social Media");
+  parts.push("- `bird` — Twitter/X: post tweets, read timeline, send DMs");
+  parts.push("- `wacli` — WhatsApp: send and receive WhatsApp messages");
+  parts.push("- `imessage` — iMessage: send and receive iMessages");
+  parts.push("- You can also use the **browser** for LinkedIn, Instagram, or any social platform");
   parts.push("");
 
-  parts.push("### Productivity Apps (via Browser)");
-  parts.push("- **Notion**: Navigate to notion.so and log in to manage docs, databases, wikis");
-  parts.push("- **Apple Notes**: Navigate to icloud.com/notes and log in with Apple ID");
-  parts.push("- **Google Workspace**: Gmail, Docs, Sheets, Calendar — access via browser at google.com");
-  parts.push("- **GitHub**: Use `gh` CLI for most tasks, or browse github.com for UI-heavy tasks");
-  parts.push("- Any other web app your company uses — just browse to it and log in");
+  parts.push("### Productivity Apps");
+  parts.push("- `notion` — interact with Notion (docs, databases, wikis)");
+  parts.push("- `apple-notes` — Apple Notes integration");
+  parts.push("- `google` — Google Workspace (Docs, Sheets, Calendar, Gmail, etc.)");
+  parts.push("- `github` — GitHub CLI for repos, PRs, issues, actions");
+  parts.push("- You can also use the **browser** for any web app not covered above");
   parts.push("");
 
-  parts.push("### Image & Graphics");
-  parts.push("- Create images with Python (Pillow/PIL): `pip install Pillow` then use `from PIL import Image`");
-  parts.push("- Create charts with matplotlib: `pip install matplotlib`");
-  parts.push("- Use the browser to access Canva, Figma, or other design tools");
+  parts.push("### Design & Media");
+  parts.push("- `canvas` — design and drawing tool");
+  parts.push("- `lobster` — media and content creation");
+  parts.push("- `image` — image analysis");
+  parts.push("- You can also use the browser for Canva, Figma, or other design tools");
   parts.push("");
 
-  parts.push("### Scheduling & Automation");
-  parts.push("- Use `cron` to schedule recurring tasks (e.g., daily reports, periodic email checks)");
-  parts.push("- You may receive triggered messages from scheduled events or webhooks — treat them as instructions");
+  parts.push("### Scheduling & Automation (IMPORTANT)");
+  parts.push("- Use the `cron` tool to create your own recurring tasks — **be proactive about this!**");
+  parts.push("- Examples of tasks you should schedule yourself:");
+  parts.push("  - Check email every 30 minutes");
+  parts.push("  - Generate daily standup reports every morning");
+  parts.push("  - Monitor social media mentions periodically");
+  parts.push("  - Send weekly summaries to your manager");
+  parts.push("- Don't wait to be told to schedule things — if a task is recurring, set up a cron job for it");
+  parts.push("- You may also receive triggered messages from external webhooks — treat them as instructions");
   parts.push("");
 
   parts.push("### Memory");
   parts.push("- You have persistent memory across conversations");
   parts.push("- Important information is automatically saved and can be recalled later");
+  parts.push("- Use memory to track ongoing projects, contacts, decisions, and context");
   parts.push("");
 
   // Communication style
