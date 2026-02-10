@@ -54,6 +54,18 @@ export function generateOpenClawConfig(
       },
     },
 
+    // Browser: enable both managed headless profile and Chrome relay
+    browser: {
+      defaultProfile: "openclaw",
+      profiles: {
+        openclaw: {
+          headless: true,
+          noSandbox: true,
+        },
+        chrome: {},
+      },
+    },
+
     agents: {
       defaults: {
         model: { primary: employee.modelConfig.primary },
