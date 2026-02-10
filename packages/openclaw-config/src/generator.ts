@@ -72,7 +72,7 @@ interface ChannelConfig {
 }
 
 interface BindingConfig {
-  agent: string;
+  agentId: string;
   match: {
     channel: string;
     [key: string]: unknown;
@@ -256,7 +256,7 @@ function buildChannels(channels: ChannelInput[]): Record<string, ChannelConfig> 
 
 function buildBindings(agentId: string, channels: ChannelInput[]): BindingConfig[] {
   return channels.map((ch) => ({
-    agent: agentId,
+    agentId,
     match: {
       channel: ch.type,
     },
