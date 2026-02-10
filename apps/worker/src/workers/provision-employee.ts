@@ -74,6 +74,7 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
       persona: employee.persona,
       goals: employee.goals,
       companySlug: company.slug,
+      companyName: company.name,
       modelConfig: employee.modelConfig as { primary: string; fallbacks?: string[] },
       toolsConfig: employee.toolsConfig as Record<string, unknown>,
       sandboxConfig: employee.sandboxConfig as Record<string, unknown>,
