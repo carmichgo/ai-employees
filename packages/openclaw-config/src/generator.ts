@@ -60,6 +60,7 @@ export function generateOpenClawConfig(
       profiles: {
         openclaw: {
           color: "#4A90D9",
+          cdpPort: 9222,
         },
       },
     },
