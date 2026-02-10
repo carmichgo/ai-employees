@@ -52,9 +52,12 @@ export async function buildServer(config: Env) {
   fastify.get("/debug", async () => {
     const checks: Record<string, unknown> = {};
     try { checks.docker = execSync("docker info --format '{{.ServerVersion}}'", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.docker = `error: ${e.message}`; }
-    try { checks.containers = execSync("docker ps --format '{{.Names}} {{.Status}}'", { timeout: 5000 }).toString().trim() || "none"; } catch (e: any) { checks.containers = `error: ${e.message}`; }
+    try { checks.containers = execSync("docker ps -a --format '{{.Names}} {{.Status}} {{.Ports}}'", { timeout: 5000 }).toString().trim() || "none"; } catch (e: any) { checks.containers = `error: ${e.message}`; }
+    try { checks.networks = execSync("docker network ls --format '{{.Name}}'", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.networks = `error: ${e.message}`; }
+    try { checks.containerInspect = execSync("docker inspect --format '{{.Name}} {{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $(docker ps -q) 2>/dev/null || echo 'no containers'", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.containerInspect = `error: ${e.message}`; }
+    try { checks.containerLogs = execSync("docker logs --tail 20 $(docker ps -q --latest) 2>&1 || echo 'no containers'", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.containerLogs = `error: ${e.message}`; }
     try { checks.workerService = execSync("systemctl is-active ai-employees-worker", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.workerService = `error: ${e.message}`; }
-    try { checks.apiService = execSync("systemctl is-active ai-employees-api", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.apiService = `error: ${e.message}`; }
+    try { checks.workerLogs = execSync("journalctl -u ai-employees-worker --no-pager -n 20 2>&1 || echo 'no journal'", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.workerLogs = `error: ${e.message}`; }
     checks.anthropicKeySet = !!process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY.length > 10;
     checks.anthropicKeyPrefix = process.env.ANTHROPIC_API_KEY?.slice(0, 8) || "NOT SET";
     try { checks.images = execSync("docker images --format '{{.Repository}}:{{.Tag}}'", { timeout: 5000 }).toString().trim() || "none"; } catch (e: any) { checks.images = `error: ${e.message}`; }
