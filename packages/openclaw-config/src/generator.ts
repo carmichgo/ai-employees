@@ -44,6 +44,9 @@ export function generateOpenClawConfig(
   const channels = buildChannels(validChannels);
   const bindings = buildBindings(agentId, validChannels);
 
+  // Generate the SOUL.md content to embed as agent instructions
+  const instructions = generateSoulMd(employee);
+
   const config: OpenClawConfig = {
     gateway: {
       auth: { token: gatewayToken },
@@ -70,6 +73,8 @@ export function generateOpenClawConfig(
             name: employee.name,
             emoji: employee.emoji || "🤖",
           },
+          // Inline instructions so the agent knows who it is on every interaction
+          instructions,
           // Enable all tool groups — this employee should be fully capable
           tools: {
             allow: [
