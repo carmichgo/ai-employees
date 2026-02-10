@@ -53,6 +53,7 @@ function generateCloudInit(params: {
   platformUrl: string;
   repoUrl: string;
   repoBranch: string;
+  anthropicApiKey: string;
 }): string {
   // Generate secrets in JS so they're embedded as actual values
   const jwtSecret = crypto.randomBytes(32).toString("hex");
@@ -184,6 +185,28 @@ corepack enable 2>/dev/null && corepack prepare pnpm@9.15.0 --activate 2>/dev/nu
 systemctl enable redis-server || true
 systemctl start redis-server || true
 
+report "phase2-docker" "started"
+
+# Install Docker
+curl -fsSL https://get.docker.com | sh || {
+  report "phase2-docker" "error" "docker install failed"
+  echo "PHASE2_FAILED_DOCKER" > /opt/ai-employees/status
+  exit 0
+}
+systemctl enable docker
+systemctl start docker
+
+# Pull OpenClaw image
+echo "Pulling OpenClaw image..."
+docker pull ghcr.io/openclaw/openclaw:latest || {
+  report "phase2-docker" "error" "openclaw image pull failed"
+  echo "PHASE2_FAILED_DOCKER_PULL" > /opt/ai-employees/status
+  exit 0
+}
+
+# Create config directory for employee OpenClaw instances
+mkdir -p /opt/ai-employees/openclaw-configs
+
 report "phase2-download" "started"
 
 # Create app directory and write environment file
@@ -197,10 +220,11 @@ JWT_SECRET=${jwtSecret}
 JWT_EXPIRES_IN=7d
 ENCRYPTION_KEY=${encryptionKey}
 INTERSERVICE_SECRET=${params.interserviceSecret}
-OPENCLAW_IMAGE=openclaw:latest
+OPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:latest
 OPENCLAW_NETWORK=ai-employees-internal
 API_PORT=3001
 PLATFORM_URL=${params.platformUrl}
+ANTHROPIC_API_KEY=${params.anthropicApiKey}
 ENVEOF
 
 # Download repo — try tarball first, then git clone as fallback
@@ -318,7 +342,7 @@ sleep 2
 echo "Testing API startup..."
 cd /opt/ai-employees/app
 source /opt/ai-employees/.env
-export DATABASE_URL REDIS_URL JWT_SECRET JWT_EXPIRES_IN ENCRYPTION_KEY INTERSERVICE_SECRET OPENCLAW_IMAGE OPENCLAW_NETWORK API_PORT PLATFORM_URL NODE_ENV=production
+export DATABASE_URL REDIS_URL JWT_SECRET JWT_EXPIRES_IN ENCRYPTION_KEY INTERSERVICE_SECRET OPENCLAW_IMAGE OPENCLAW_NETWORK API_PORT PLATFORM_URL ANTHROPIC_API_KEY NODE_ENV=production
 timeout 10 /usr/bin/node apps/api/dist/index.js > /tmp/api-test.log 2>&1 &
 TEST_PID=\$!
 sleep 5
@@ -395,6 +419,8 @@ export async function createCompanyDroplet(companyId: string): Promise<{
   const region = company.dropletRegion || "nyc3";
   const size = PLAN_DROPLET_SIZES[company.plan] || PLAN_DROPLET_SIZES.starter;
 
+  const anthropicApiKey = process.env.ANTHROPIC_API_KEY || "";
+
   const userData = generateCloudInit({
     companySlug: company.slug,
     databaseUrl,
@@ -402,6 +428,7 @@ export async function createCompanyDroplet(companyId: string): Promise<{
     platformUrl: process.env.NEXT_PUBLIC_APP_URL || "https://ai-employees-ten.vercel.app",
     repoUrl: REPO_URL,
     repoBranch: REPO_BRANCH,
+    anthropicApiKey,
   });
 
   // Get SSH keys from DO account (if any) so the user can SSH in for debugging

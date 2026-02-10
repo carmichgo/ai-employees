@@ -1,4 +1,6 @@
 import { eq } from "drizzle-orm";
+import { execSync } from "node:child_process";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { db, employees, companies } from "@ai-employees/db";
 import { CONTAINER_RESOURCES, type PlanTier } from "@ai-employees/shared";
 import {
@@ -9,8 +11,9 @@ import {
 } from "@ai-employees/openclaw-config";
 import { docker, ensureNetwork, ensureImage } from "../docker/client.js";
 
-const OPENCLAW_IMAGE = process.env.OPENCLAW_IMAGE || "openclaw:latest";
+const OPENCLAW_IMAGE = process.env.OPENCLAW_IMAGE || "ghcr.io/openclaw/openclaw:latest";
 const OPENCLAW_NETWORK = process.env.OPENCLAW_NETWORK || "ai-employees-internal";
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
 
 export interface ProvisionJobData {
   employeeId: string;
@@ -84,20 +87,32 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     const plan = (company.plan as PlanTier) || "starter";
     const resources = CONTAINER_RESOURCES[plan] || CONTAINER_RESOURCES.starter;
 
-    // Create the container
+    // Write OpenClaw config + soul.md to a host directory that gets bind-mounted
+    const configDir = `/opt/ai-employees/openclaw-configs/${employeeId}`;
+    mkdirSync(`${configDir}/workspace`, { recursive: true });
+    writeFileSync(`${configDir}/openclaw.json`, JSON.stringify(config, null, 2));
+    writeFileSync(`${configDir}/SOUL.md`, soulMd);
+    // Fix permissions for the node user (uid 1000) inside the container
+    execSync(`chown -R 1000:1000 ${configDir}`);
+
+    // Create the container — runs OpenClaw gateway with LAN binding
     const container = await docker.createContainer({
       Image: OPENCLAW_IMAGE,
       name: employee.containerName!,
+      Cmd: ["node", "openclaw.mjs", "gateway", "--bind", "lan", "--allow-unconfigured"],
       Env: [
+        `HOME=/home/node`,
         `OPENCLAW_GATEWAY_TOKEN=${employee.gatewayToken}`,
-        `OPENCLAW_CONFIG=${JSON.stringify(config)}`,
-        `OPENCLAW_SOUL_MD=${soulMd}`,
+        `ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}`,
         `EMPLOYEE_EMAIL=${emailAddress}`,
         `EMPLOYEE_NAME=${employee.name}`,
         `EMPLOYEE_JOB_TITLE=${employee.jobTitle}`,
       ],
       HostConfig: {
-        Binds: [`${volumeName}:/home/node/.openclaw`],
+        Binds: [
+          `${configDir}:/home/node/.openclaw`,
+          `${configDir}/workspace:/home/node/.openclaw/workspace`,
+        ],
         NetworkMode: OPENCLAW_NETWORK,
         Memory: parseMemory(resources.memory),
         NanoCpus: parseCpus(resources.cpus),
@@ -106,11 +121,6 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
       Labels: {
         "ai-employees.employee-id": employeeId,
         "ai-employees.company-id": data.companyId,
-        "traefik.enable": "true",
-        [`traefik.http.routers.${employee.containerName}.rule`]:
-          `Host(\`${employee.containerName}.localhost\`)`,
-        [`traefik.http.services.${employee.containerName}.loadbalancer.server.port`]:
-          "18789",
       },
     });
 

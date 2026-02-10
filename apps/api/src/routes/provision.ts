@@ -98,7 +98,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       })
       .returning();
 
-    // Queue actual Docker container provisioning
+    // Queue actual OpenClaw container provisioning
     const queue = getProvisionQueue();
     await queue.add("provision-employee", {
       employeeId: employee.id,
@@ -189,7 +189,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     return { employee: sanitize(employee) };
   });
 
-  // POST /internal/employees/:id/chat — proxy chat to OpenClaw container
+  // POST /internal/employees/:id/chat — proxy chat to container or call Anthropic directly
   fastify.post<{ Params: { id: string } }>("/internal/employees/:id/chat", async (request, reply) => {
     const { id } = request.params;
     const body = request.body as {
@@ -203,42 +203,100 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     if (employee.status !== "active") {
       return reply.status(400).send({ error: `Employee is ${employee.status}` });
     }
-    if (!employee.containerHost || !employee.containerPort) {
-      return reply.status(400).send({ error: "Container not ready" });
+
+    // If container is available, route through it (OpenClaw)
+    if (employee.containerHost && employee.containerPort) {
+      const containerUrl = `http://${employee.containerHost}:${employee.containerPort}/v1/chat/completions`;
+      try {
+        const res = await fetch(containerUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${employee.gatewayToken}`,
+          },
+          body: JSON.stringify({
+            model: (employee.modelConfig as { primary: string }).primary,
+            messages: body.messages,
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.text();
+          return reply.status(res.status).send({ error: `OpenClaw error: ${err}` });
+        }
+        const data = await res.json() as { choices?: { message?: { content?: string } }[]; usage?: unknown };
+        return { reply: data.choices?.[0]?.message?.content || "No response", mode: "live", usage: data.usage };
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        return reply.status(502).send({ error: `Container unreachable: ${message}` });
+      }
     }
 
-    // Forward to OpenClaw's OpenAI-compatible chat completions endpoint
-    const containerUrl = `http://${employee.containerHost}:${employee.containerPort}/v1/chat/completions`;
+    // No container — call Anthropic directly
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      return reply.status(500).send({ error: "ANTHROPIC_API_KEY not configured" });
+    }
+
+    const systemPrompt = buildSystemPrompt(employee);
+    const modelConfig = employee.modelConfig as { primary: string };
+    const modelId = toAnthropicModelId(modelConfig.primary);
 
     try {
-      const res = await fetch(containerUrl, {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${employee.gatewayToken}`,
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
         },
         body: JSON.stringify({
-          model: (employee.modelConfig as { primary: string }).primary,
-          messages: body.messages,
+          model: modelId,
+          max_tokens: 4096,
+          system: systemPrompt,
+          messages: body.messages.map((m) => ({
+            role: m.role === "assistant" ? "assistant" : "user",
+            content: m.content,
+          })),
         }),
       });
 
       if (!res.ok) {
         const err = await res.text();
-        return reply.status(res.status).send({ error: `OpenClaw error: ${err}` });
+        fastify.log.error(`Anthropic API error: ${err}`);
+        return reply.status(502).send({ error: `LLM error: ${res.status}` });
       }
 
-      const data = await res.json() as { choices?: { message?: { content?: string } }[]; usage?: unknown };
-      const assistantMessage = data.choices?.[0]?.message?.content || "No response";
+      const data = await res.json() as {
+        content?: Array<{ type: string; text?: string }>;
+        usage?: { input_tokens?: number; output_tokens?: number };
+      };
 
       return {
-        reply: assistantMessage,
+        reply: data.content?.find((c) => c.type === "text")?.text || "No response",
         mode: "live",
         usage: data.usage,
       };
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      return reply.status(502).send({ error: `Container unreachable: ${message}` });
+      return reply.status(502).send({ error: `Anthropic API error: ${message}` });
     }
   });
+}
+
+/** Build a system prompt from employee persona/goals */
+function buildSystemPrompt(employee: { name: string; jobTitle: string; persona: string | null; goals: string | null; emoji: string | null }): string {
+  const parts = [
+    `You are ${employee.name}, a ${employee.jobTitle}.`,
+  ];
+  if (employee.persona) parts.push(`\nPersona: ${employee.persona}`);
+  if (employee.goals) parts.push(`\nGoals: ${employee.goals}`);
+  parts.push(`\nRespond helpfully and in character. Be concise but thorough.`);
+  return parts.join("");
+}
+
+/** Convert model config string to Anthropic model ID */
+function toAnthropicModelId(model: string): string {
+  // Strip provider prefix if present (e.g. "anthropic/claude-sonnet-4-20250514" → "claude-sonnet-4-20250514")
+  const stripped = model.includes("/") ? model.split("/").slice(1).join("/") : model;
+  return stripped || "claude-sonnet-4-20250514";
 }
