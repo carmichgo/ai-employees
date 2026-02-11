@@ -54,6 +54,13 @@ export function generateOpenClawConfig(
       },
     },
 
+    // Load plugins from the extensions directory (installed via npm before container start)
+    plugins: {
+      load: {
+        paths: ["/home/node/.openclaw/extensions/node_modules"],
+      },
+    },
+
     agents: {
       defaults: {
         model: { primary: employee.modelConfig.primary },
