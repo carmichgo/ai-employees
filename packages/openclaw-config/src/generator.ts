@@ -54,11 +54,10 @@ export function generateOpenClawConfig(
       },
     },
 
-    // Load plugins from the extensions directory (installed via npm before container start)
+    // Enable bundled plugins (shipped with OpenClaw image but disabled by default)
     plugins: {
-      load: {
-        paths: ["/home/node/.openclaw/extensions/node_modules"],
-      },
+      enabled: true,
+      entries: buildPluginEntries(),
     },
 
     agents: {
@@ -359,4 +358,38 @@ function slugify(name: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
+}
+
+/** All bundled OpenClaw plugins to enable for AI employees */
+const BUNDLED_PLUGINS = [
+  // Media & image
+  "lobster", "openai-image-gen", "nano-banana-pro", "video-frames",
+  "gifgrep", "camsnap", "peekaboo",
+  // Audio & voice
+  "openai-whisper", "sherpa-onnx-tts", "voice-call",
+  // Email
+  "himalaya",
+  // Social media & messaging
+  "bird", "wacli", "imessage", "bluebubbles",
+  // Productivity & project management
+  "notion", "apple-notes", "google", "trello", "1password",
+  // Developer
+  "github", "coding-agent", "tmux", "session-logs",
+  // AI & LLM
+  "gemini", "sag", "summarize",
+  // Documents & content
+  "nano-pdf", "blogwatcher",
+  // Utilities
+  "weather", "goplaces", "local-places", "healthcheck",
+  // OpenClaw platform
+  "mcporter", "clawhub", "skill-creator",
+];
+
+/** Build plugins.entries object enabling all bundled plugins */
+function buildPluginEntries(): Record<string, { enabled: boolean }> {
+  const entries: Record<string, { enabled: boolean }> = {};
+  for (const plugin of BUNDLED_PLUGINS) {
+    entries[plugin] = { enabled: true };
+  }
+  return entries;
 }

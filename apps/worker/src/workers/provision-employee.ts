@@ -140,12 +140,6 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
 
     // Get container info for host/port
     const info = await container.inspect();
-    const containerName = employee.containerName!;
-
-    // Install OpenClaw plugins (runs in background — doesn't block provisioning)
-    installPlugins(containerName).catch((err) => {
-      console.error(`[provision] Plugin install failed for ${containerName}:`, err.message);
-    });
 
     // Update DB with container details + email
     await db
@@ -229,86 +223,6 @@ export async function teardownEmployee(employeeId: string): Promise<void> {
   }
 
   console.log(`[teardown] Employee ${employee.name} (${employeeId}) fully terminated`);
-}
-
-/** OpenClaw plugins to install in every employee container */
-const OPENCLAW_PLUGINS = [
-  // Productivity & project management
-  "1password",
-  "trello",
-  // Messaging
-  "bluebubbles",
-  // Image & media
-  "openai-image-gen",
-  "nano-banana-pro",
-  "video-frames",
-  "gifgrep",
-  "camsnap",
-  "peekaboo",
-  // Audio & voice
-  "openai-whisper",
-  "sherpa-onnx-tts",
-  "voice-call",
-  // AI & LLM
-  "gemini",
-  "sag",
-  "summarize",
-  // Documents & content
-  "nano-pdf",
-  "blogwatcher",
-  // Utilities
-  "weather",
-  "goplaces",
-  "local-places",
-  "healthcheck",
-  // Developer
-  "coding-agent",
-  "tmux",
-  "session-logs",
-  // OpenClaw platform
-  "mcporter",
-  "clawhub",
-  "skill-creator",
-];
-
-/** Install OpenClaw plugins inside a running container */
-async function installPlugins(containerName: string): Promise<void> {
-  console.log(`[plugins] Installing ${OPENCLAW_PLUGINS.length} plugins in ${containerName}...`);
-
-  // Wait a few seconds for OpenClaw to start up
-  await new Promise((r) => setTimeout(r, 5000));
-
-  let installed = 0;
-  let failed = 0;
-
-  for (const plugin of OPENCLAW_PLUGINS) {
-    try {
-      execSync(
-        `docker exec ${containerName} node openclaw.mjs plugins install ${plugin}`,
-        { timeout: 60000, stdio: "pipe" },
-      );
-      installed++;
-    } catch {
-      // Plugin may not exist in registry or may already be built-in
-      failed++;
-    }
-  }
-
-  console.log(`[plugins] Done: ${installed} installed, ${failed} skipped/failed`);
-
-  // Restart gateway to pick up new plugins
-  if (installed > 0) {
-    try {
-      execSync(
-        `docker exec ${containerName} node openclaw.mjs gateway restart`,
-        { timeout: 15000, stdio: "pipe" },
-      );
-      console.log(`[plugins] Gateway restarted in ${containerName}`);
-    } catch {
-      // Restart via container restart as fallback
-      try { execSync(`docker restart ${containerName}`, { timeout: 30000 }); } catch {}
-    }
-  }
 }
 
 function parseMemory(mem: string): number {
