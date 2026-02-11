@@ -327,6 +327,26 @@ function installCliTools(containerName: string): void {
         2>/dev/null
     '
 
+    # Install Chromium browser dependencies (for OpenClaw browser tool)
+    # Uses playwright-core's install-deps to get the right system libraries
+    docker exec -u root ${containerName} bash -c '
+      cd /app && npx playwright-core install-deps chromium 2>/dev/null
+    '
+
+    # Install Chromium browser binary via playwright-core (as node user)
+    docker exec ${containerName} bash -c '
+      cd /app && npx playwright-core install chromium 2>/dev/null
+    '
+
+    # Create symlink so OpenClaw auto-detects the browser
+    docker exec -u root ${containerName} bash -c '
+      CHROME_BIN=$(find /home/node/.cache/ms-playwright -name chrome -path "*/chrome-linux64/*" 2>/dev/null | head -1) &&
+      if [ -n "$CHROME_BIN" ]; then
+        ln -sf "$CHROME_BIN" /usr/local/bin/chromium &&
+        echo "Chromium linked: $CHROME_BIN -> /usr/local/bin/chromium"
+      fi
+    '
+
     # Install GitHub CLI (gh)
     docker exec -u root ${containerName} bash -c '
       curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg &&
