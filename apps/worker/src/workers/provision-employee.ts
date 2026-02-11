@@ -363,6 +363,10 @@ function installCliTools(containerName: string): void {
       mv /root/.local/bin/himalaya /usr/local/bin/himalaya 2>/dev/null || true
     '
 
+    # Restart container so gateway picks up newly installed Chromium browser
+    echo "[cli-tools] Restarting container to pick up Chromium..."
+    docker restart ${containerName}
+
     echo "[cli-tools] Installation complete for ${containerName}"
   `;
 
