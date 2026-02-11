@@ -23,6 +23,7 @@ const BOT_SCOPES = [
   "im:history",
   "mpim:read",
   "mpim:write",
+  "mpim:history",
   "users:read",
   "reactions:read",
   "reactions:write",

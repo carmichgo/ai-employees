@@ -1,0 +1,54 @@
+display_information:
+  name: AI Employees
+  description: Connect your AI workforce to Slack
+  background_color: "#5D79DF"
+  long_description: |
+    AI Employees integrates your AI workforce with Slack. Once connected,
+    your AI employees can read and respond to messages, react to conversations,
+    share files, and collaborate with your team directly in Slack channels and DMs.
+
+features:
+  bot_user:
+    display_name: AI Employee
+    always_online: true
+  app_home:
+    home_tab_enabled: false
+    messages_tab_enabled: true
+    messages_tab_read_only_enabled: false
+
+oauth_config:
+  redirect_urls:
+    - https://ai-employees-ten.vercel.app/api/integrations/slack/callback
+  scopes:
+    bot:
+      - app_mentions:read
+      - channels:read
+      - channels:history
+      - chat:write
+      - files:read
+      - files:write
+      - groups:read
+      - groups:history
+      - im:read
+      - im:write
+      - im:history
+      - mpim:read
+      - mpim:write
+      - mpim:history
+      - reactions:read
+      - reactions:write
+      - users:read
+
+settings:
+  event_subscriptions:
+    bot_events:
+      - app_mention
+      - message.channels
+      - message.groups
+      - message.im
+      - message.mpim
+  interactivity:
+    is_enabled: false
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+  token_rotation_enabled: false
