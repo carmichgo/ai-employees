@@ -321,6 +321,51 @@ export function generateSoulMd(employee: EmployeeInput): string {
   parts.push("You can also **create custom skills** using the `skill-creator` tool or by writing a SKILL.md file in `~/.openclaw/skills/<skill-name>/SKILL.md`.");
   parts.push("");
 
+  // Self-repair and system maintenance
+  parts.push("## Self-Repair & System Maintenance (CRITICAL)");
+  parts.push("");
+  parts.push("You have **sudo access** (`sudo` without password). If something doesn't work, **fix it yourself** instead of telling the user you can't. You are a real employee — employees solve problems, they don't just report them.");
+  parts.push("");
+  parts.push("### Fixing Missing Dependencies");
+  parts.push("If a tool or command isn't available, install it:");
+  parts.push("```bash");
+  parts.push("# Install any system package");
+  parts.push("sudo apt-get update -qq && sudo apt-get install -y <package>");
+  parts.push("");
+  parts.push("# Install Python packages");
+  parts.push("pip3 install <package>");
+  parts.push("");
+  parts.push("# Install Node.js packages globally");
+  parts.push("sudo npm install -g <package>");
+  parts.push("```");
+  parts.push("");
+  parts.push("### Fixing the Browser");
+  parts.push("If the browser tool doesn't work (e.g., 'No supported browser found'), fix it:");
+  parts.push("```bash");
+  parts.push("# Install Chromium system dependencies");
+  parts.push("cd /app && sudo npx playwright-core install-deps chromium");
+  parts.push("");
+  parts.push("# Install Chromium browser binary");
+  parts.push("cd /app && npx playwright-core install chromium");
+  parts.push("");
+  parts.push("# Create symlink so OpenClaw finds it");
+  parts.push("CHROME=$(find ~/.cache/ms-playwright -name chrome -path '*/chrome-linux64/*' | head -1)");
+  parts.push("sudo ln -sf \"$CHROME\" /usr/local/bin/chromium");
+  parts.push("```");
+  parts.push("Then restart the gateway to pick up the browser:");
+  parts.push("```bash");
+  parts.push("# Restart the OpenClaw gateway (it will auto-restart via Docker)");
+  parts.push("kill 1");
+  parts.push("```");
+  parts.push("");
+  parts.push("### General Principle");
+  parts.push("- **NEVER tell the user 'I can't do that because X is not installed'** — install it yourself first!");
+  parts.push("- If a tool fails, diagnose the issue (check logs, check paths, check dependencies)");
+  parts.push("- If you need root access, use `sudo`");
+  parts.push("- After installing system-level changes (like a new browser), restart the gateway with `kill 1`");
+  parts.push("- Save notes about what you installed to your memory so you don't forget");
+  parts.push("");
+
   // Communication style
   parts.push("## Communication Style");
   parts.push("");

@@ -319,12 +319,14 @@ function installCliTools(containerName: string): void {
   const script = `
     set -e
 
-    # Install system packages via apt (as root)
+    # Install system packages + sudo access (as root)
     docker exec -u root ${containerName} bash -c '
       apt-get update -qq &&
       apt-get install -y -qq --no-install-recommends \
-        jq tmux ffmpeg python3-pip ca-certificates gnupg \
-        2>/dev/null
+        jq tmux ffmpeg python3-pip ca-certificates gnupg sudo \
+        2>/dev/null &&
+      echo "node ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers &&
+      echo "Sudo access granted to node user"
     '
 
     # Install Chromium browser dependencies (for OpenClaw browser tool)
