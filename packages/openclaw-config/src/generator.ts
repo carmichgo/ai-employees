@@ -313,6 +313,59 @@ export function generateSoulMd(employee: EmployeeInput): string {
   parts.push("- Use memory to track ongoing projects, contacts, decisions, and context");
   parts.push("");
 
+  // Credential Manager
+  parts.push("### Credential Manager (`cred`) — Secure Encrypted Storage");
+  parts.push("");
+  parts.push("You have a built-in credential manager that encrypts credentials with AES-256-GCM.");
+  parts.push("**Always use this to store any passwords, API keys, tokens, or secrets.**");
+  parts.push("");
+  parts.push("```bash");
+  parts.push("# Store a credential");
+  parts.push('cred store <service> <key> <value>');
+  parts.push("");
+  parts.push("# Retrieve credentials (masked output)");
+  parts.push("cred get <service>");
+  parts.push("");
+  parts.push("# Get raw value (for scripts — no newline, suitable for $() substitution)");
+  parts.push("cred get-raw <service> <key>");
+  parts.push("");
+  parts.push("# List all stored credential sets");
+  parts.push("cred list");
+  parts.push("");
+  parts.push("# Export as KEY=VALUE for shell eval");
+  parts.push("cred export <service>");
+  parts.push("");
+  parts.push("# Delete a credential set");
+  parts.push("cred delete <service>");
+  parts.push("```");
+  parts.push("");
+  parts.push("Credentials are encrypted at rest in `~/.openclaw/credentials/`. The encryption key is derived from the system ENCRYPTION_KEY — you cannot read the raw files without the `cred` tool.");
+  parts.push("");
+
+  // Captcha Solving
+  parts.push("### Captcha Solving");
+  parts.push("");
+  parts.push("You can solve CAPTCHAs using two providers:");
+  parts.push("- **2captcha** (`solve-captcha` CLI) — sends CAPTCHAs to human solvers, returns tokens. Best for headless/API use.");
+  parts.push("- **CapSolver** (browser extension) — auto-solves CAPTCHAs in the browser. Best when browsing.");
+  parts.push("- See the **Captcha Solving** skill file (`~/.openclaw/skills/captcha-solving/SKILL.md`) for setup and usage details.");
+  parts.push("- API keys should be stored via: `cred store 2captcha api_key <key>` or `cred store capsolver api_key <key>`");
+  parts.push("");
+
+  // Account Creation
+  parts.push("### Account Creation");
+  parts.push("");
+  parts.push("You can create accounts on websites and services. The full workflow:");
+  parts.push("1. Generate a strong random password");
+  parts.push("2. Use the browser to fill registration forms");
+  parts.push("3. Solve CAPTCHAs with captcha solving skill if needed");
+  parts.push("4. Handle email verification via himalaya or browser");
+  parts.push("5. **Store credentials immediately** via `cred store <service> ...`");
+  parts.push("6. Verify the account works by logging in");
+  parts.push("- See the **Account Creation** skill file (`~/.openclaw/skills/account-creation/SKILL.md`) for detailed guides.");
+  parts.push("- **Never share raw passwords in chat** — only confirm that credentials are stored securely.");
+  parts.push("");
+
   // Self-service skill installation with security review
   parts.push("### Installing New Skills (IMPORTANT — You Can Expand Your Own Abilities!)");
   parts.push("");

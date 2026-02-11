@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import crypto from "node:crypto";
 import { execSync, spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { db, employees, companies } from "@ai-employees/db";
@@ -7,6 +8,9 @@ import {
   generateOpenClawConfig,
   generateSoulMd,
   generateEmployeeEmail,
+  generateCredentialManagerScript,
+  generateCaptchaSolvingSkill,
+  generateAccountCreationSkill,
   type EmployeeInput,
 } from "@ai-employees/openclaw-config";
 import { docker, ensureNetwork, ensureImage } from "../docker/client.js";
@@ -15,6 +19,15 @@ const OPENCLAW_IMAGE = process.env.OPENCLAW_IMAGE || "ghcr.io/openclaw/openclaw:
 const OPENCLAW_NETWORK = process.env.OPENCLAW_NETWORK || "ai-employees-internal";
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
 const BRAVE_API_KEY = process.env.BRAVE_API_KEY || "";
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || "";
+
+/** Derive a per-employee encryption key from the system key + employee ID */
+function deriveEmployeeEncryptionKey(employeeId: string): string {
+  return crypto
+    .createHmac("sha256", ENCRYPTION_KEY)
+    .update(`employee-cred-key:${employeeId}`)
+    .digest("hex");
+}
 
 export interface ProvisionJobData {
   employeeId: string;
@@ -91,13 +104,23 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     const plan = (company.plan as PlanTier) || "starter";
     const resources = CONTAINER_RESOURCES[plan] || CONTAINER_RESOURCES.starter;
 
-    // Write OpenClaw config + soul.md to a host directory that gets bind-mounted
+    // Write OpenClaw config + soul.md + skills to a host directory that gets bind-mounted
     const configDir = `/opt/ai-employees/openclaw-configs/${employeeId}`;
     mkdirSync(`${configDir}/workspace`, { recursive: true });
     mkdirSync(`${configDir}/workspace/uploads`, { recursive: true });
+    mkdirSync(`${configDir}/credentials`, { recursive: true, mode: 0o700 });
+    mkdirSync(`${configDir}/skills/captcha-solving`, { recursive: true });
+    mkdirSync(`${configDir}/skills/account-creation`, { recursive: true });
     writeFileSync(`${configDir}/openclaw.json`, JSON.stringify(config, null, 2));
     writeFileSync(`${configDir}/SOUL.md`, soulMd);
     writeFileSync(`${configDir}/workspace/SOUL.md`, soulMd);
+
+    // Write credential manager CLI script
+    writeFileSync(`${configDir}/cred.js`, generateCredentialManagerScript(), { mode: 0o755 });
+
+    // Write skill files
+    writeFileSync(`${configDir}/skills/captcha-solving/SKILL.md`, generateCaptchaSolvingSkill());
+    writeFileSync(`${configDir}/skills/account-creation/SKILL.md`, generateAccountCreationSkill());
 
     // Fix permissions for the node user (uid 1000) inside the container
     execSync(`chown -R 1000:1000 ${configDir}`);
@@ -113,6 +136,7 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
         `OPENCLAW_GATEWAY_TOKEN=${employee.gatewayToken}`,
         `ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}`,
         ...(BRAVE_API_KEY ? [`BRAVE_API_KEY=${BRAVE_API_KEY}`] : []),
+        `ENCRYPTION_KEY=${deriveEmployeeEncryptionKey(employeeId)}`,
         `EMPLOYEE_EMAIL=${emailAddress}`,
         `EMPLOYEE_NAME=${employee.name}`,
         `EMPLOYEE_JOB_TITLE=${employee.jobTitle}`,
@@ -361,6 +385,30 @@ function installCliTools(containerName: string): void {
     docker exec -u root ${containerName} bash -c '
       curl -fsSL https://raw.githubusercontent.com/pimalaya/himalaya/master/install.sh | sh 2>/dev/null &&
       mv /root/.local/bin/himalaya /usr/local/bin/himalaya 2>/dev/null || true
+    '
+
+    # Install credential manager CLI (cred) — symlink the script as a global command
+    docker exec -u root ${containerName} bash -c '
+      cat > /usr/local/bin/cred << "CREDEOF"
+#!/bin/bash
+exec node /home/node/.openclaw/cred.js "$@"
+CREDEOF
+      chmod +x /usr/local/bin/cred &&
+      echo "Credential manager (cred) installed"
+    '
+
+    # Install 2captcha CLI solver
+    docker exec -u root ${containerName} bash -c '
+      curl -fsSL https://github.com/2captcha/cli/releases/latest/download/solve-captcha-linux-amd64 -o /usr/local/bin/solve-captcha 2>/dev/null &&
+      chmod +x /usr/local/bin/solve-captcha &&
+      echo "2captcha CLI (solve-captcha) installed" ||
+      echo "2captcha CLI install skipped (non-critical)"
+    '
+
+    # Install oathtool for TOTP 2FA code generation
+    docker exec -u root ${containerName} bash -c '
+      apt-get install -y -qq oathtool 2>/dev/null &&
+      echo "oathtool installed" || true
     '
 
     # Restart container so gateway picks up newly installed Chromium browser
