@@ -5,6 +5,8 @@ import { useParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { ArrowLeft, Send, Loader2, Bot, User } from "lucide-react";
 import Link from "next/link";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 interface Message {
   id: string;
@@ -285,7 +287,6 @@ export default function EmployeeChatPage() {
                 fontSize: 14,
                 lineHeight: 1.6,
                 color: "var(--text)",
-                whiteSpace: "pre-wrap",
                 wordBreak: "break-word",
               }}
             >
@@ -433,37 +434,143 @@ export default function EmployeeChatPage() {
           0%, 80%, 100% { transform: translateY(0) }
           40% { transform: translateY(-6px) }
         }
+
+        /* Markdown styles for chat messages */
+        .markdown-body { overflow-wrap: break-word; }
+        .markdown-body > *:first-child { margin-top: 0; }
+        .markdown-body > *:last-child { margin-bottom: 0; }
+        .markdown-body p { margin: 0.4em 0; }
+        .markdown-body h1, .markdown-body h2, .markdown-body h3,
+        .markdown-body h4, .markdown-body h5, .markdown-body h6 {
+          margin: 0.6em 0 0.3em;
+          font-weight: 600;
+          line-height: 1.3;
+        }
+        .markdown-body h1 { font-size: 1.35em; }
+        .markdown-body h2 { font-size: 1.2em; }
+        .markdown-body h3 { font-size: 1.1em; }
+        .markdown-body h4 { font-size: 1em; }
+        .markdown-body strong { font-weight: 600; }
+        .markdown-body em { font-style: italic; }
+        .markdown-body del { text-decoration: line-through; opacity: 0.7; }
+        .markdown-body a { color: var(--blue); text-decoration: underline; }
+        .markdown-body code {
+          font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+          font-size: 0.88em;
+          padding: 0.15em 0.4em;
+          border-radius: 4px;
+          background: rgba(255, 255, 255, 0.06);
+          border: 1px solid var(--border);
+        }
+        .markdown-body pre {
+          margin: 0.5em 0;
+          padding: 12px 14px;
+          border-radius: 8px;
+          background: rgba(0, 0, 0, 0.3);
+          border: 1px solid var(--border);
+          overflow-x: auto;
+        }
+        .markdown-body pre code {
+          padding: 0;
+          background: none;
+          border: none;
+          font-size: 0.85em;
+          line-height: 1.5;
+        }
+        .markdown-body ul, .markdown-body ol {
+          margin: 0.4em 0;
+          padding-left: 1.5em;
+        }
+        .markdown-body li { margin: 0.15em 0; }
+        .markdown-body li > p { margin: 0.2em 0; }
+        .markdown-body blockquote {
+          margin: 0.5em 0;
+          padding: 0.3em 0 0.3em 1em;
+          border-left: 3px solid var(--border);
+          color: var(--text-secondary);
+        }
+        .markdown-body blockquote > p { margin: 0.2em 0; }
+        .markdown-body hr {
+          margin: 0.8em 0;
+          border: none;
+          border-top: 1px solid var(--border);
+        }
+        .markdown-body table {
+          margin: 0.5em 0;
+          border-collapse: collapse;
+          width: 100%;
+          font-size: 0.9em;
+        }
+        .markdown-body th, .markdown-body td {
+          padding: 6px 10px;
+          border: 1px solid var(--border);
+          text-align: left;
+        }
+        .markdown-body th {
+          font-weight: 600;
+          background: rgba(255, 255, 255, 0.04);
+        }
+        .markdown-body tr:nth-child(even) {
+          background: rgba(255, 255, 255, 0.02);
+        }
+        .markdown-body img { max-width: 100%; border-radius: 8px; }
+        .markdown-body input[type="checkbox"] {
+          margin-right: 6px;
+          vertical-align: middle;
+        }
       `}</style>
     </div>
   );
 }
 
-/** Render message content with inline images and basic markdown */
+/** Render markdown text via react-markdown + remark-gfm */
+function MarkdownText({ text }: { text: string }) {
+  return (
+    <div className="markdown-body">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          // Open links in new tab
+          a: ({ href, children, ...props }) => (
+            <a href={href} target="_blank" rel="noopener noreferrer" {...props}>
+              {children}
+            </a>
+          ),
+          // Inline images via our ImageEmbed component
+          img: ({ src, alt }) => (
+            typeof src === "string" ? <ImageEmbed src={src} alt={alt || "image"} /> : null
+          ),
+        }}
+      >
+        {text}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+/** Render message content with inline images and markdown */
 function MessageContent({ content }: { content: string }) {
   // Split content into text and image parts
-  // Detect: ![alt](url), backtick-wrapped workspace URLs, and bare workspace image URLs
+  // Detect: backtick-wrapped workspace URLs and bare workspace image URLs
+  // (Markdown images ![alt](url) are handled by react-markdown)
   const imagePattern =
-    /!\[([^\]]*)\]\(([^)]+)\)|`(\/api\/employees\/[^\s`]+\.(?:png|jpe?g|gif|webp|svg|bmp))`|(?:^|[\s:;,(])(\/api\/employees\/[^\s)\]>"'`]+\.(?:png|jpe?g|gif|webp|svg|bmp))/gm;
+    /`(\/api\/employees\/[^\s`]+\.(?:png|jpe?g|gif|webp|svg|bmp))`|(?:^|[\s:;,(])(\/api\/employees\/[^\s)\]>"'`]+\.(?:png|jpe?g|gif|webp|svg|bmp))/gm;
 
   const parts: Array<{ type: "text" | "image"; value: string; alt?: string }> = [];
   let lastIndex = 0;
   let match;
 
   while ((match = imagePattern.exec(content)) !== null) {
-    // Add text before this match
     if (match.index > lastIndex) {
       parts.push({ type: "text", value: content.slice(lastIndex, match.index) });
     }
 
-    if (match[2]) {
-      // Markdown image: ![alt](url)
-      parts.push({ type: "image", value: match[2], alt: match[1] || "image" });
-    } else if (match[3]) {
+    if (match[1]) {
       // Backtick-wrapped URL
-      parts.push({ type: "image", value: match[3].trim(), alt: "image" });
-    } else if (match[4]) {
-      // Bare workspace URL (may have leading separator char we want to keep as text)
-      const url = match[4].trim();
+      parts.push({ type: "image", value: match[1].trim(), alt: "image" });
+    } else if (match[2]) {
+      // Bare workspace URL
+      const url = match[2].trim();
       const leadingChar = match[0].charAt(0);
       if (leadingChar && /[\s:;,(]/.test(leadingChar)) {
         parts.push({ type: "text", value: leadingChar });
@@ -474,14 +581,13 @@ function MessageContent({ content }: { content: string }) {
     lastIndex = match.index + match[0].length;
   }
 
-  // Add remaining text
   if (lastIndex < content.length) {
     parts.push({ type: "text", value: content.slice(lastIndex) });
   }
 
-  // If no images found, render as plain text
+  // If no bare workspace images found, render entire content as markdown
   if (parts.length === 0 || parts.every((p) => p.type === "text")) {
-    return <>{content}</>;
+    return <MarkdownText text={content} />;
   }
 
   return (
@@ -490,7 +596,7 @@ function MessageContent({ content }: { content: string }) {
         part.type === "image" ? (
           <ImageEmbed key={i} src={part.value} alt={part.alt || "image"} />
         ) : (
-          <span key={i}>{part.value}</span>
+          <MarkdownText key={i} text={part.value} />
         ),
       )}
     </>

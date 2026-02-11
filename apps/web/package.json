@@ -14,18 +14,20 @@
     "bcryptjs": "^2.4.3",
     "drizzle-orm": "^0.38.0",
     "jose": "^6.0.0",
+    "lucide-react": "^0.475.0",
     "next": "^15.2.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "lucide-react": "^0.475.0"
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.0.0",
+    "@types/bcryptjs": "^2.4.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "tailwindcss": "^4.0.0",
-    "@tailwindcss/postcss": "^4.0.0",
     "postcss": "^8.5.0",
-    "@types/bcryptjs": "^2.4.0",
+    "tailwindcss": "^4.0.0",
     "typescript": "^5.7.0"
   }
 }
