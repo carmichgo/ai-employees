@@ -24,11 +24,14 @@ export default function EmployeeChatPage() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  useEffect(() => {
-    async function init() {
+  const loadChat = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
       const empRes = await api.getEmployee(employeeId);
       setEmployee(empRes.employee);
 
@@ -67,11 +70,16 @@ export default function EmployeeChatPage() {
           },
         ]);
       }
-
+    } catch (err: any) {
+      setError(err.message || "Failed to load chat");
+    } finally {
       setLoading(false);
     }
-    init();
   }, [employeeId]);
+
+  useEffect(() => {
+    loadChat();
+  }, [loadChat]);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -147,13 +155,36 @@ export default function EmployeeChatPage() {
     el.style.height = Math.min(el.scrollHeight, 150) + "px";
   };
 
-  if (loading || !employee) {
+  if (loading) {
     return (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "80vh" }}>
         <Loader2
           size={24}
           style={{ animation: "spin 0.8s linear infinite", color: "var(--text-tertiary)" }}
         />
+        <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+      </div>
+    );
+  }
+
+  if (error || !employee) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "80vh", gap: 16 }}>
+        <div style={{ fontSize: 14, color: "var(--red, #ef4444)" }}>{error || "Failed to load employee"}</div>
+        <button
+          onClick={loadChat}
+          style={{
+            padding: "8px 20px",
+            borderRadius: 8,
+            border: "1px solid var(--border)",
+            background: "var(--bg-card)",
+            color: "var(--text)",
+            cursor: "pointer",
+            fontSize: 13,
+          }}
+        >
+          Retry
+        </button>
         <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
       </div>
     );
