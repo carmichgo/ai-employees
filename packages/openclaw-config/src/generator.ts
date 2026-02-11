@@ -81,26 +81,56 @@ export function generateOpenClawConfig(
               "group:memory",
               "group:automation",
               "group:messaging",
-              // Browser automation (real, non-headless CDP/Chrome)
+              // Browser & web
               "browser",
-              // Image analysis
+              // Media & image
               "image",
-              // Canvas (design/drawing)
               "canvas",
-              // Lobster (media/content)
               "lobster",
-              // Email: himalaya (IMAP/SMTP CLI)
+              "openai-image-gen",
+              "nano-banana-pro",
+              "video-frames",
+              "gifgrep",
+              "camsnap",
+              "peekaboo",
+              // Audio & voice
+              "openai-whisper",
+              "sherpa-onnx-tts",
+              "voice-call",
+              // Email
               "himalaya",
-              // Social media
-              "bird",       // Twitter/X
-              "wacli",      // WhatsApp
-              "imessage",   // iMessage
-              // Productivity
+              // Social media & messaging
+              "bird",
+              "wacli",
+              "imessage",
+              "bluebubbles",
+              // Productivity & project management
               "notion",
               "apple-notes",
-              "google",     // Google Workspace (Docs, Sheets, Calendar, etc.)
-              // Developer tools
-              "github",     // GitHub CLI (gh)
+              "google",
+              "trello",
+              "1password",
+              // Developer
+              "github",
+              "coding-agent",
+              "tmux",
+              "session-logs",
+              // AI & LLM
+              "gemini",
+              "sag",
+              "summarize",
+              // Documents & content
+              "nano-pdf",
+              "blogwatcher",
+              // Utilities
+              "weather",
+              "goplaces",
+              "local-places",
+              "healthcheck",
+              // OpenClaw platform
+              "mcporter",
+              "clawhub",
+              "skill-creator",
             ],
           },
         },
@@ -181,26 +211,62 @@ export function generateSoulMd(employee: EmployeeInput): string {
   parts.push("- Env vars: EMAIL_ADDRESS, EMAIL_SMTP_HOST, EMAIL_SMTP_PORT, EMAIL_IMAP_HOST, EMAIL_IMAP_PORT, EMAIL_USERNAME, EMAIL_PASSWORD, EMAIL_PROVIDER, EMAIL_WEBMAIL");
   parts.push("");
 
-  parts.push("### Social Media");
+  parts.push("### Social Media & Messaging");
   parts.push("- `bird` — Twitter/X: post tweets, read timeline, send DMs");
   parts.push("- `wacli` — WhatsApp: send and receive WhatsApp messages");
-  parts.push("- `imessage` — iMessage: send and receive iMessages");
+  parts.push("- `imessage` / `bluebubbles` — iMessage integration");
+  parts.push("- `voice-call` — make and receive voice calls");
   parts.push("- You can also use the **browser** for LinkedIn, Instagram, or any social platform");
   parts.push("");
 
-  parts.push("### Productivity Apps");
-  parts.push("- `notion` — interact with Notion (docs, databases, wikis)");
-  parts.push("- `apple-notes` — Apple Notes integration");
-  parts.push("- `google` — Google Workspace (Docs, Sheets, Calendar, Gmail, etc.)");
+  parts.push("### Productivity & Project Management");
+  parts.push("- `notion` — Notion (docs, databases, wikis)");
+  parts.push("- `apple-notes` — Apple Notes");
+  parts.push("- `google` — Google Workspace (Docs, Sheets, Calendar, Gmail)");
+  parts.push("- `trello` — Trello boards and cards");
+  parts.push("- `1password` — password and secret management");
   parts.push("- `github` — GitHub CLI for repos, PRs, issues, actions");
   parts.push("- You can also use the **browser** for any web app not covered above");
   parts.push("");
 
-  parts.push("### Design & Media");
-  parts.push("- `canvas` — design and drawing tool");
+  parts.push("### Design, Media & Image");
+  parts.push("- `canvas` — design and drawing");
   parts.push("- `lobster` — media and content creation");
-  parts.push("- `image` — image analysis");
-  parts.push("- You can also use the browser for Canva, Figma, or other design tools");
+  parts.push("- `image` — image analysis and understanding");
+  parts.push("- `openai-image-gen` — AI image generation");
+  parts.push("- `nano-banana-pro` — image processing");
+  parts.push("- `video-frames` — extract and analyze video frames");
+  parts.push("- `gifgrep` — search and create GIFs");
+  parts.push("- `camsnap` — camera capture");
+  parts.push("- `peekaboo` — screenshot and screen capture");
+  parts.push("");
+
+  parts.push("### Audio & Voice");
+  parts.push("- `openai-whisper` — speech-to-text transcription");
+  parts.push("- `sherpa-onnx-tts` — text-to-speech synthesis");
+  parts.push("");
+
+  parts.push("### Documents & Content");
+  parts.push("- `nano-pdf` — PDF creation and manipulation");
+  parts.push("- `blogwatcher` — monitor blogs and RSS feeds");
+  parts.push("- `summarize` — summarize long documents and content");
+  parts.push("");
+
+  parts.push("### AI & Development");
+  parts.push("- `coding-agent` — spawn a sub-agent for coding tasks");
+  parts.push("- `gemini` — access Google Gemini models");
+  parts.push("- `sag` — search-augmented generation");
+  parts.push("- `tmux` — terminal multiplexer for parallel tasks");
+  parts.push("- `session-logs` — view session history and logs");
+  parts.push("");
+
+  parts.push("### Utilities");
+  parts.push("- `weather` — get weather information");
+  parts.push("- `goplaces` / `local-places` — find places and locations");
+  parts.push("- `healthcheck` — check service health");
+  parts.push("- `clawhub` — browse and install OpenClaw skills from the hub");
+  parts.push("- `skill-creator` — create new custom skills");
+  parts.push("- `mcporter` — MCP tool integration");
   parts.push("");
 
   parts.push("### Scheduling & Automation (IMPORTANT)");
