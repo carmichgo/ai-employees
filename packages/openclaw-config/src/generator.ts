@@ -360,7 +360,7 @@ function slugify(name: string): string {
     .replace(/^-|-$/g, "");
 }
 
-/** All bundled OpenClaw plugins to enable for AI employees */
+/** Bundled OpenClaw plugins that exist in ghcr.io/openclaw/openclaw:latest */
 const BUNDLED_PLUGINS = [
   // Media & image
   "lobster", "openai-image-gen", "nano-banana-pro", "video-frames",
@@ -371,18 +371,8 @@ const BUNDLED_PLUGINS = [
   "himalaya",
   // Social media & messaging
   "bird", "wacli", "imessage", "bluebubbles",
-  // Productivity & project management
-  "notion", "apple-notes", "google", "trello", "1password",
-  // Developer
-  "github", "coding-agent", "tmux", "session-logs",
-  // AI & LLM
-  "gemini", "sag", "summarize",
-  // Documents & content
-  "nano-pdf", "blogwatcher",
-  // Utilities
-  "weather", "goplaces", "local-places", "healthcheck",
-  // OpenClaw platform
-  "mcporter", "clawhub", "skill-creator",
+  // Productivity
+  "notion",
 ];
 
 /** Build plugins.entries object enabling all bundled plugins */
