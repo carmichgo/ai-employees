@@ -54,8 +54,12 @@ export function generateOpenClawConfig(
       },
     },
 
-    // Browser config — headless mode for Docker, with Playwright Chromium path
+    // Browser config — use OpenClaw-managed headless Chromium (NOT Chrome extension relay)
+    // defaultProfile MUST be "openclaw" — the default "chrome" tries to use a browser extension
+    // relay which doesn't exist in Docker containers
     browser: {
+      enabled: true,
+      defaultProfile: "openclaw",
       headless: true,
       executablePath: "/usr/local/bin/chromium",
       noSandbox: true,
