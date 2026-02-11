@@ -157,9 +157,10 @@ export async function POST(
 
     const data = await res.json();
 
-    // Post-process: convert workspace file paths to accessible URLs
+    // Post-process: convert workspace file paths to accessible URLs, then auto-embed images
     let reply = data.reply || "";
     reply = rewriteWorkspacePaths(reply, id);
+    reply = autoEmbedImages(reply, id);
 
     // Save assistant reply to DB
     if (reply) {
@@ -219,4 +220,40 @@ function rewriteWorkspacePaths(text: string, employeeId: string): string {
   }
 
   return result;
+}
+
+/**
+ * Auto-embed workspace image URLs as markdown images.
+ * Converts bare URLs like /api/employees/{id}/workspace/screenshot.png
+ * into ![screenshot](url) so the frontend renders them as <img> tags.
+ * Skips URLs already inside markdown image syntax ![...](url).
+ */
+function autoEmbedImages(text: string, employeeId: string): string {
+  const prefix = `/api/employees/${employeeId}/workspace/`;
+  if (!text.includes(prefix)) return text;
+
+  const imageExts = ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"];
+
+  // Split by existing markdown images to avoid double-wrapping
+  const parts = text.split(/(!\[[^\]]*\]\([^)]+\))/);
+
+  return parts
+    .map((part, i) => {
+      // Odd indices are existing markdown images — leave them alone
+      if (i % 2 === 1) return part;
+
+      // In text parts, find bare workspace image URLs and wrap them
+      const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const re = new RegExp(
+        `(${escaped}[^\\s"'\`\\)\\]>]+\\.(?:${imageExts.join("|")}))`,
+        "gi",
+      );
+
+      return part.replace(re, (url) => {
+        const filename =
+          url.split("/").pop()?.replace(/\.[^.]+$/, "") || "image";
+        return `![${filename}](${url})`;
+      });
+    })
+    .join("");
 }

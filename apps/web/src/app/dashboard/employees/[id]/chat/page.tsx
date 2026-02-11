@@ -441,8 +441,9 @@ export default function EmployeeChatPage() {
 /** Render message content with inline images and basic markdown */
 function MessageContent({ content }: { content: string }) {
   // Split content into text and image parts
-  // Detect: ![alt](url), workspace image URLs, and standalone image URLs
-  const imagePattern = /!\[([^\]]*)\]\(([^)]+)\)|(?:^|\s)(\/api\/employees\/[^\s]+\.(?:png|jpg|jpeg|gif|webp))/gm;
+  // Detect: ![alt](url), backtick-wrapped workspace URLs, and bare workspace image URLs
+  const imagePattern =
+    /!\[([^\]]*)\]\(([^)]+)\)|`(\/api\/employees\/[^\s`]+\.(?:png|jpe?g|gif|webp|svg|bmp))`|(?:^|[\s:;,(])(\/api\/employees\/[^\s)\]>"'`]+\.(?:png|jpe?g|gif|webp|svg|bmp))/gm;
 
   const parts: Array<{ type: "text" | "image"; value: string; alt?: string }> = [];
   let lastIndex = 0;
@@ -458,8 +459,16 @@ function MessageContent({ content }: { content: string }) {
       // Markdown image: ![alt](url)
       parts.push({ type: "image", value: match[2], alt: match[1] || "image" });
     } else if (match[3]) {
-      // Standalone workspace URL
-      parts.push({ type: "image", value: match[3].trim(), alt: "screenshot" });
+      // Backtick-wrapped URL
+      parts.push({ type: "image", value: match[3].trim(), alt: "image" });
+    } else if (match[4]) {
+      // Bare workspace URL (may have leading separator char we want to keep as text)
+      const url = match[4].trim();
+      const leadingChar = match[0].charAt(0);
+      if (leadingChar && /[\s:;,(]/.test(leadingChar)) {
+        parts.push({ type: "text", value: leadingChar });
+      }
+      parts.push({ type: "image", value: url, alt: "image" });
     }
 
     lastIndex = match.index + match[0].length;
@@ -479,27 +488,63 @@ function MessageContent({ content }: { content: string }) {
     <>
       {parts.map((part, i) =>
         part.type === "image" ? (
-          <div key={i} style={{ margin: "8px 0" }}>
-            <a href={part.value} target="_blank" rel="noopener noreferrer">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={part.value}
-                alt={part.alt || "image"}
-                style={{
-                  maxWidth: "100%",
-                  maxHeight: 400,
-                  borderRadius: 8,
-                  border: "1px solid var(--border)",
-                  cursor: "pointer",
-                }}
-                loading="lazy"
-              />
-            </a>
-          </div>
+          <ImageEmbed key={i} src={part.value} alt={part.alt || "image"} />
         ) : (
           <span key={i}>{part.value}</span>
         ),
       )}
     </>
+  );
+}
+
+/** Image embed with loading state and error fallback */
+function ImageEmbed({ src, alt }: { src: string; alt: string }) {
+  const [error, setError] = useState(false);
+
+  if (error) {
+    return (
+      <div style={{ margin: "8px 0" }}>
+        <a
+          href={src}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "8px 12px",
+            borderRadius: 8,
+            background: "rgba(255,255,255,0.04)",
+            border: "1px solid var(--border)",
+            color: "var(--blue)",
+            fontSize: 13,
+            textDecoration: "none",
+          }}
+        >
+          {alt || src.split("/").pop() || "View file"}
+        </a>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ margin: "8px 0" }}>
+      <a href={src} target="_blank" rel="noopener noreferrer">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={src}
+          alt={alt}
+          onError={() => setError(true)}
+          style={{
+            maxWidth: "100%",
+            maxHeight: 400,
+            borderRadius: 8,
+            border: "1px solid var(--border)",
+            cursor: "pointer",
+          }}
+          loading="lazy"
+        />
+      </a>
+    </div>
   );
 }
