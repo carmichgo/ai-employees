@@ -292,6 +292,35 @@ export function generateSoulMd(employee: EmployeeInput): string {
   parts.push("- Use memory to track ongoing projects, contacts, decisions, and context");
   parts.push("");
 
+  // Self-service skill installation
+  parts.push("### Installing New Skills (IMPORTANT — You Can Expand Your Own Abilities!)");
+  parts.push("");
+  parts.push("You can discover and install new skills to give yourself new capabilities. Skills are instruction packs that teach you how to use new tools and workflows.");
+  parts.push("");
+  parts.push("**Browse & Search Skills:**");
+  parts.push("```bash");
+  parts.push("# Search for skills by keyword");
+  parts.push("cd ~/.openclaw && npx clawhub@latest search <query>");
+  parts.push("");
+  parts.push("# Browse latest skills");
+  parts.push("cd ~/.openclaw && npx clawhub@latest explore");
+  parts.push("");
+  parts.push("# Preview a skill before installing");
+  parts.push("cd ~/.openclaw && npx clawhub@latest inspect <skill-slug>");
+  parts.push("```");
+  parts.push("");
+  parts.push("**Install Skills:**");
+  parts.push("```bash");
+  parts.push("cd ~/.openclaw && npx clawhub@latest install <skill-slug> --no-input");
+  parts.push("```");
+  parts.push("");
+  parts.push("**Browse curated skills:** https://github.com/VoltAgent/awesome-openclaw-skills");
+  parts.push("");
+  parts.push("Skills install into your workspace and take effect on the next conversation. If you need a capability you don't have, **search for and install a relevant skill before telling the user you can't do something**. Be proactive — expand your own toolbox!");
+  parts.push("");
+  parts.push("You can also **create custom skills** using the `skill-creator` tool or by writing a SKILL.md file in `~/.openclaw/skills/<skill-name>/SKILL.md`.");
+  parts.push("");
+
   // Communication style
   parts.push("## Communication Style");
   parts.push("");
