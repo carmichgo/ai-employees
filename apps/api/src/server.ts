@@ -109,8 +109,10 @@ export async function buildServer(config: Env) {
       echo "[$(date -Iseconds)] Build complete" >> ${logFile} && \
       sed -i 's|"main": "src/index.ts"|"main": "dist/index.js"|g' packages/*/package.json && \
       echo "[$(date -Iseconds)] Restarting services..." >> ${logFile} && \
-      systemctl restart ai-employees-api ai-employees-worker && \
-      echo "[$(date -Iseconds)] UPDATE COMPLETE" >> ${logFile} || \
+      systemctl restart ai-employees-worker && \
+      echo "[$(date -Iseconds)] Worker restarted" >> ${logFile} && \
+      echo "[$(date -Iseconds)] UPDATE COMPLETE" >> ${logFile} && \
+      systemctl restart ai-employees-api || \
       echo "[$(date -Iseconds)] UPDATE FAILED" >> ${logFile}
     `;
 
