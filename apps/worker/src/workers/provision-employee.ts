@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { execSync } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { db, employees, companies } from "@ai-employees/db";
 import { CONTAINER_RESOURCES, type PlanTier } from "@ai-employees/shared";
@@ -157,6 +157,9 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     console.log(
       `[provision] Employee ${employee.name} (${employeeId}) is now active at ${info.NetworkSettings.Networks?.[OPENCLAW_NETWORK]?.IPAddress}:18789 — email: ${emailAddress}`,
     );
+
+    // Install CLI tools in background (doesn't block provisioning)
+    installCliTools(employee.containerName!);
   } catch (error) {
     console.error(`[provision] Failed to provision employee ${employeeId}:`, error);
 
@@ -240,6 +243,53 @@ function parseMemory(mem: string): number {
 
 function parseCpus(cpus: string): number {
   return Math.floor(parseFloat(cpus) * 1e9);
+}
+
+/**
+ * Install CLI tools into the container in the background.
+ * Skills like github, himalaya, nano-pdf etc. are bundled as SKILL.md files
+ * but need their CLI binaries to actually work.
+ */
+function installCliTools(containerName: string): void {
+  const script = `
+    set -e
+
+    # Install system packages via apt (as root)
+    docker exec -u root ${containerName} bash -c '
+      apt-get update -qq &&
+      apt-get install -y -qq --no-install-recommends \
+        jq tmux ffmpeg python3-pip ca-certificates gnupg \
+        2>/dev/null
+    '
+
+    # Install GitHub CLI (gh)
+    docker exec -u root ${containerName} bash -c '
+      curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg &&
+      echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list &&
+      apt-get update -qq &&
+      apt-get install -y -qq gh
+    '
+
+    # Install himalaya email CLI
+    docker exec -u root ${containerName} bash -c '
+      curl -fsSL https://raw.githubusercontent.com/pimalaya/himalaya/master/install.sh | sh 2>/dev/null &&
+      mv /root/.local/bin/himalaya /usr/local/bin/himalaya 2>/dev/null || true
+    '
+
+    echo "[cli-tools] Installation complete for ${containerName}"
+  `;
+
+  const child = spawn("bash", ["-c", script], {
+    detached: true,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  child.stdout?.on("data", (d: Buffer) => console.log(`[cli-tools] ${d.toString().trim()}`));
+  child.stderr?.on("data", (d: Buffer) => console.log(`[cli-tools:err] ${d.toString().trim()}`));
+  child.on("close", (code) => {
+    console.log(`[cli-tools] Finished for ${containerName} (exit ${code})`);
+  });
+  child.unref();
 }
 
 /** Webmail URLs by provider for browser-based email access */
