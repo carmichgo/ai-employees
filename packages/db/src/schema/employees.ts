@@ -37,6 +37,10 @@ export const employees = pgTable("employees", {
   provisionedAccounts: jsonb("provisioned_accounts").notNull().default({}),
   // { slack: { botToken: "...", teamId: "..." }, telegram: { token: "..." }, ... }
 
+  // Stored credentials (logins, API keys, etc.)
+  credentials: jsonb("credentials").notNull().default([]),
+  // [{ id, label, username, password, url?, notes? }]
+
   // Metadata
   configHash: varchar("config_hash", { length: 64 }),
   lastHealthAt: timestamp("last_health_at", { withTimezone: true }),
