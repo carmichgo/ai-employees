@@ -80,18 +80,37 @@ export async function buildServer(config: Env) {
   });
 
   // Hot code update — pulls latest code, rebuilds, and restarts services
-  // This avoids having to destroy + re-provision the droplet for every code change
+  // Supports both git repos and tarball-downloaded code (cloud-init)
   fastify.get("/update", async () => {
     try {
       const appDir = "/opt/ai-employees/app";
       const log: string[] = [];
+      const { existsSync } = await import("node:fs");
 
-      log.push("Fetching latest code...");
-      const branch = execSync("git rev-parse --abbrev-ref HEAD", { cwd: appDir, timeout: 5000 }).toString().trim();
-      log.push(`Branch: ${branch}`);
+      // Determine if git repo or tarball-based install
+      const isGit = existsSync(`${appDir}/.git`);
 
-      execSync(`git pull origin ${branch}`, { cwd: appDir, timeout: 30000 });
-      log.push("Git pull complete");
+      if (isGit) {
+        log.push("Git repo detected, pulling...");
+        const branch = execSync("git rev-parse --abbrev-ref HEAD", { cwd: appDir, timeout: 5000 }).toString().trim();
+        log.push(`Branch: ${branch}`);
+        execSync(`git pull origin ${branch}`, { cwd: appDir, timeout: 30000 });
+        log.push("Git pull complete");
+      } else {
+        // Tarball download — read branch from .branch file or env
+        let branch = "main";
+        try { branch = readFileSync(`${appDir}/.branch`, "utf-8").trim(); } catch {}
+        log.push(`Tarball mode, downloading branch: ${branch}`);
+
+        const tarballUrl = `https://github.com/carmichgo/ai-employees/archive/refs/heads/${branch}.tar.gz`;
+        execSync(`curl -sL "${tarballUrl}" -o /tmp/repo-update.tar.gz`, { timeout: 30000 });
+        // Extract over existing code (preserves .env, node_modules, dist)
+        execSync(`tar xzf /tmp/repo-update.tar.gz --strip-components=1 -C ${appDir}`, { timeout: 15000 });
+        execSync("rm -f /tmp/repo-update.tar.gz", { timeout: 5000 });
+        // Re-save branch marker
+        execSync(`echo "${branch}" > ${appDir}/.branch`, { timeout: 5000 });
+        log.push("Tarball download + extract complete");
+      }
 
       log.push("Installing dependencies...");
       execSync("pnpm install --frozen-lockfile 2>&1 || pnpm install 2>&1", { cwd: appDir, timeout: 120000 });

@@ -273,6 +273,7 @@ fi
 
 cd /opt/ai-employees/app
 cp /opt/ai-employees/.env .env
+echo "${params.repoBranch}" > .branch
 
 report "phase2-build" "started"
 
