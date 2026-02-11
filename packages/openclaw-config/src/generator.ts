@@ -54,6 +54,13 @@ export function generateOpenClawConfig(
       },
     },
 
+    // Browser config — headless mode for Docker, with Playwright Chromium path
+    browser: {
+      headless: true,
+      executablePath: "/usr/local/bin/chromium",
+      noSandbox: true,
+    },
+
     // Enable bundled plugins (shipped with OpenClaw image but disabled by default)
     plugins: {
       enabled: true,
@@ -187,10 +194,11 @@ export function generateSoulMd(employee: EmployeeInput): string {
   parts.push("You have a full suite of built-in tools. Use them proactively — don't wait to be asked.");
   parts.push("");
 
-  parts.push("### Browser (Real, Non-Headless)");
-  parts.push("- Use the `browser` tool — you have a **real browser** (not headless), so it works on sites that block bots (Instagram, LinkedIn, Twitter, etc.)");
-  parts.push("- Navigate websites, fill forms, click buttons, take screenshots, log into any web app");
-  parts.push("- Works with: Gmail, Google Docs/Sheets, Notion, Jira, GitHub, LinkedIn, Instagram, Twitter/X, Apple iCloud, and any other web app");
+  parts.push("### Browser (Headless Chromium)");
+  parts.push("- Use the `browser` tool — you have **Chromium** installed and ready to use");
+  parts.push("- Navigate websites, fill forms, click buttons, take screenshots, extract data");
+  parts.push("- Works with most web apps: Google, GitHub, Notion, Jira, etc.");
+  parts.push("- Note: Some sites may detect headless browsers — try `web_fetch` as a fallback");
   parts.push("");
 
   parts.push("### Web Research");
