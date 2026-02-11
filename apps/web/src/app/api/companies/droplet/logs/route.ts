@@ -52,7 +52,8 @@ export async function GET(request: NextRequest) {
 async function fetchLogs(ip: string, endpoint = "logs") {
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
+    const timeoutMs = endpoint.startsWith("update") ? 30000 : 5000;
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     const res = await fetch(`http://${ip}:3001/${endpoint}`, {
       signal: controller.signal,
     });

@@ -80,56 +80,55 @@ export async function buildServer(config: Env) {
   });
 
   // Hot code update — pulls latest code, rebuilds, and restarts services
-  // Supports both git repos and tarball-downloaded code (cloud-init)
+  // Runs in background since it takes minutes; check /update-status for results
   fastify.get("/update", async () => {
+    const logFile = "/tmp/ai-employees-update.log";
+    // Spawn background update script
+    const { existsSync, writeFileSync: writeSync } = await import("node:fs");
+    const { spawn } = await import("node:child_process");
+    const appDir = "/opt/ai-employees/app";
+
+    const isGit = existsSync(`${appDir}/.git`);
+    let branch = "main";
+    try { branch = readFileSync(`${appDir}/.branch`, "utf-8").trim(); } catch {}
+
+    writeSync(logFile, `[${new Date().toISOString()}] Update started (${isGit ? "git" : "tarball"}, branch: ${branch})\n`);
+
+    // Build update script
+    const script = isGit
+      ? `cd ${appDir} && git pull origin ${branch} >> ${logFile} 2>&1`
+      : `curl -sL "https://github.com/carmichgo/ai-employees/archive/refs/heads/${branch}.tar.gz" -o /tmp/repo-update.tar.gz && tar xzf /tmp/repo-update.tar.gz --strip-components=1 -C ${appDir} && rm -f /tmp/repo-update.tar.gz && echo "${branch}" > ${appDir}/.branch`;
+
+    const fullScript = `
+      (${script}) >> ${logFile} 2>&1 && \
+      echo "[$(date -Iseconds)] Code updated" >> ${logFile} && \
+      cd ${appDir} && \
+      (pnpm install --frozen-lockfile 2>&1 || pnpm install 2>&1) >> ${logFile} 2>&1 && \
+      echo "[$(date -Iseconds)] Dependencies installed" >> ${logFile} && \
+      pnpm turbo build --filter=@ai-employees/api --filter=@ai-employees/worker >> ${logFile} 2>&1 && \
+      echo "[$(date -Iseconds)] Build complete" >> ${logFile} && \
+      sed -i 's|"main": "src/index.ts"|"main": "dist/index.js"|g' packages/*/package.json && \
+      echo "[$(date -Iseconds)] Restarting services..." >> ${logFile} && \
+      systemctl restart ai-employees-api ai-employees-worker && \
+      echo "[$(date -Iseconds)] UPDATE COMPLETE" >> ${logFile} || \
+      echo "[$(date -Iseconds)] UPDATE FAILED" >> ${logFile}
+    `;
+
+    spawn("bash", ["-c", fullScript], { detached: true, stdio: "ignore" }).unref();
+
+    return { status: "started", message: "Update running in background. Check /update-status for progress.", branch, mode: isGit ? "git" : "tarball" };
+  });
+
+  // Check update progress
+  fastify.get("/update-status", async () => {
     try {
-      const appDir = "/opt/ai-employees/app";
-      const log: string[] = [];
-      const { existsSync } = await import("node:fs");
-
-      // Determine if git repo or tarball-based install
-      const isGit = existsSync(`${appDir}/.git`);
-
-      if (isGit) {
-        log.push("Git repo detected, pulling...");
-        const branch = execSync("git rev-parse --abbrev-ref HEAD", { cwd: appDir, timeout: 5000 }).toString().trim();
-        log.push(`Branch: ${branch}`);
-        execSync(`git pull origin ${branch}`, { cwd: appDir, timeout: 30000 });
-        log.push("Git pull complete");
-      } else {
-        // Tarball download — read branch from .branch file or env
-        let branch = "main";
-        try { branch = readFileSync(`${appDir}/.branch`, "utf-8").trim(); } catch {}
-        log.push(`Tarball mode, downloading branch: ${branch}`);
-
-        const tarballUrl = `https://github.com/carmichgo/ai-employees/archive/refs/heads/${branch}.tar.gz`;
-        execSync(`curl -sL "${tarballUrl}" -o /tmp/repo-update.tar.gz`, { timeout: 30000 });
-        // Extract over existing code (preserves .env, node_modules, dist)
-        execSync(`tar xzf /tmp/repo-update.tar.gz --strip-components=1 -C ${appDir}`, { timeout: 15000 });
-        execSync("rm -f /tmp/repo-update.tar.gz", { timeout: 5000 });
-        // Re-save branch marker
-        execSync(`echo "${branch}" > ${appDir}/.branch`, { timeout: 5000 });
-        log.push("Tarball download + extract complete");
-      }
-
-      log.push("Installing dependencies...");
-      execSync("pnpm install --frozen-lockfile 2>&1 || pnpm install 2>&1", { cwd: appDir, timeout: 120000 });
-      log.push("Dependencies installed");
-
-      log.push("Building...");
-      execSync("pnpm turbo build --filter=@ai-employees/api --filter=@ai-employees/worker 2>&1", { cwd: appDir, timeout: 120000 });
-      log.push("Build complete");
-
-      // Patch package.json main fields for Node.js ESM runtime
-      execSync("sed -i 's|\"main\": \"src/index.ts\"|\"main\": \"dist/index.js\"|g' packages/*/package.json", { cwd: appDir, timeout: 5000 });
-
-      log.push("Restarting services...");
-      execSync("systemctl restart ai-employees-api ai-employees-worker", { timeout: 10000 });
-      log.push("Services restarted");
-
-      return { success: true, log };
-    } catch (e: any) {
-      return { success: false, error: e.message, stderr: e.stderr?.toString()?.slice(-500) };
+      const log = readFileSync("/tmp/ai-employees-update.log", "utf-8");
+      const lines = log.split("\n").filter(Boolean);
+      const lastLine = lines[lines.length - 1] || "";
+      const done = lastLine.includes("UPDATE COMPLETE") || lastLine.includes("UPDATE FAILED");
+      return { done, success: lastLine.includes("UPDATE COMPLETE"), lines };
+    } catch {
+      return { done: false, success: false, lines: ["No update in progress"] };
     }
   });
 
