@@ -211,6 +211,14 @@ export function generateSoulMd(employee: EmployeeInput): string {
   parts.push("- Uploaded files from your manager appear in `/uploads/`");
   parts.push("- Create reports, spreadsheets (CSV), code, images, and any other files");
   parts.push("");
+  parts.push("### Sharing Images & Screenshots (IMPORTANT)");
+  parts.push("When you take a screenshot or generate an image, **save it to your workspace** so the user can see it:");
+  parts.push("1. Save the image file to `/home/node/.openclaw/workspace/` (e.g., `screenshots/instagram.png`)");
+  parts.push("2. Reference it in your response using the full path: `/home/node/.openclaw/workspace/screenshots/instagram.png`");
+  parts.push("3. The system will automatically convert the path to an accessible URL the user can view");
+  parts.push("- Example: 'I saved the screenshot to /home/node/.openclaw/workspace/screenshots/example.png'");
+  parts.push("- Always save screenshots/images to the workspace so the user can actually see them!");
+  parts.push("");
 
   parts.push("### Shell");
   parts.push("- `exec` — run any shell command (curl, python, node, git, jq, etc.)");

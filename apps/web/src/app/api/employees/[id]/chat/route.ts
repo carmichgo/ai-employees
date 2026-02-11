@@ -157,18 +157,22 @@ export async function POST(
 
     const data = await res.json();
 
+    // Post-process: convert workspace file paths to accessible URLs
+    let reply = data.reply || "";
+    reply = rewriteWorkspacePaths(reply, id);
+
     // Save assistant reply to DB
-    if (data.reply) {
+    if (reply) {
       await db.insert(chatMessages).values({
         employeeId: id,
         userId: session.userId,
         role: "assistant",
-        content: data.reply,
+        content: reply,
         mode: data.mode || "live",
       });
     }
 
-    return NextResponse.json(data);
+    return NextResponse.json({ ...data, reply });
   } catch (err: any) {
     return NextResponse.json(
       { error: `Connection error: ${err.message}` },
@@ -189,4 +193,25 @@ function generateDemoReply(employee: any, message: string): string {
   ];
 
   return greetings[Math.floor(Math.random() * greetings.length)];
+}
+
+/**
+ * Rewrite workspace file paths in agent responses to accessible URLs.
+ * Converts paths like /home/node/.openclaw/workspace/screenshot.png
+ * to /api/employees/{id}/workspace/screenshot.png
+ */
+function rewriteWorkspacePaths(text: string, employeeId: string): string {
+  const workspacePrefixes = [
+    "/home/node/.openclaw/workspace/",
+    "/home/node/workspace/",
+    "~/.openclaw/workspace/",
+  ];
+
+  let result = text;
+  for (const prefix of workspacePrefixes) {
+    // Replace file paths in the text with API URLs
+    result = result.replaceAll(prefix, `/api/employees/${employeeId}/workspace/`);
+  }
+
+  return result;
 }

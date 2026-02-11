@@ -289,7 +289,7 @@ export default function EmployeeChatPage() {
                 wordBreak: "break-word",
               }}
             >
-              {msg.content}
+              <MessageContent content={msg.content} />
               {msg.mode === "demo" && (
                 <div
                   style={{
@@ -435,5 +435,71 @@ export default function EmployeeChatPage() {
         }
       `}</style>
     </div>
+  );
+}
+
+/** Render message content with inline images and basic markdown */
+function MessageContent({ content }: { content: string }) {
+  // Split content into text and image parts
+  // Detect: ![alt](url), workspace image URLs, and standalone image URLs
+  const imagePattern = /!\[([^\]]*)\]\(([^)]+)\)|(?:^|\s)(\/api\/employees\/[^\s]+\.(?:png|jpg|jpeg|gif|webp))/gm;
+
+  const parts: Array<{ type: "text" | "image"; value: string; alt?: string }> = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = imagePattern.exec(content)) !== null) {
+    // Add text before this match
+    if (match.index > lastIndex) {
+      parts.push({ type: "text", value: content.slice(lastIndex, match.index) });
+    }
+
+    if (match[2]) {
+      // Markdown image: ![alt](url)
+      parts.push({ type: "image", value: match[2], alt: match[1] || "image" });
+    } else if (match[3]) {
+      // Standalone workspace URL
+      parts.push({ type: "image", value: match[3].trim(), alt: "screenshot" });
+    }
+
+    lastIndex = match.index + match[0].length;
+  }
+
+  // Add remaining text
+  if (lastIndex < content.length) {
+    parts.push({ type: "text", value: content.slice(lastIndex) });
+  }
+
+  // If no images found, render as plain text
+  if (parts.length === 0 || parts.every((p) => p.type === "text")) {
+    return <>{content}</>;
+  }
+
+  return (
+    <>
+      {parts.map((part, i) =>
+        part.type === "image" ? (
+          <div key={i} style={{ margin: "8px 0" }}>
+            <a href={part.value} target="_blank" rel="noopener noreferrer">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={part.value}
+                alt={part.alt || "image"}
+                style={{
+                  maxWidth: "100%",
+                  maxHeight: 400,
+                  borderRadius: 8,
+                  border: "1px solid var(--border)",
+                  cursor: "pointer",
+                }}
+                loading="lazy"
+              />
+            </a>
+          </div>
+        ) : (
+          <span key={i}>{part.value}</span>
+        ),
+      )}
+    </>
   );
 }

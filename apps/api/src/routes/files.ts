@@ -138,6 +138,66 @@ export async function fileRoutes(fastify: FastifyInstance) {
     },
   );
 
+  // GET /internal/employees/:id/workspace/* — serve any file from the workspace
+  // Used for sharing screenshots, generated files, etc. with the dashboard
+  fastify.get<{ Params: { id: string; "*": string } }>(
+    "/internal/employees/:id/workspace/*",
+    async (request, reply) => {
+      const { id } = request.params;
+      const filePath = request.params["*"];
+
+      if (!filePath) {
+        return reply.status(400).send({ error: "File path required" });
+      }
+
+      // Prevent path traversal
+      const normalized = path.normalize(filePath).replace(/^(\.\.(\/|\\|$))+/, "");
+      if (normalized.includes("..")) {
+        return reply.status(400).send({ error: "Invalid path" });
+      }
+
+      const workspaceDir = path.join(CONFIG_BASE, id, "workspace");
+      const fullPath = path.join(workspaceDir, normalized);
+
+      // Ensure the resolved path is within the workspace
+      if (!fullPath.startsWith(workspaceDir)) {
+        return reply.status(400).send({ error: "Invalid path" });
+      }
+
+      if (!existsSync(fullPath)) {
+        return reply.status(404).send({ error: "File not found" });
+      }
+
+      const stat = statSync(fullPath);
+      if (!stat.isFile()) {
+        return reply.status(400).send({ error: "Not a file" });
+      }
+
+      // Determine content type from extension
+      const ext = path.extname(fullPath).toLowerCase();
+      const mimeTypes: Record<string, string> = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+        ".svg": "image/svg+xml",
+        ".pdf": "application/pdf",
+        ".txt": "text/plain",
+        ".json": "application/json",
+        ".csv": "text/csv",
+        ".html": "text/html",
+      };
+      const contentType = mimeTypes[ext] || "application/octet-stream";
+
+      const content = readFileSync(fullPath);
+      return reply
+        .header("Content-Type", contentType)
+        .header("Cache-Control", "public, max-age=300")
+        .send(content);
+    },
+  );
+
   // DELETE /internal/employees/:id/files/:filename — delete a file
   fastify.delete<{ Params: { id: string; filename: string } }>(
     "/internal/employees/:id/files/:filename",
