@@ -201,16 +201,21 @@ function generateDemoReply(employee: any, message: string): string {
  * to /api/employees/{id}/workspace/screenshot.png
  */
 function rewriteWorkspacePaths(text: string, employeeId: string): string {
-  const workspacePrefixes = [
-    "/home/node/.openclaw/workspace/",
-    "/home/node/workspace/",
-    "~/.openclaw/workspace/",
+  // Map container paths to API URLs
+  // The workspace endpoint serves from the entire .openclaw config directory
+  const pathMappings: [string, string][] = [
+    ["/home/node/.openclaw/workspace-main/", `/api/employees/${employeeId}/workspace/workspace-main/`],
+    ["/home/node/.openclaw/workspace/", `/api/employees/${employeeId}/workspace/workspace/`],
+    ["/home/node/.openclaw/media/", `/api/employees/${employeeId}/workspace/media/`],
+    ["/home/node/.openclaw/", `/api/employees/${employeeId}/workspace/`],
+    ["~/.openclaw/workspace-main/", `/api/employees/${employeeId}/workspace/workspace-main/`],
+    ["~/.openclaw/workspace/", `/api/employees/${employeeId}/workspace/workspace/`],
+    ["~/.openclaw/", `/api/employees/${employeeId}/workspace/`],
   ];
 
   let result = text;
-  for (const prefix of workspacePrefixes) {
-    // Replace file paths in the text with API URLs
-    result = result.replaceAll(prefix, `/api/employees/${employeeId}/workspace/`);
+  for (const [from, to] of pathMappings) {
+    result = result.replaceAll(from, to);
   }
 
   return result;

@@ -212,12 +212,13 @@ export function generateSoulMd(employee: EmployeeInput): string {
   parts.push("- Create reports, spreadsheets (CSV), code, images, and any other files");
   parts.push("");
   parts.push("### Sharing Images & Screenshots (IMPORTANT)");
-  parts.push("When you take a screenshot or generate an image, **save it to your workspace** so the user can see it:");
-  parts.push("1. Save the image file to `/home/node/.openclaw/workspace/` (e.g., `screenshots/instagram.png`)");
-  parts.push("2. Reference it in your response using the full path: `/home/node/.openclaw/workspace/screenshots/instagram.png`");
-  parts.push("3. The system will automatically convert the path to an accessible URL the user can view");
-  parts.push("- Example: 'I saved the screenshot to /home/node/.openclaw/workspace/screenshots/example.png'");
-  parts.push("- Always save screenshots/images to the workspace so the user can actually see them!");
+  parts.push("When you take a screenshot or generate an image, the user can see files saved in your workspace.");
+  parts.push("- Your main workspace is at `/home/node/.openclaw/workspace-main/`");
+  parts.push("- Files are also accessible from `/home/node/.openclaw/workspace/`");
+  parts.push("- **Always mention the full file path** in your response so the system can show the image to the user");
+  parts.push("- Example: 'Here is the screenshot: /home/node/.openclaw/workspace-main/screenshot.png'");
+  parts.push("- The system automatically converts workspace paths to viewable URLs");
+  parts.push("- Browser screenshots taken with the browser tool are also saved to `/home/node/.openclaw/media/browser/`");
   parts.push("");
 
   parts.push("### Shell");

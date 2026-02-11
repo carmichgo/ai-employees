@@ -156,11 +156,12 @@ export async function fileRoutes(fastify: FastifyInstance) {
         return reply.status(400).send({ error: "Invalid path" });
       }
 
-      const workspaceDir = path.join(CONFIG_BASE, id, "workspace");
-      const fullPath = path.join(workspaceDir, normalized);
+      // Serve from the entire OpenClaw config dir (covers workspace, workspace-main, media, etc.)
+      const baseDir = path.join(CONFIG_BASE, id);
+      const fullPath = path.join(baseDir, normalized);
 
-      // Ensure the resolved path is within the workspace
-      if (!fullPath.startsWith(workspaceDir)) {
+      // Ensure the resolved path is within the config dir
+      if (!fullPath.startsWith(baseDir)) {
         return reply.status(400).send({ error: "Invalid path" });
       }
 
