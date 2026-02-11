@@ -360,19 +360,12 @@ function slugify(name: string): string {
     .replace(/^-|-$/g, "");
 }
 
-/** Bundled OpenClaw plugins that exist in ghcr.io/openclaw/openclaw:latest */
+/** Bundled OpenClaw plugins verified to exist in ghcr.io/openclaw/openclaw:latest */
 const BUNDLED_PLUGINS = [
-  // Media & image
-  "lobster", "openai-image-gen", "nano-banana-pro", "video-frames",
-  "gifgrep", "camsnap", "peekaboo",
-  // Audio & voice
-  "openai-whisper", "sherpa-onnx-tts", "voice-call",
-  // Email
-  "himalaya",
-  // Social media & messaging
-  "bird", "wacli", "imessage", "bluebubbles",
-  // Productivity
-  "notion",
+  "lobster",       // Media & content creation
+  "voice-call",    // Voice calling
+  "imessage",      // iMessage integration
+  "bluebubbles",   // BlueBubbles (iMessage bridge)
 ];
 
 /** Build plugins.entries object enabling all bundled plugins */
