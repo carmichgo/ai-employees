@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { api } from "@/lib/api";
-import { ArrowLeft, Send, Loader2, Bot, User } from "lucide-react";
+import { ArrowLeft, Send, Loader2, Bot, User, Download, FileText, FileSpreadsheet, FileCode, File } from "lucide-react";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -290,7 +290,7 @@ export default function EmployeeChatPage() {
                 wordBreak: "break-word",
               }}
             >
-              <MessageContent content={msg.content} />
+              <MessageContent content={msg.content} employeeId={employeeId} />
               {msg.mode === "demo" && (
                 <div
                   style={{
@@ -518,13 +518,49 @@ export default function EmployeeChatPage() {
           margin-right: 6px;
           vertical-align: middle;
         }
+
+        /* File download chips */
+        .file-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 4px 10px;
+          margin: 2px 0;
+          border-radius: 6px;
+          background: rgba(93, 121, 223, 0.08);
+          border: 1px solid rgba(93, 121, 223, 0.2);
+          color: var(--blue);
+          font-size: 12px;
+          font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+          cursor: pointer;
+          transition: all 0.15s;
+          text-decoration: none;
+          vertical-align: middle;
+        }
+        .file-chip:hover {
+          background: rgba(93, 121, 223, 0.15);
+          border-color: rgba(93, 121, 223, 0.35);
+        }
+        .file-chip:disabled {
+          opacity: 0.6;
+          cursor: wait;
+        }
+        .file-chip-name {
+          max-width: 250px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
       `}</style>
     </div>
   );
 }
 
+/** File extensions we detect as downloadable files in inline code */
+const FILE_EXT_RE = /^[\w][\w. -]*\.(csv|tsv|txt|md|pdf|doc|docx|xlsx|xls|html|xml|json|yaml|yml|py|js|ts|tsx|jsx|sh|bash|sql|rb|go|java|css|scss|less|zip|tar|gz|tgz|rar|7z|png|jpe?g|gif|webp|svg|bmp|mp3|mp4|wav|ogg|log|cfg|ini|toml|env|pptx?|rtf)$/i;
+
 /** Render markdown text via react-markdown + remark-gfm */
-function MarkdownText({ text }: { text: string }) {
+function MarkdownText({ text, employeeId }: { text: string; employeeId: string }) {
   return (
     <div className="markdown-body">
       <ReactMarkdown
@@ -540,6 +576,19 @@ function MarkdownText({ text }: { text: string }) {
           img: ({ src, alt }) => (
             typeof src === "string" ? <ImageEmbed src={src} alt={alt || "image"} /> : null
           ),
+          // Detect filenames in inline code and make them downloadable
+          code: ({ children, className, ...props }) => {
+            // If it has a className (language-xxx), it's inside a code block — render normally
+            if (className) {
+              return <code className={className} {...props}>{children}</code>;
+            }
+            // Check if the text content looks like a filename
+            const text = String(children).trim();
+            if (FILE_EXT_RE.test(text)) {
+              return <FileChip filename={text} employeeId={employeeId} />;
+            }
+            return <code {...props}>{children}</code>;
+          },
         }}
       >
         {text}
@@ -549,7 +598,7 @@ function MarkdownText({ text }: { text: string }) {
 }
 
 /** Render message content with inline images and markdown */
-function MessageContent({ content }: { content: string }) {
+function MessageContent({ content, employeeId }: { content: string; employeeId: string }) {
   // Split content into text and image parts
   // Detect: backtick-wrapped workspace URLs and bare workspace image URLs
   // (Markdown images ![alt](url) are handled by react-markdown)
@@ -587,7 +636,7 @@ function MessageContent({ content }: { content: string }) {
 
   // If no bare workspace images found, render entire content as markdown
   if (parts.length === 0 || parts.every((p) => p.type === "text")) {
-    return <MarkdownText text={content} />;
+    return <MarkdownText text={content} employeeId={employeeId} />;
   }
 
   return (
@@ -596,10 +645,67 @@ function MessageContent({ content }: { content: string }) {
         part.type === "image" ? (
           <ImageEmbed key={i} src={part.value} alt={part.alt || "image"} />
         ) : (
-          <MarkdownText key={i} text={part.value} />
+          <MarkdownText key={i} text={part.value} employeeId={employeeId} />
         ),
       )}
     </>
+  );
+}
+
+/** Get a file icon based on extension */
+function getFileIcon(filename: string) {
+  const ext = filename.split(".").pop()?.toLowerCase() || "";
+  if (["csv", "tsv", "xlsx", "xls"].includes(ext)) return FileSpreadsheet;
+  if (["py", "js", "ts", "tsx", "jsx", "sh", "bash", "sql", "rb", "go", "java", "css", "scss", "html", "xml", "json", "yaml", "yml"].includes(ext)) return FileCode;
+  if (["txt", "md", "log", "rtf", "doc", "docx", "pdf"].includes(ext)) return FileText;
+  return File;
+}
+
+/** Clickable file chip that downloads from the employee workspace */
+function FileChip({ filename, employeeId }: { filename: string; employeeId: string }) {
+  const [downloading, setDownloading] = useState(false);
+  const Icon = getFileIcon(filename);
+
+  const handleDownload = async () => {
+    setDownloading(true);
+    try {
+      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+      const res = await fetch(`/api/employees/${employeeId}/workspace/${encodeURIComponent(filename)}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) throw new Error("File not found");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      // If download fails, try opening in new tab as fallback
+      window.open(`/api/employees/${employeeId}/workspace/${encodeURIComponent(filename)}`, "_blank");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  return (
+    <button
+      onClick={handleDownload}
+      disabled={downloading}
+      className="file-chip"
+      title={`Download ${filename}`}
+    >
+      <Icon size={13} />
+      <span className="file-chip-name">{filename}</span>
+      {downloading ? (
+        <Loader2 size={11} style={{ animation: "spin 0.8s linear infinite" }} />
+      ) : (
+        <Download size={11} />
+      )}
+    </button>
   );
 }
 
