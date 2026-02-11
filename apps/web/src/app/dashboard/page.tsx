@@ -8,11 +8,34 @@ import { Plus, Users, Zap, AlertTriangle, Pause } from "lucide-react";
 export default function DashboardOverview() {
   const [data, setData] = useState<any>(null);
   const [employees, setEmployees] = useState<any[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.getDashboard().then(setData);
-    api.listEmployees().then((res) => setEmployees(res.employees));
+    api.getDashboard().then(setData).catch((err) => {
+      setError(err.message || "Failed to load dashboard");
+    });
+    api.listEmployees().then((res) => setEmployees(res.employees)).catch(() => {});
   }, []);
+
+  if (error) {
+    return (
+      <div className="animate-in" style={{ textAlign: "center", paddingTop: 80 }}>
+        <p style={{ color: "var(--red)", marginBottom: 16 }}>{error}</p>
+        <button
+          className="btn-primary"
+          onClick={() => {
+            setError(null);
+            api.getDashboard().then(setData).catch((err) => {
+              setError(err.message || "Failed to load dashboard");
+            });
+            api.listEmployees().then((res) => setEmployees(res.employees)).catch(() => {});
+          }}
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   if (!data) {
     return (

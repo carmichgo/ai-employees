@@ -8,10 +8,14 @@ import { Plus, Users, ChevronRight, MessageCircle } from "lucide-react";
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     api.listEmployees().then((res) => {
       setEmployees(res.employees);
+      setLoading(false);
+    }).catch((err) => {
+      setError(err.message || "Failed to load employees");
       setLoading(false);
     });
   }, []);
@@ -30,6 +34,30 @@ export default function EmployeesPage() {
           }}
         />
         <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="animate-in" style={{ textAlign: "center", paddingTop: 80 }}>
+        <p style={{ color: "var(--red)", marginBottom: 16 }}>{error}</p>
+        <button
+          className="btn-primary"
+          onClick={() => {
+            setLoading(true);
+            setError(null);
+            api.listEmployees().then((res) => {
+              setEmployees(res.employees);
+              setLoading(false);
+            }).catch((err) => {
+              setError(err.message || "Failed to load employees");
+              setLoading(false);
+            });
+          }}
+        >
+          Retry
+        </button>
       </div>
     );
   }
