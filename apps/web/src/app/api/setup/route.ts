@@ -204,8 +204,14 @@ export async function POST(request: NextRequest) {
       CREATE INDEX IF NOT EXISTS idx_triggers_webhook_token ON triggers(webhook_token) WHERE webhook_token IS NOT NULL
     `;
 
-    // Migrations for existing databases
+    // Migrations for existing databases — add columns that may be missing
     await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS credentials JSONB NOT NULL DEFAULT '[]'`;
+    await sql`ALTER TABLE companies ADD COLUMN IF NOT EXISTS droplet_id VARCHAR(50)`;
+    await sql`ALTER TABLE companies ADD COLUMN IF NOT EXISTS droplet_ip VARCHAR(45)`;
+    await sql`ALTER TABLE companies ADD COLUMN IF NOT EXISTS droplet_region VARCHAR(20) DEFAULT 'nyc3'`;
+    await sql`ALTER TABLE companies ADD COLUMN IF NOT EXISTS droplet_size VARCHAR(50) DEFAULT 's-2vcpu-4gb'`;
+    await sql`ALTER TABLE companies ADD COLUMN IF NOT EXISTS droplet_status VARCHAR(20) DEFAULT 'none'`;
+    await sql`ALTER TABLE companies ADD COLUMN IF NOT EXISTS interservice_secret VARCHAR(255)`;
 
     return NextResponse.json({ success: true, message: "All tables created" });
   } catch (error: any) {
