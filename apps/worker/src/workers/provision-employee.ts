@@ -207,13 +207,27 @@ export async function teardownEmployee(employeeId: string): Promise<void> {
   });
   if (!employee) return;
 
+  // Stop and remove container by ID
   if (employee.containerId) {
     try {
       const container = docker.getContainer(employee.containerId);
-      await container.stop().catch(() => {}); // May already be stopped
+      await container.stop().catch(() => {});
       await container.remove({ force: true });
+      console.log(`[teardown] Container ${employee.containerId.slice(0, 12)} removed`);
     } catch {
       // Container may already be removed
+    }
+  }
+
+  // Also try by container name (fallback if containerId failed)
+  if (employee.containerName) {
+    try {
+      const container = docker.getContainer(employee.containerName);
+      await container.stop().catch(() => {});
+      await container.remove({ force: true });
+      console.log(`[teardown] Container ${employee.containerName} removed by name`);
+    } catch {
+      // Already removed above or doesn't exist
     }
   }
 
@@ -225,7 +239,58 @@ export async function teardownEmployee(employeeId: string): Promise<void> {
     // Volume may not exist
   }
 
+  // Remove config directory
+  try {
+    execSync(`rm -rf /opt/ai-employees/openclaw-configs/${employeeId}`, { timeout: 5000 });
+  } catch {
+    // Config dir may not exist
+  }
+
   console.log(`[teardown] Employee ${employee.name} (${employeeId}) fully terminated`);
+}
+
+/** On startup, find and remove containers for terminated employees */
+export async function cleanupOrphanedContainers(): Promise<void> {
+  // Get all containers with our label prefix
+  const containers = await docker.listContainers({
+    all: true,
+    filters: { label: ["ai-employees.employee-id"] },
+  });
+
+  if (containers.length === 0) return;
+
+  // Get active employee IDs from DB
+  const activeEmployees = await db.query.employees.findMany({
+    where: eq(employees.status, "active"),
+    columns: { id: true, containerName: true },
+  });
+  const activeIds = new Set(activeEmployees.map((e) => e.id));
+  const activeNames = new Set(activeEmployees.map((e) => e.containerName).filter(Boolean));
+
+  let removed = 0;
+  for (const info of containers) {
+    const empId = info.Labels?.["ai-employees.employee-id"];
+    const name = info.Names?.[0]?.replace(/^\//, "");
+
+    // Keep if employee is active
+    if (empId && activeIds.has(empId)) continue;
+    if (name && activeNames.has(name)) continue;
+
+    // Remove orphaned container
+    try {
+      const container = docker.getContainer(info.Id);
+      await container.stop().catch(() => {});
+      await container.remove({ force: true });
+      removed++;
+      console.log(`[cleanup] Removed orphaned container ${name || info.Id.slice(0, 12)}`);
+    } catch {
+      // Already gone
+    }
+  }
+
+  if (removed > 0) {
+    console.log(`[cleanup] Startup cleanup: removed ${removed} orphaned containers`);
+  }
 }
 
 function parseMemory(mem: string): number {

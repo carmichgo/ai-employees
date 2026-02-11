@@ -5,6 +5,7 @@ import {
   stopEmployee,
   startEmployee,
   teardownEmployee,
+  cleanupOrphanedContainers,
   type ProvisionJobData,
 } from "./workers/provision-employee.js";
 import { pollAllEmployeeHealth } from "./workers/health-poll.js";
@@ -74,3 +75,8 @@ process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 
 console.log("AI Employees Worker started — listening for provisioning jobs");
+
+// Clean up any orphaned containers from terminated employees on startup
+cleanupOrphanedContainers().catch((err) =>
+  console.error("[cleanup] Startup cleanup failed:", err.message),
+);
