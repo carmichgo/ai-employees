@@ -165,6 +165,37 @@ class ApiClient {
     });
   }
 
+  // Employee credentials (logins, passwords, API keys)
+  async listCredentials(employeeId: string) {
+    return this.request<{
+      credentials: Array<{
+        id: string;
+        label: string;
+        username: string;
+        hasPassword: boolean;
+        url: string;
+        notes: string;
+      }>;
+    }>(`/api/employees/${employeeId}/credentials`);
+  }
+
+  async saveCredential(
+    employeeId: string,
+    data: { id?: string; label: string; username: string; password?: string; url?: string; notes?: string },
+  ) {
+    return this.request<{ message: string; credential: any }>(
+      `/api/employees/${employeeId}/credentials`,
+      { method: "PUT", body: JSON.stringify(data) },
+    );
+  }
+
+  async deleteCredential(employeeId: string, credId: string) {
+    return this.request<{ message: string }>(
+      `/api/employees/${employeeId}/credentials?credId=${encodeURIComponent(credId)}`,
+      { method: "DELETE" },
+    );
+  }
+
   async getChatHistory(id: string) {
     return this.request<{
       messages: Array<{

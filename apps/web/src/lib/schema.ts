@@ -70,6 +70,7 @@ export const employees = pgTable("employees", {
   sandboxConfig: jsonb("sandbox_config").notNull().default({}),
   emailAddress: varchar("email_address", { length: 255 }),
   provisionedAccounts: jsonb("provisioned_accounts").notNull().default({}),
+  credentials: jsonb("credentials").notNull().default([]),
   configHash: varchar("config_hash", { length: 64 }),
   lastHealthAt: timestamp("last_health_at", { withTimezone: true }),
   errorMessage: text("error_message"),

@@ -6,7 +6,7 @@ import { api } from "@/lib/api";
 import {
   ArrowLeft, Pause, Play, Trash2, Loader2, Server, Mail, Cpu, Clock, Calendar,
   MessageCircle, Save, X, Eye, EyeOff, ChevronDown, Upload, FileText, Zap,
-  Webhook, Timer, Plus, ToggleLeft, ToggleRight, Copy, Check,
+  Webhook, Timer, Plus, ToggleLeft, ToggleRight, Copy, Check, KeyRound, Globe, Edit3,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -68,6 +68,19 @@ export default function EmployeeDetailPage() {
   const [triggerSaving, setTriggerSaving] = useState(false);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
 
+  // Credentials state
+  const [credentialsList, setCredentialsList] = useState<any[]>([]);
+  const [showNewCred, setShowNewCred] = useState(false);
+  const [editingCredId, setEditingCredId] = useState<string | null>(null);
+  const [credLabel, setCredLabel] = useState("");
+  const [credUsername, setCredUsername] = useState("");
+  const [credPassword, setCredPassword] = useState("");
+  const [credUrl, setCredUrl] = useState("");
+  const [credNotes, setCredNotes] = useState("");
+  const [showCredPassword, setShowCredPassword] = useState(false);
+  const [credSaving, setCredSaving] = useState(false);
+  const [credNotice, setCredNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
   const employeeId = params.id as string;
 
   useEffect(() => {
@@ -88,6 +101,7 @@ export default function EmployeeDetailPage() {
     }).catch(() => {});
     api.listFiles(employeeId).then((res) => setFiles(res.files || [])).catch(() => {});
     api.listTriggers(employeeId).then((res) => setTriggersList(res.triggers || [])).catch(() => {});
+    api.listCredentials(employeeId).then((res) => setCredentialsList(res.credentials || [])).catch(() => {});
   }, [employeeId]);
 
   // ── Employee actions ──
@@ -225,6 +239,55 @@ export default function EmployeeDetailPage() {
     if (preset.config.cron) setNewTriggerCron(preset.config.cron);
     setShowNewTrigger(true);
   };
+  // ── Credential handlers ──
+  const resetCredForm = () => {
+    setCredLabel(""); setCredUsername(""); setCredPassword("");
+    setCredUrl(""); setCredNotes(""); setShowCredPassword(false);
+    setEditingCredId(null); setShowNewCred(false);
+  };
+  const handleSaveCred = async () => {
+    setCredSaving(true);
+    setCredNotice(null);
+    try {
+      const data: { id?: string; label: string; username: string; password?: string; url?: string; notes?: string } = { label: credLabel, username: credUsername };
+      if (credPassword) data.password = credPassword;
+      if (credUrl) data.url = credUrl;
+      if (credNotes) data.notes = credNotes;
+      if (editingCredId) data.id = editingCredId;
+      const res = await api.saveCredential(employeeId, data);
+      if (editingCredId) {
+        setCredentialsList((prev) => prev.map((c) => (c.id === editingCredId ? res.credential : c)));
+      } else {
+        setCredentialsList((prev) => [...prev, res.credential]);
+      }
+      resetCredForm();
+      setCredNotice({ type: "success", message: editingCredId ? "Credential updated" : "Credential added" });
+    } catch (err: any) {
+      setCredNotice({ type: "error", message: err.message });
+    } finally {
+      setCredSaving(false);
+    }
+  };
+  const handleEditCred = (cred: any) => {
+    setEditingCredId(cred.id);
+    setCredLabel(cred.label);
+    setCredUsername(cred.username);
+    setCredPassword("");
+    setCredUrl(cred.url || "");
+    setCredNotes(cred.notes || "");
+    setShowNewCred(true);
+  };
+  const handleDeleteCred = async (credId: string) => {
+    if (!confirm("Remove this credential? The employee will lose access.")) return;
+    try {
+      await api.deleteCredential(employeeId, credId);
+      setCredentialsList((prev) => prev.filter((c) => c.id !== credId));
+      setCredNotice({ type: "success", message: "Credential removed" });
+    } catch (err: any) {
+      setCredNotice({ type: "error", message: err.message });
+    }
+  };
+
   const copyWebhookUrl = (token: string) => {
     navigator.clipboard.writeText(`${window.location.origin}/api/webhooks/${token}`);
     setCopiedToken(token);
@@ -594,6 +657,146 @@ export default function EmployeeDetailPage() {
             </div>
           </div>
         )}
+      </div>
+
+      {/* ════════════════════════════════════════════════════════════ */}
+      {/* CREDENTIALS / LOGINS */}
+      {/* ════════════════════════════════════════════════════════════ */}
+      <div className="card" style={{ padding: 20, marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <KeyRound size={14} style={{ color: "var(--text-tertiary)" }} />
+            <p className="label" style={{ margin: 0 }}>Logins &amp; Passwords</p>
+            <span style={{ fontSize: 11, color: "var(--text-tertiary)", background: "var(--bg-secondary)", padding: "2px 6px", borderRadius: 4 }}>
+              {credentialsList.length}
+            </span>
+          </div>
+          {!showNewCred && (
+            <button
+              className="btn-secondary btn-sm"
+              onClick={() => { resetCredForm(); setShowNewCred(true); }}
+              style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
+            >
+              <Plus size={12} /> Add Login
+            </button>
+          )}
+        </div>
+
+        {credNotice && (
+          <div style={{
+            padding: "8px 12px", borderRadius: 6, marginBottom: 12, fontSize: 12,
+            background: credNotice.type === "success" ? "rgba(34, 197, 94, 0.1)" : "rgba(239, 68, 68, 0.1)",
+            color: credNotice.type === "success" ? "#22c55e" : "#ef4444",
+          }}>
+            {credNotice.message}
+          </div>
+        )}
+
+        {/* Add / edit form */}
+        {showNewCred && (
+          <div style={{ background: "var(--bg-secondary)", borderRadius: 8, padding: 16, marginBottom: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 2 }}>
+              {editingCredId ? "Edit Credential" : "New Credential"}
+            </div>
+            <div>
+              <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Label</label>
+              <input type="text" placeholder="e.g., Company CRM, GitHub, Trello" value={credLabel} onChange={(e) => setCredLabel(e.target.value)} className="input" style={{ width: "100%", fontSize: 13 }} />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div>
+                <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Username / Email</label>
+                <input type="text" placeholder="username or email" value={credUsername} onChange={(e) => setCredUsername(e.target.value)} className="input" style={{ width: "100%", fontSize: 13 }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Password</label>
+                <div style={{ position: "relative" }}>
+                  <input
+                    type={showCredPassword ? "text" : "password"}
+                    placeholder={editingCredId ? "Leave blank to keep current" : "Enter password"}
+                    value={credPassword}
+                    onChange={(e) => setCredPassword(e.target.value)}
+                    className="input"
+                    style={{ width: "100%", fontSize: 13, paddingRight: 36 }}
+                  />
+                  <button type="button" onClick={() => setShowCredPassword(!showCredPassword)} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", padding: 4 }}>
+                    {showCredPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div>
+              <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>URL (optional)</label>
+              <input type="text" placeholder="https://..." value={credUrl} onChange={(e) => setCredUrl(e.target.value)} className="input" style={{ width: "100%", fontSize: 13 }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Notes (optional)</label>
+              <input type="text" placeholder="e.g., 2FA enabled, use app password" value={credNotes} onChange={(e) => setCredNotes(e.target.value)} className="input" style={{ width: "100%", fontSize: 13 }} />
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                className="btn-primary btn-sm"
+                onClick={handleSaveCred}
+                disabled={credSaving || !credLabel || !credUsername || (!credPassword && !editingCredId)}
+                style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
+              >
+                <Save size={12} /> {credSaving ? "Saving..." : "Save"}
+              </button>
+              <button className="btn-secondary btn-sm" onClick={resetCredForm} style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
+                <X size={12} /> Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Credentials list */}
+        {credentialsList.length === 0 && !showNewCred ? (
+          <div style={{ fontSize: 13, color: "var(--text-tertiary)", lineHeight: 1.6 }}>
+            No logins stored. Add usernames and passwords here so {employee.name} can log into websites and services on your behalf.
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {credentialsList.map((cred) => (
+              <div key={cred.id} style={{
+                padding: "10px 12px", background: "var(--bg-secondary)", borderRadius: 8,
+                border: "1px solid var(--border)",
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <KeyRound size={13} style={{ color: "var(--blue)" }} />
+                    <span style={{ fontSize: 13, fontWeight: 500 }}>{cred.label}</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <button onClick={() => handleEditCred(cred)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", padding: 2 }} title="Edit">
+                      <Edit3 size={13} />
+                    </button>
+                    <button onClick={() => handleDeleteCred(cred.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", padding: 2 }} title="Delete">
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </div>
+                <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 6, display: "flex", flexWrap: "wrap", gap: "4px 16px" }}>
+                  <span><span style={{ color: "var(--text-tertiary)" }}>User:</span> <code style={{ fontSize: 11 }}>{cred.username}</code></span>
+                  <span><span style={{ color: "var(--text-tertiary)" }}>Pass:</span> <code style={{ fontSize: 11 }}>{cred.hasPassword ? "********" : "Not set"}</code></span>
+                  {cred.url && (
+                    <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                      <Globe size={10} style={{ color: "var(--text-tertiary)" }} />
+                      <code style={{ fontSize: 11, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "inline-block" }}>{cred.url}</code>
+                    </span>
+                  )}
+                </div>
+                {cred.notes && (
+                  <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 4, fontStyle: "italic" }}>
+                    {cred.notes}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 10 }}>
+          Credentials are securely stored and available to the employee for logging into websites and services.
+        </div>
       </div>
 
       {/* ════════════════════════════════════════════════════════════ */}

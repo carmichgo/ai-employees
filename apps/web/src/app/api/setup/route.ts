@@ -102,6 +102,7 @@ export async function POST(request: NextRequest) {
         sandbox_config JSONB NOT NULL DEFAULT '{}',
         email_address VARCHAR(255),
         provisioned_accounts JSONB NOT NULL DEFAULT '{}',
+        credentials JSONB NOT NULL DEFAULT '[]',
         config_hash VARCHAR(64),
         last_health_at TIMESTAMPTZ,
         error_message TEXT,
@@ -202,6 +203,9 @@ export async function POST(request: NextRequest) {
     await sql`
       CREATE INDEX IF NOT EXISTS idx_triggers_webhook_token ON triggers(webhook_token) WHERE webhook_token IS NOT NULL
     `;
+
+    // Migrations for existing databases
+    await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS credentials JSONB NOT NULL DEFAULT '[]'`;
 
     return NextResponse.json({ success: true, message: "All tables created" });
   } catch (error: any) {
