@@ -481,6 +481,36 @@ export class SlackProxy {
     return this.running;
   }
 
+  /** Create Slack channels for all active employees that don't have one yet */
+  async reconcileChannels(): Promise<Array<{ name: string; channelId: string | null }>> {
+    if (!this.companyId || !this.webClient) return [];
+
+    const emps = await db.query.employees.findMany({
+      where: and(
+        eq(employees.companyId, this.companyId),
+        eq(employees.status, "active"),
+      ),
+    });
+
+    const results: Array<{ name: string; channelId: string | null }> = [];
+    for (const emp of emps) {
+      const accounts = (emp.provisionedAccounts as Record<string, unknown>) || {};
+      const slackInfo = accounts.slack as Record<string, unknown> | undefined;
+      if (slackInfo?.channelId) {
+        results.push({ name: emp.name, channelId: slackInfo.channelId as string });
+        continue;
+      }
+
+      // No channel — create one
+      console.log(`[slack-proxy] Reconcile: creating channel for ${emp.name}`);
+      const channelId = await this.createEmployeeChannel(emp.id);
+      results.push({ name: emp.name, channelId });
+    }
+
+    await this.refreshMappings();
+    return results;
+  }
+
   /** Post a message as an employee by employee ID (for use from other parts of the API) */
   async postMessageAsEmployee(employeeId: string, channelId: string, text: string): Promise<boolean> {
     if (!this.webClient) return false;

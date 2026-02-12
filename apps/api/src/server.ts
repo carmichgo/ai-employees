@@ -182,6 +182,17 @@ export async function buildServer(config: Env) {
     return { ok: true };
   });
 
+  // Reconcile Slack channels — create channels for employees that don't have one.
+  // GET-accessible so it can be triggered via the debug proxy.
+  fastify.get("/slack-proxy/reconcile", async () => {
+    const proxy = getSlackProxy();
+    if (!proxy.isRunning()) {
+      return { ok: false, error: "Slack proxy not running" };
+    }
+    const results = await proxy.reconcileChannels();
+    return { ok: true, results };
+  });
+
   // Start Slack proxy in background (non-blocking)
   const slackProxy = getSlackProxy();
   slackProxy.start().catch((err) => {
