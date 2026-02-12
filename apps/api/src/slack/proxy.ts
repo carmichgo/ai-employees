@@ -62,15 +62,18 @@ export class SlackProxy {
       return;
     }
 
-    // Dynamic-import Slack packages — gracefully skip if not installed
+    // Dynamic-import Slack packages — gracefully skip if not installed.
+    // Use variables for module names so TypeScript doesn't try to resolve them at compile time.
     let BoltApp: any;
     let WebClient: any;
     let LogLevel: any;
     try {
-      const bolt = await import("@slack/bolt");
+      const boltMod = "@slack/bolt";
+      const webApiMod = "@slack/web-api";
+      const bolt: any = await import(/* webpackIgnore: true */ boltMod);
       BoltApp = bolt.App;
       LogLevel = bolt.LogLevel;
-      const webApi = await import("@slack/web-api");
+      const webApi: any = await import(/* webpackIgnore: true */ webApiMod);
       WebClient = webApi.WebClient;
     } catch {
       console.log("[slack-proxy] @slack/bolt or @slack/web-api not installed, Slack proxy disabled");
