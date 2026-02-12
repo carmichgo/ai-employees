@@ -12,6 +12,7 @@ import { dashboardRoutes } from "./routes/dashboard.js";
 import { provisionRoutes } from "./routes/provision.js";
 import { fileRoutes } from "./routes/files.js";
 import { triggerRoutes } from "./routes/triggers.js";
+import { getSlackProxy } from "./slack/proxy.js";
 
 export async function buildServer(config: Env) {
   const isDev = process.env.NODE_ENV !== "production";
@@ -132,6 +133,52 @@ export async function buildServer(config: Env) {
     } catch {
       return { done: false, success: false, lines: ["No update in progress"] };
     }
+  });
+
+  // Slack proxy status endpoint
+  fastify.get("/slack-proxy/status", async () => {
+    const proxy = getSlackProxy();
+    return { running: proxy.isRunning() };
+  });
+
+  // Refresh Slack proxy mappings (called after provisioning a new employee)
+  fastify.post("/slack-proxy/refresh", async () => {
+    const proxy = getSlackProxy();
+    await proxy.refreshMappings();
+    return { ok: true };
+  });
+
+  // Create a Slack channel for an employee (called by the worker after provisioning)
+  fastify.post<{ Body: { employeeId: string } }>("/slack-proxy/create-channel", async (request) => {
+    const { employeeId } = request.body;
+    const proxy = getSlackProxy();
+    if (!proxy.isRunning()) {
+      return { ok: false, error: "Slack proxy not running" };
+    }
+    const channelId = await proxy.createEmployeeChannel(employeeId);
+    if (channelId) {
+      await proxy.refreshMappings();
+      return { ok: true, channelId };
+    }
+    return { ok: false, error: "Failed to create channel" };
+  });
+
+  // Archive a Slack channel for an employee (called by the worker on termination)
+  fastify.post<{ Body: { employeeId: string } }>("/slack-proxy/archive-channel", async (request) => {
+    const { employeeId } = request.body;
+    const proxy = getSlackProxy();
+    if (!proxy.isRunning()) {
+      return { ok: false, error: "Slack proxy not running" };
+    }
+    await proxy.archiveEmployeeChannel(employeeId);
+    await proxy.refreshMappings();
+    return { ok: true };
+  });
+
+  // Start Slack proxy in background (non-blocking)
+  const slackProxy = getSlackProxy();
+  slackProxy.start().catch((err) => {
+    console.error("[slack-proxy] Background start failed:", err);
   });
 
   return fastify;

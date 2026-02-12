@@ -182,6 +182,11 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
       `[provision] Employee ${employee.name} (${employeeId}) is now active at ${info.NetworkSettings.Networks?.[OPENCLAW_NETWORK]?.IPAddress}:18789 — email: ${emailAddress}`,
     );
 
+    // Create Slack channel for the employee if Slack is in their channels
+    if (data.channels.includes("slack")) {
+      createSlackChannel(employeeId);
+    }
+
     // Install CLI tools in background (doesn't block provisioning)
     installCliTools(employee.containerName!);
   } catch (error) {
@@ -269,6 +274,9 @@ export async function teardownEmployee(employeeId: string): Promise<void> {
   } catch {
     // Config dir may not exist
   }
+
+  // Archive Slack channel (fire-and-forget)
+  archiveSlackChannel(employeeId);
 
   console.log(`[teardown] Employee ${employee.name} (${employeeId}) fully terminated`);
 }
@@ -429,6 +437,64 @@ CREDEOF
     console.log(`[cli-tools] Finished for ${containerName} (exit ${code})`);
   });
   child.unref();
+}
+
+/**
+ * Create a Slack channel for an employee by calling the API's Slack proxy.
+ * Runs in background — doesn't block provisioning.
+ */
+function createSlackChannel(employeeId: string): void {
+  const apiPort = process.env.API_PORT || "3001";
+  const url = `http://127.0.0.1:${apiPort}/slack-proxy/create-channel`;
+
+  // Fire-and-forget with retry
+  const attempt = (retries: number, delay: number) => {
+    fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ employeeId }),
+    })
+      .then(async (res) => {
+        if (res.ok) {
+          const data = await res.json() as { ok: boolean; channelId?: string; error?: string };
+          if (data.ok) {
+            console.log(`[provision] Slack channel created for employee ${employeeId}: ${data.channelId}`);
+          } else {
+            console.log(`[provision] Slack channel creation skipped: ${data.error}`);
+          }
+        } else if (retries > 0) {
+          console.log(`[provision] Slack channel API returned ${res.status}, retrying in ${delay}ms...`);
+          setTimeout(() => attempt(retries - 1, delay * 2), delay);
+        } else {
+          console.log(`[provision] Slack channel creation failed after retries`);
+        }
+      })
+      .catch((err: Error) => {
+        if (retries > 0) {
+          console.log(`[provision] Slack proxy unreachable (${err.message}), retrying in ${delay}ms...`);
+          setTimeout(() => attempt(retries - 1, delay * 2), delay);
+        } else {
+          console.log(`[provision] Slack channel creation failed: ${err.message}`);
+        }
+      });
+  };
+
+  // Start first attempt after 5s (give the API's Slack proxy time to start)
+  setTimeout(() => attempt(3, 5000), 5000);
+}
+
+/** Archive a Slack channel when an employee is terminated (fire-and-forget) */
+function archiveSlackChannel(employeeId: string): void {
+  const apiPort = process.env.API_PORT || "3001";
+  const url = `http://127.0.0.1:${apiPort}/slack-proxy/archive-channel`;
+
+  fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ employeeId }),
+  })
+    .then(() => console.log(`[teardown] Slack channel archive requested for ${employeeId}`))
+    .catch((err: Error) => console.log(`[teardown] Slack channel archive failed: ${err.message}`));
 }
 
 /** Webmail URLs by provider for browser-based email access */

@@ -260,17 +260,11 @@ async function getChannelCredentials(
   const integrations = (settings.integrations as Record<string, unknown>) || {};
   const creds: Record<string, Record<string, unknown>> = {};
 
-  // Slack: pull bot token from company integration
-  if (selectedChannels.includes("slack") && integrations.slack) {
-    const slack = integrations.slack as Record<string, unknown>;
-    if (slack.connected && slack.botToken) {
-      creds.slack = {
-        botToken: slack.botToken,
-        appToken: (process.env.SLACK_APP_TOKEN || "").trim(),
-        signingSecret: (process.env.SLACK_SIGNING_SECRET || "").trim(),
-      };
-    }
-  }
+  // Slack: handled by the centralized Slack proxy on the droplet.
+  // We don't pass Slack credentials to individual OpenClaw containers.
+  // The proxy reads credentials from the DB and env vars directly.
+  // We still include "slack" in the channels list so the worker knows
+  // to create a dedicated Slack channel for the employee.
 
   return creds;
 }

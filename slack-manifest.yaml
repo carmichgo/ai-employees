@@ -24,10 +24,14 @@ oauth_config:
       - app_mentions:read
       - channels:read
       - channels:history
+      - channels:manage
+      - channels:join
       - chat:write
+      - chat:write.customize
       - files:read
       - files:write
       - groups:read
+      - groups:write
       - groups:history
       - im:read
       - im:write

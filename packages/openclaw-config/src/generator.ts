@@ -238,6 +238,13 @@ export function generateSoulMd(employee: EmployeeInput): string {
   parts.push("- Env vars: EMAIL_ADDRESS, EMAIL_SMTP_HOST, EMAIL_SMTP_PORT, EMAIL_IMAP_HOST, EMAIL_IMAP_PORT, EMAIL_USERNAME, EMAIL_PASSWORD, EMAIL_PROVIDER, EMAIL_WEBMAIL");
   parts.push("");
 
+  parts.push("### Slack");
+  parts.push("- Your Slack messages are handled by a proxy that routes conversations to your dedicated channel");
+  parts.push("- You appear as yourself (with your name and emoji) in Slack — NOT as a generic bot");
+  parts.push("- Messages from your Slack channel are forwarded to you automatically");
+  parts.push("- Your responses are posted back to Slack under your name");
+  parts.push("");
+
   parts.push("### Social Media & Messaging");
   parts.push("- `bird` — Twitter/X: post tweets, read timeline, send DMs");
   parts.push("- `wacli` — WhatsApp: send and receive WhatsApp messages");
@@ -513,10 +520,16 @@ const VALID_OPENCLAW_CHANNELS = new Set([
   "nextcloud-talk", "matrix", "nostr", "tlon", "twitch", "zalo", "zalo-personal",
 ]);
 
+// Channels handled externally by the Slack proxy on the droplet API.
+// These are NOT passed to OpenClaw's built-in channel integration.
+const PROXY_HANDLED_CHANNELS = new Set(["slack"]);
+
 /** Filter to only channels OpenClaw supports AND that have real credentials */
 function filterValidChannels(channels: ChannelInput[]): ChannelInput[] {
   return channels.filter((ch) => {
     if (!VALID_OPENCLAW_CHANNELS.has(ch.type)) return false;
+    // Slack is handled by the centralized Slack proxy — skip it here
+    if (PROXY_HANDLED_CHANNELS.has(ch.type)) return false;
     // Only include if credentials are provided (not empty)
     return Object.keys(ch.credentials).length > 0;
   });

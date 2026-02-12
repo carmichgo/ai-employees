@@ -55,6 +55,8 @@ function generateCloudInit(params: {
   repoBranch: string;
   anthropicApiKey: string;
   braveApiKey: string;
+  slackAppToken: string;
+  slackSigningSecret: string;
 }): string {
   // Generate secrets in JS so they're embedded as actual values
   const jwtSecret = crypto.randomBytes(32).toString("hex");
@@ -227,6 +229,8 @@ API_PORT=3001
 PLATFORM_URL=${params.platformUrl}
 ANTHROPIC_API_KEY=${params.anthropicApiKey}
 BRAVE_API_KEY=${params.braveApiKey}
+SLACK_APP_TOKEN=${params.slackAppToken}
+SLACK_SIGNING_SECRET=${params.slackSigningSecret}
 ENVEOF
 
 # Download repo — try tarball first, then git clone as fallback
@@ -441,6 +445,8 @@ export async function createCompanyDroplet(companyId: string): Promise<{
 
   const anthropicApiKey = process.env.ANTHROPIC_API_KEY || "";
   const braveApiKey = process.env.BRAVE_API_KEY || "";
+  const slackAppToken = (process.env.SLACK_APP_TOKEN || "").trim();
+  const slackSigningSecret = (process.env.SLACK_SIGNING_SECRET || "").trim();
 
   const userData = generateCloudInit({
     companySlug: company.slug,
@@ -451,6 +457,8 @@ export async function createCompanyDroplet(companyId: string): Promise<{
     repoBranch: REPO_BRANCH,
     anthropicApiKey,
     braveApiKey,
+    slackAppToken,
+    slackSigningSecret,
   });
 
   // Get SSH keys from DO account (if any) so the user can SSH in for debugging
