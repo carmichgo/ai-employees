@@ -203,7 +203,7 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     }
 
     // Install CLI tools in background (doesn't block provisioning)
-    installCliTools(employee.containerName!);
+    installCliTools(employee.containerName!, employeeId);
   } catch (error) {
     console.error(`[provision] Failed to provision employee ${employeeId}:`, error);
 
@@ -362,7 +362,7 @@ function parseCpus(cpus: string): number {
  * Skills like github, himalaya, nano-pdf etc. are bundled as SKILL.md files
  * but need their CLI binaries to actually work.
  */
-function installCliTools(containerName: string): void {
+function installCliTools(containerName: string, employeeId: string): void {
   const script = `
     set -e
 
@@ -448,8 +448,27 @@ CREDEOF
 
   child.stdout?.on("data", (d: Buffer) => console.log(`[cli-tools] ${d.toString().trim()}`));
   child.stderr?.on("data", (d: Buffer) => console.log(`[cli-tools:err] ${d.toString().trim()}`));
-  child.on("close", (code) => {
+  child.on("close", async (code) => {
     console.log(`[cli-tools] Finished for ${containerName} (exit ${code})`);
+
+    // After docker restart, the container gets a new IP address.
+    // Update the DB so the chat proxy uses the correct IP.
+    if (code === 0) {
+      try {
+        const container = docker.getContainer(containerName);
+        const info = await container.inspect();
+        const newIp = info.NetworkSettings.Networks?.[OPENCLAW_NETWORK]?.IPAddress || null;
+        if (newIp) {
+          await db
+            .update(employees)
+            .set({ containerHost: newIp, updatedAt: new Date() })
+            .where(eq(employees.id, employeeId));
+          console.log(`[cli-tools] Updated container IP for ${containerName}: ${newIp}`);
+        }
+      } catch (err) {
+        console.error(`[cli-tools] Failed to update container IP after restart:`, err);
+      }
+    }
   });
   child.unref();
 }

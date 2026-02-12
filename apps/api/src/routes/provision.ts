@@ -4,6 +4,7 @@
  */
 import type { FastifyInstance } from "fastify";
 import crypto from "node:crypto";
+import { execSync } from "node:child_process";
 import { eq, and } from "drizzle-orm";
 import { db, employees, companies } from "@ai-employees/db";
 import { getJobTemplate, PLAN_LIMITS, type PlanTier } from "@ai-employees/shared";
@@ -216,14 +217,16 @@ export async function provisionRoutes(fastify: FastifyInstance) {
 
     // If container is available, route through it (OpenClaw)
     if (employee.containerHost && employee.containerPort) {
-      const containerUrl = `http://${employee.containerHost}:${employee.containerPort}/v1/chat/completions`;
-      try {
-        // Prepend system message with employee identity
+      let containerHost = employee.containerHost;
+      const containerPort = employee.containerPort;
+
+      const sendToContainer = async (host: string) => {
+        const containerUrl = `http://${host}:${containerPort}/v1/chat/completions`;
         const messages = [
           { role: "system", content: buildSystemPrompt(employee) },
           ...body.messages,
         ];
-        const res = await fetch(containerUrl, {
+        return fetch(containerUrl, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -234,6 +237,11 @@ export async function provisionRoutes(fastify: FastifyInstance) {
             messages,
           }),
         });
+      };
+
+      try {
+        let res = await sendToContainer(containerHost);
+
         if (!res.ok) {
           const err = await res.text();
           return reply.status(res.status).send({ error: `OpenClaw error: ${err}` });
@@ -241,6 +249,36 @@ export async function provisionRoutes(fastify: FastifyInstance) {
         const data = await res.json() as { choices?: { message?: { content?: string } }[]; usage?: unknown };
         return { reply: data.choices?.[0]?.message?.content || "No response", mode: "live", usage: data.usage };
       } catch (err: unknown) {
+        // Container unreachable — IP may have changed after docker restart.
+        // Try to resolve the current IP from Docker and retry once.
+        if (employee.containerName) {
+          try {
+            const network = process.env.OPENCLAW_NETWORK || "ai-employees-internal";
+            const newIp = execSync(
+              `docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ${employee.containerName}`,
+              { timeout: 5000 },
+            ).toString().trim();
+
+            if (newIp && newIp !== containerHost) {
+              console.log(`[chat-proxy] IP changed for ${employee.containerName}: ${containerHost} -> ${newIp}, retrying...`);
+
+              // Update DB with new IP
+              await db.update(employees).set({ containerHost: newIp, updatedAt: new Date() }).where(eq(employees.id, id));
+
+              // Retry with new IP
+              const retryRes = await sendToContainer(newIp);
+              if (!retryRes.ok) {
+                const retryErr = await retryRes.text();
+                return reply.status(retryRes.status).send({ error: `OpenClaw error: ${retryErr}` });
+              }
+              const data = await retryRes.json() as { choices?: { message?: { content?: string } }[]; usage?: unknown };
+              return { reply: data.choices?.[0]?.message?.content || "No response", mode: "live", usage: data.usage };
+            }
+          } catch {
+            // Docker inspect failed — container may be down
+          }
+        }
+
         const message = err instanceof Error ? err.message : String(err);
         return reply.status(502).send({ error: `Container unreachable: ${message}` });
       }

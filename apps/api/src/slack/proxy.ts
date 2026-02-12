@@ -15,6 +15,7 @@
  * isn't installed — the proxy simply won't start.
  */
 
+import { execSync } from "node:child_process";
 import { eq, and } from "drizzle-orm";
 import { db, employees, companies } from "@ai-employees/db";
 
@@ -141,8 +142,20 @@ export class SlackProxy {
     if (this.app && this.running) {
       await this.app.stop();
       this.running = false;
+      this.app = null;
+      this.webClient = null;
+      this.channelToEmployee.clear();
+      this.companyId = null;
+      this.botUserId = null;
       console.log("[slack-proxy] Stopped");
     }
+  }
+
+  /** Restart the Slack proxy (re-reads credentials from DB) */
+  async restart(): Promise<void> {
+    console.log("[slack-proxy] Restarting...");
+    await this.stop();
+    await this.start();
   }
 
   /** Reload employee mappings from the DB */
@@ -368,10 +381,8 @@ export class SlackProxy {
       return;
     }
 
-    try {
-      const containerUrl = `http://${employee.containerHost}:${employee.containerPort}/v1/chat/completions`;
-
-      const res = await fetch(containerUrl, {
+    const sendToContainer = (host: string) => {
+      return fetch(`http://${host}:${employee.containerPort}/v1/chat/completions`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -382,6 +393,36 @@ export class SlackProxy {
           messages: [{ role: "user", content: text }],
         }),
       });
+    };
+
+    try {
+      let res: Response;
+      try {
+        res = await sendToContainer(employee.containerHost!);
+      } catch {
+        // Container unreachable — IP may have changed after docker restart. Resolve fresh IP.
+        const containerName = freshEmp.containerName;
+        if (containerName) {
+          try {
+            const newIp = execSync(
+              `docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ${containerName}`,
+              { timeout: 5000 },
+            ).toString().trim();
+            if (newIp && newIp !== employee.containerHost) {
+              console.log(`[slack-proxy] IP changed for ${employee.name}: ${employee.containerHost} -> ${newIp}`);
+              await db.update(employees).set({ containerHost: newIp, updatedAt: new Date() }).where(eq(employees.id, employee.id));
+              employee.containerHost = newIp;
+              res = await sendToContainer(newIp);
+            } else {
+              throw new Error("IP unchanged or empty");
+            }
+          } catch {
+            throw new Error("Container unreachable after IP refresh");
+          }
+        } else {
+          throw new Error("No container name");
+        }
+      }
 
       if (!res.ok) {
         const errText = await res.text();

@@ -124,6 +124,18 @@ export async function GET(request: NextRequest) {
       `[slack-oauth] Connected workspace "${tokenData.team?.name}" (${tokenData.team?.id}) for company ${stateData.companyId}`,
     );
 
+    // Tell the droplet's Slack proxy to restart with the new credentials.
+    // Fire-and-forget — don't block the redirect if the droplet is unreachable.
+    if (company.dropletIp && company.dropletStatus === "active") {
+      fetch(`http://${company.dropletIp}:3001/slack-proxy/restart`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(10000),
+      })
+        .then(() => console.log("[slack-oauth] Droplet Slack proxy restart triggered"))
+        .catch((err: unknown) => console.error("[slack-oauth] Failed to restart droplet Slack proxy:", err));
+    }
+
     return NextResponse.redirect(
       `${appUrl}/dashboard/settings?slack=connected&team=${encodeURIComponent(tokenData.team?.name || "")}`,
     );

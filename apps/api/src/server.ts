@@ -148,6 +148,13 @@ export async function buildServer(config: Env) {
     return { ok: true };
   });
 
+  // Restart Slack proxy (re-reads credentials from DB — call after Slack reconnect)
+  fastify.post("/slack-proxy/restart", async () => {
+    const proxy = getSlackProxy();
+    await proxy.restart();
+    return { ok: true, running: proxy.isRunning() };
+  });
+
   // Create a Slack channel for an employee (called by the worker after provisioning)
   fastify.post<{ Body: { employeeId: string } }>("/slack-proxy/create-channel", async (request) => {
     const { employeeId } = request.body;
