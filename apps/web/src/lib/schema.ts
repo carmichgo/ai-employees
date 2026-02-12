@@ -66,6 +66,11 @@ export const employees = pgTable("employees", {
   }),
   persona: text("persona"),
   goals: text("goals"),
+  personalityConfig: jsonb("personality_config").notNull().default({
+    autonomy: "high",
+    proactivity: "proactive",
+    communication: "concise",
+  }),
   toolsConfig: jsonb("tools_config").notNull().default({}),
   sandboxConfig: jsonb("sandbox_config").notNull().default({}),
   emailAddress: varchar("email_address", { length: 255 }),
@@ -154,6 +159,25 @@ export const triggers = pgTable("triggers", {
   enabled: boolean("enabled").notNull().default(true),
   webhookToken: varchar("webhook_token", { length: 100 }),
   lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ── Tasks ──────────────────────────────────────────────
+export const tasks = pgTable("tasks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  employeeId: uuid("employee_id")
+    .notNull()
+    .references(() => employees.id, { onDelete: "cascade" }),
+  companyId: uuid("company_id")
+    .notNull()
+    .references(() => companies.id),
+  title: varchar("title", { length: 500 }).notNull(),
+  description: text("description"),
+  status: varchar("status", { length: 20 }).notNull().default("pending"),
+  priority: varchar("priority", { length: 20 }).notNull().default("medium"),
+  source: varchar("source", { length: 20 }).notNull().default("manager"),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

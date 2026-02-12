@@ -4,11 +4,12 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { LayoutDashboard, Users, UserPlus, Settings, LogOut, ChevronRight } from "lucide-react";
+import { LayoutDashboard, Users, UserPlus, ListTodo, Settings, LogOut, ChevronRight } from "lucide-react";
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
   { href: "/dashboard/employees", label: "Employees", icon: Users },
+  { href: "/dashboard/tasks", label: "Tasks", icon: ListTodo },
   { href: "/dashboard/hire", label: "Hire New", icon: UserPlus },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];

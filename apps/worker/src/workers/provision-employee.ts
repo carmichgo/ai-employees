@@ -89,6 +89,7 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
       emoji: employee.emoji || undefined,
       persona: employee.persona,
       goals: employee.goals,
+      personalityConfig: employee.personalityConfig as { autonomy?: string; proactivity?: string; communication?: string } | null,
       companySlug: company.slug,
       companyName: company.name,
       modelConfig: employee.modelConfig as { primary: string; fallbacks?: string[] },

@@ -29,6 +29,11 @@ export const employees = pgTable("employees", {
   }),
   persona: text("persona"),
   goals: text("goals"),
+  personalityConfig: jsonb("personality_config").notNull().default({
+    autonomy: "high",
+    proactivity: "proactive",
+    communication: "concise",
+  }),
   toolsConfig: jsonb("tools_config").notNull().default({}),
   sandboxConfig: jsonb("sandbox_config").notNull().default({}),
 

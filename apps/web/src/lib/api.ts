@@ -95,6 +95,11 @@ class ApiClient {
     persona?: string;
     goals?: string;
     channels?: string[];
+    personalityConfig?: {
+      autonomy?: string;
+      proactivity?: string;
+      communication?: string;
+    };
   }) {
     return this.request<{ employee: any; message: string }>("/api/employees", {
       method: "POST",
@@ -355,6 +360,61 @@ class ApiClient {
       `/api/employees/${employeeId}/triggers?triggerId=${triggerId}`,
       { method: "DELETE" },
     );
+  }
+
+  // Tasks
+  async listTasks(params?: { employeeId?: string; status?: string }) {
+    const qs = new URLSearchParams();
+    if (params?.employeeId) qs.set("employeeId", params.employeeId);
+    if (params?.status) qs.set("status", params.status);
+    const query = qs.toString() ? `?${qs.toString()}` : "";
+    return this.request<{
+      tasks: Array<{
+        id: string;
+        employeeId: string;
+        title: string;
+        description: string | null;
+        status: string;
+        priority: string;
+        source: string;
+        completedAt: string | null;
+        createdAt: string;
+        updatedAt: string;
+        employeeName: string | null;
+        employeeEmoji: string | null;
+        employeeJobTitle: string | null;
+      }>;
+    }>(`/api/tasks${query}`);
+  }
+
+  async createTask(data: {
+    employeeId: string;
+    title: string;
+    description?: string;
+    priority?: string;
+  }) {
+    return this.request<{ task: any }>("/api/tasks", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateTask(taskId: string, data: {
+    title?: string;
+    description?: string;
+    status?: string;
+    priority?: string;
+  }) {
+    return this.request<{ task: any }>(`/api/tasks?taskId=${taskId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteTask(taskId: string) {
+    return this.request<{ message: string }>(`/api/tasks?taskId=${taskId}`, {
+      method: "DELETE",
+    });
   }
 
   getSlackInstallUrl(): string {

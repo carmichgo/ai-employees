@@ -213,6 +213,25 @@ export async function POST(request: NextRequest) {
     await sql`ALTER TABLE companies ADD COLUMN IF NOT EXISTS droplet_status VARCHAR(20) DEFAULT 'none'`;
     await sql`ALTER TABLE companies ADD COLUMN IF NOT EXISTS interservice_secret VARCHAR(255)`;
 
+    // v2 migrations: personality config + tasks table
+    await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS personality_config JSONB NOT NULL DEFAULT '{"autonomy": "high", "proactivity": "proactive", "communication": "concise"}'`;
+
+    await sql`
+      CREATE TABLE IF NOT EXISTS tasks (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+        company_id UUID NOT NULL REFERENCES companies(id),
+        title VARCHAR(500) NOT NULL,
+        description TEXT,
+        status VARCHAR(20) NOT NULL DEFAULT 'pending',
+        priority VARCHAR(20) NOT NULL DEFAULT 'medium',
+        source VARCHAR(20) NOT NULL DEFAULT 'manager',
+        completed_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `;
+
     return NextResponse.json({ success: true, message: "All tables created" });
   } catch (error: any) {
     console.error("Setup error:", error);

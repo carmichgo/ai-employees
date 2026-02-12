@@ -81,6 +81,7 @@ export function createBackendClient(config: CompanyBackendConfig) {
       templateId?: string;
       persona?: string;
       goals?: string;
+      personalityConfig?: { autonomy?: string; proactivity?: string; communication?: string };
       channels?: string[];
       channelCredentials?: Record<string, Record<string, unknown>>;
       modelConfig?: { primary: string };

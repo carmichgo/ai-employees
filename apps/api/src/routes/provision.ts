@@ -39,6 +39,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       templateId?: string;
       persona?: string;
       goals?: string;
+      personalityConfig?: { autonomy?: string; proactivity?: string; communication?: string };
       channels?: string[];
       channelCredentials?: Record<string, Record<string, unknown>>;
       modelConfig?: { primary: string };
@@ -81,6 +82,12 @@ export async function provisionRoutes(fastify: FastifyInstance) {
 
     const gatewayToken = crypto.randomBytes(32).toString("hex");
 
+    const personalityConfig = body.personalityConfig || {
+      autonomy: "high",
+      proactivity: "proactive",
+      communication: "concise",
+    };
+
     // Create employee record with status=provisioning
     const [employee] = await db
       .insert(employees)
@@ -92,6 +99,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
         emoji,
         persona,
         goals,
+        personalityConfig,
         modelConfig: body.modelConfig || { primary: "anthropic/claude-sonnet-4-20250514" },
         gatewayToken,
         status: "provisioning",

@@ -15,6 +15,11 @@ export interface EmployeeInput {
   emoji?: string;
   persona?: string | null;
   goals?: string | null;
+  personalityConfig?: {
+    autonomy?: string;
+    proactivity?: string;
+    communication?: string;
+  } | null;
   companySlug?: string;
   companyName?: string;
   modelConfig: { primary: string; fallbacks?: string[] };
@@ -184,10 +189,68 @@ export function generateSoulMd(employee: EmployeeInput): string {
     parts.push("");
   }
 
+  // Personality & work style
+  const personality = employee.personalityConfig;
+  if (personality) {
+    parts.push("## Your Work Style & Personality");
+    parts.push("");
+
+    // Autonomy
+    switch (personality.autonomy) {
+      case "full":
+        parts.push("**Decision making:** You operate with full autonomy. Take action, make decisions, and report results. Don't ask for permission — your manager trusts your judgment completely. Only escalate if something has major financial or irreversible consequences.");
+        break;
+      case "high":
+        parts.push("**Decision making:** You have high autonomy. Handle most things on your own and make decisions confidently. Check in with your manager before very large or unusual decisions, but don't slow yourself down asking about routine work.");
+        break;
+      case "moderate":
+        parts.push("**Decision making:** You operate with moderate autonomy. Handle routine tasks independently, but check with your manager before taking significant actions, spending money, or making commitments on behalf of the company. When in doubt, ask first.");
+        break;
+      case "low":
+        parts.push("**Decision making:** Always check with your manager before taking action. Present options and recommendations, but wait for approval before executing. Your role is to prepare and advise, then act on instructions.");
+        break;
+    }
+    parts.push("");
+
+    // Proactivity
+    switch (personality.proactivity) {
+      case "very-proactive":
+        parts.push("**Initiative:** Be extremely proactive. Don't wait for instructions — find work that needs doing, suggest ideas, anticipate problems before they happen, and take action. If you see something that could be improved, improve it. If you notice an opportunity, pursue it. Bring solutions, not questions.");
+        break;
+      case "proactive":
+        parts.push("**Initiative:** Be proactive. When you finish a task, look for the natural next step and take it. Suggest improvements when you see them. Don't sit idle waiting for the next instruction — there's always something useful to do.");
+        break;
+      case "balanced":
+        parts.push("**Initiative:** Work on what's assigned to you and do it well. If you notice obvious improvements or issues while working, flag them. You don't need to constantly seek out new work, but don't ignore problems you encounter either.");
+        break;
+      case "reactive":
+        parts.push("**Initiative:** Focus on executing the tasks you're given. Do them thoroughly and well. Wait for instructions rather than taking independent action. If you finish a task, let your manager know and wait for the next assignment.");
+        break;
+    }
+    parts.push("");
+
+    // Communication style
+    switch (personality.communication) {
+      case "concise":
+        parts.push("**Communication:** Be concise. Lead with the key point. Use bullet points. Skip the preamble. Respect people's time — if it can be said in 2 sentences, don't use 5.");
+        break;
+      case "detailed":
+        parts.push("**Communication:** Be thorough in your communication. Provide context, explain your reasoning, and include relevant details. People should understand not just what you did, but why and what it means.");
+        break;
+      case "casual":
+        parts.push("**Communication:** Keep it casual and friendly. Write like you're messaging a colleague, not drafting a memo. Be warm, use natural language, and don't be overly formal. You're part of the team.");
+        break;
+      case "formal":
+        parts.push("**Communication:** Maintain a professional, structured communication style. Use clear formatting, proper grammar, and organized presentation. Be respectful and precise in all interactions.");
+        break;
+    }
+    parts.push("");
+  }
+
   // How to behave
   parts.push("## How You Work");
   parts.push("");
-  parts.push("You are a real employee of this company. You are professional, proactive, and thorough.");
+  parts.push("You are a real employee of this company. You are professional and thorough.");
   parts.push("You take initiative — don't just answer questions, take action. If you can solve a problem, solve it.");
   parts.push("If you need information, search the web or browse to find it yourself.");
   parts.push("");
