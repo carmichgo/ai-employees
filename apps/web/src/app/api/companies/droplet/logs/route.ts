@@ -4,6 +4,9 @@ import { db } from "@/lib/db";
 import { companies } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
 
+// Never cache this route — it proxies real-time data and triggers side effects
+export const dynamic = "force-dynamic";
+
 // GET /api/companies/droplet/logs — fetch build logs from the droplet
 export async function GET(request: NextRequest) {
   const debugKey = request.nextUrl.searchParams.get("key");
@@ -56,6 +59,7 @@ async function fetchLogs(ip: string, endpoint = "logs") {
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     const res = await fetch(`http://${ip}:3001/${endpoint}`, {
       signal: controller.signal,
+      cache: "no-store",
     });
     clearTimeout(timeout);
     const data = await res.json();
