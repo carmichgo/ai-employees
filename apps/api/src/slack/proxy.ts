@@ -10,21 +10,25 @@
  *  4. Creates dedicated Slack channels for each employee on demand
  *
  * This makes every AI employee appear as a different "user" in Slack.
+ *
+ * Uses dynamic imports so the API builds and runs even if @slack/bolt
+ * isn't installed — the proxy simply won't start.
  */
 
-import { App, LogLevel } from "@slack/bolt";
-import { WebClient } from "@slack/web-api";
 import { eq, and } from "drizzle-orm";
 import { db, employees, companies } from "@ai-employees/db";
 
-// Emoji → Slack-compatible icon. Slack's `icon_emoji` needs colon-wrapped shortcodes,
-// but we can use `icon_url` with a placeholder or let Slack fall back to default.
+// Types we reference — kept minimal so we don't need the Slack packages at compile time
+type SlackApp = { message: Function; event: Function; start: Function; stop: Function };
+type SlackWebClient = {
+  conversations: { create: Function; setTopic: Function; setPurpose: Function; list: Function; join: Function; archive: Function };
+  chat: { postMessage: Function };
+};
+
+// Emoji → Slack-compatible icon. Slack's `icon_emoji` needs colon-wrapped shortcodes.
 function emojiToSlackIcon(emoji: string | null): string | undefined {
   if (!emoji) return undefined;
-  // If it's already a Slack shortcode like :robot_face:, return as-is
   if (emoji.startsWith(":") && emoji.endsWith(":")) return emoji;
-  // For actual Unicode emoji, Slack's `icon_emoji` doesn't support Unicode.
-  // We skip it and let the bot name be the differentiator.
   return undefined;
 }
 
@@ -40,8 +44,8 @@ interface EmployeeMapping {
 }
 
 export class SlackProxy {
-  private app: App | null = null;
-  private webClient: WebClient | null = null;
+  private app: SlackApp | null = null;
+  private webClient: SlackWebClient | null = null;
   private channelToEmployee = new Map<string, EmployeeMapping>();
   private companyId: string | null = null;
   private botUserId: string | null = null;
@@ -58,9 +62,24 @@ export class SlackProxy {
       return;
     }
 
+    // Dynamic-import Slack packages — gracefully skip if not installed
+    let BoltApp: any;
+    let WebClient: any;
+    let LogLevel: any;
+    try {
+      const bolt = await import("@slack/bolt");
+      BoltApp = bolt.App;
+      LogLevel = bolt.LogLevel;
+      const webApi = await import("@slack/web-api");
+      WebClient = webApi.WebClient;
+    } catch {
+      console.log("[slack-proxy] @slack/bolt or @slack/web-api not installed, Slack proxy disabled");
+      return;
+    }
+
     // Find the company with Slack connected — each droplet serves one company
     const allCompanies = await db.query.companies.findMany();
-    const company = allCompanies.find((c) => {
+    const company = allCompanies.find((c: any) => {
       const settings = (c.settings as Record<string, unknown>) || {};
       const integrations = (settings.integrations as Record<string, unknown>) || {};
       const slack = integrations.slack as Record<string, unknown> | undefined;
@@ -82,24 +101,24 @@ export class SlackProxy {
     const signingSecret = (process.env.SLACK_SIGNING_SECRET || "").trim();
 
     try {
-      this.webClient = new WebClient(botToken);
+      this.webClient = new WebClient(botToken) as SlackWebClient;
 
-      this.app = new App({
+      this.app = new BoltApp({
         token: botToken,
         appToken,
         socketMode: true,
         signingSecret: signingSecret || undefined,
         logLevel: LogLevel.WARN,
-      });
+      }) as SlackApp;
 
       // Register message handler
-      this.app.message(async ({ message, client }) => {
-        await this.handleMessage(message as unknown as Record<string, unknown>, client);
+      this.app.message(async ({ message, client }: any) => {
+        await this.handleMessage(message, client);
       });
 
       // Register app_mention handler (for @mentions in shared channels)
-      this.app.event("app_mention", async ({ event, client }) => {
-        await this.handleMention(event as unknown as Record<string, unknown>, client);
+      this.app.event("app_mention", async ({ event, client }: any) => {
+        await this.handleMention(event, client);
       });
 
       // Load employee → channel mappings
@@ -176,8 +195,7 @@ export class SlackProxy {
     const channelName = `emp-${slugify(emp.name)}`;
 
     try {
-      // Create the channel (public by default — can be made private with conversations.create + is_private)
-      const result = await this.webClient.conversations.create({
+      const result: any = await this.webClient.conversations.create({
         name: channelName,
         is_private: false,
       });
@@ -202,7 +220,7 @@ export class SlackProxy {
       // Post a welcome message with the employee's identity
       await this.webClient.chat.postMessage({
         channel: channelId,
-        text: `Hey! I'm ${emp.name}, your ${emp.jobTitle}. ${emp.emoji || "🤖"}\n\nThis is my dedicated channel — anything you send here comes directly to me. How can I help?`,
+        text: `Hey! I'm ${emp.name}, your ${emp.jobTitle}. ${emp.emoji || "\u{1F916}"}\n\nThis is my dedicated channel — anything you send here comes directly to me. How can I help?`,
         username: emp.name,
         icon_emoji: emojiToSlackIcon(emp.emoji) || ":robot_face:",
       });
@@ -254,15 +272,12 @@ export class SlackProxy {
     if (!this.webClient) return null;
 
     try {
-      // Search for the channel
-      const list = await this.webClient.conversations.list({ types: "public_channel,private_channel", limit: 1000 });
-      const existing = list.channels?.find((c) => c.name === channelName);
+      const list: any = await this.webClient.conversations.list({ types: "public_channel,private_channel", limit: 1000 });
+      const existing = list.channels?.find((c: any) => c.name === channelName);
 
       if (existing?.id) {
-        // Join the channel if needed
         await this.webClient.conversations.join({ channel: existing.id }).catch(() => {});
 
-        // Store in employee record
         const currentAccounts = (emp.provisionedAccounts as Record<string, unknown>) || {};
         await db
           .update(employees)
@@ -320,24 +335,16 @@ export class SlackProxy {
   }
 
   /** Handle incoming Slack messages */
-  private async handleMessage(message: Record<string, unknown>, client: WebClient): Promise<void> {
-    // Ignore bot messages (our own or other bots)
+  private async handleMessage(message: any, client: any): Promise<void> {
     if (message.bot_id || message.subtype === "bot_message") return;
-
-    // Ignore message subtypes we don't care about
     if (message.subtype && message.subtype !== "file_share") return;
 
     const channelId = message.channel as string;
     const text = message.text as string;
-    const userId = message.user as string;
 
     if (!channelId || !text) return;
 
-    // Find which employee owns this channel
     let employee = this.channelToEmployee.get(channelId);
-
-    // If not in a dedicated channel, check if it's a DM and route to the last-used employee
-    // For now, only handle dedicated channels
     if (!employee) return;
 
     // Re-fetch employee from DB to get latest container info
@@ -353,9 +360,8 @@ export class SlackProxy {
       gatewayToken: freshEmp.gatewayToken,
     };
 
-    // Forward message to the employee's OpenClaw container
     if (!employee.containerHost || !employee.containerPort) {
-      await this.postAsEmployee(client, channelId, employee, "I'm still starting up — give me a moment! 🚀");
+      await this.postAsEmployee(client, channelId, employee, "I'm still starting up — give me a moment!");
       return;
     }
 
@@ -370,9 +376,7 @@ export class SlackProxy {
         },
         body: JSON.stringify({
           model: "default",
-          messages: [
-            { role: "user", content: text },
-          ],
+          messages: [{ role: "user", content: text }],
         }),
       });
 
@@ -383,10 +387,9 @@ export class SlackProxy {
         return;
       }
 
-      const data = await res.json() as { choices?: Array<{ message?: { content?: string } }> };
+      const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
       const reply = data.choices?.[0]?.message?.content || "I couldn't generate a response.";
 
-      // Split long messages (Slack limit is ~4000 chars for good display)
       const chunks = splitMessage(reply, 3900);
       for (const chunk of chunks) {
         await this.postAsEmployee(client, channelId, employee, chunk);
@@ -398,24 +401,21 @@ export class SlackProxy {
   }
 
   /** Handle @mentions of the bot in shared channels */
-  private async handleMention(event: Record<string, unknown>, client: WebClient): Promise<void> {
+  private async handleMention(event: any, client: any): Promise<void> {
     const text = (event.text as string || "").replace(/<@[A-Z0-9]+>/g, "").trim();
     const channelId = event.channel as string;
 
     if (!channelId || !text) return;
 
-    // Check if this channel belongs to an employee
     const employee = this.channelToEmployee.get(channelId);
     if (employee) {
-      // Route to the channel's employee
       await this.handleMessage({ ...event, text, channel: channelId }, client);
     }
-    // If not in a dedicated channel, we could do name-based routing in the future
   }
 
   /** Post a message as a specific employee */
   private async postAsEmployee(
-    client: WebClient,
+    client: any,
     channel: string,
     employee: EmployeeMapping,
     text: string,
@@ -469,7 +469,6 @@ function splitMessage(text: string, maxLen: number): string[] {
   let remaining = text;
 
   while (remaining.length > maxLen) {
-    // Find last newline within the limit
     let splitAt = remaining.lastIndexOf("\n", maxLen);
     if (splitAt <= 0) splitAt = maxLen;
 
