@@ -163,6 +163,20 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     // Start the container
     await container.start();
 
+    // Copy bundled skills from the Docker image into the bind-mounted config dir.
+    // The bind mount at /home/node/.openclaw shadows the image's /app/skills/ directory,
+    // so we need to explicitly copy bundled skills into the container's skill dir.
+    // This runs synchronously so skills are available immediately (not after async CLI install).
+    try {
+      execSync(
+        `docker exec ${employee.containerName} bash -c 'cp -rn /app/skills/* /home/node/.openclaw/skills/ 2>/dev/null; chown -R node:node /home/node/.openclaw/skills/ 2>/dev/null'`,
+        { timeout: 15000 },
+      );
+      console.log(`[provision] Bundled skills copied into container for ${employee.name}`);
+    } catch {
+      console.log(`[provision] Could not copy bundled skills (non-critical, may not exist in image)`);
+    }
+
     // Get container info for host/port
     const info = await container.inspect();
 

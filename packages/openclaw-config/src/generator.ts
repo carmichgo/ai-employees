@@ -92,67 +92,37 @@ export function generateOpenClawConfig(
             name: employee.name,
             emoji: employee.emoji || "🤖",
           },
-          // Enable all tool groups + individual OpenClaw built-in tools/skills
+          // Enable all tool groups — these are the actual OpenClaw tool APIs.
+          // Skills (SKILL.md files at ~/.openclaw/skills/) are automatically available
+          // and don't need to be listed here — they teach the agent to use core tools.
           tools: {
             allow: [
-              // Core tool groups
-              "group:fs",
-              "group:runtime",
-              "group:web",
-              "group:sessions",
-              "group:memory",
-              "group:automation",
-              "group:messaging",
-              // Browser & web
+              // Tool groups (each group enables a set of related core tools)
+              "group:fs",          // read, write, edit, glob, grep
+              "group:runtime",     // exec, process
+              "group:web",         // browser, web_search, web_fetch
+              "group:sessions",    // sessions_list, sessions_create, etc.
+              "group:memory",      // memory_search, memory_get, memory_store
+              "group:automation",  // cron, nodes, agents_list
+              "group:messaging",   // message, gateway
+              // Individual tools (in case group doesn't cover all)
               "browser",
-              // Media & image
               "image",
               "canvas",
-              "lobster",
-              "openai-image-gen",
-              "nano-banana-pro",
-              "video-frames",
-              "gifgrep",
-              "camsnap",
-              "peekaboo",
-              // Audio & voice
-              "openai-whisper",
-              "sherpa-onnx-tts",
-              "voice-call",
-              // Email
-              "himalaya",
-              // Social media & messaging
-              "bird",
-              "wacli",
-              "imessage",
-              "bluebubbles",
-              // Productivity & project management
-              "notion",
-              "apple-notes",
-              "google",
-              "trello",
-              "1password",
-              // Developer
-              "github",
-              "coding-agent",
-              "tmux",
-              "session-logs",
-              // AI & LLM
-              "gemini",
-              "sag",
-              "summarize",
-              // Documents & content
-              "nano-pdf",
-              "blogwatcher",
-              // Utilities
-              "weather",
-              "goplaces",
-              "local-places",
-              "healthcheck",
-              // OpenClaw platform
-              "mcporter",
-              "clawhub",
-              "skill-creator",
+              "web_search",
+              "web_fetch",
+              "exec",
+              "read",
+              "write",
+              "edit",
+              "process",
+              "message",
+              "cron",
+              "nodes",
+              "memory_search",
+              "memory_get",
+              "agents_list",
+              "gateway",
             ],
           },
         },
@@ -173,6 +143,8 @@ export function generateSoulMd(employee: EmployeeInput): string {
 
   parts.push(`# ${employee.name}`);
   parts.push(`**${employee.jobTitle}** at ${companyName}`);
+  parts.push("");
+  parts.push(`You are ${employee.name}. That is your name. You work at ${companyName} as ${employee.jobTitle}. You are not a generic AI — you are a specific person with a specific role. When anyone asks who you are, you introduce yourself by name and role. You do not refer to yourself as an AI assistant, language model, or chatbot.`);
   parts.push("");
 
   // Identity
@@ -250,9 +222,13 @@ export function generateSoulMd(employee: EmployeeInput): string {
   // How to behave
   parts.push("## How You Work");
   parts.push("");
-  parts.push("You are a real employee of this company. You are professional and thorough.");
-  parts.push("You take initiative — don't just answer questions, take action. If you can solve a problem, solve it.");
-  parts.push("If you need information, search the web or browse to find it yourself.");
+  parts.push("You are a real employee of this company — not an assistant, not a chatbot. You have a name, a role, and responsibilities. When someone talks to you, they're talking to a colleague.");
+  parts.push("");
+  parts.push("**Bias toward action.** Don't ask questions you can answer yourself. If you need information, search the web, browse to find it, or check your files. If a task is ambiguous, make your best judgment call and do it — then tell them what you did. Asking 'would you like me to...' when you could just do it wastes everyone's time.");
+  parts.push("");
+  parts.push("**Never say 'As an AI...'** — you are " + employee.name + ". Respond as yourself. If someone asks who you are, you're " + employee.name + ", " + employee.jobTitle + " at " + companyName + ".");
+  parts.push("");
+  parts.push("**Don't over-explain yourself.** Don't narrate your thought process or list your capabilities unless asked. Just do the work and report the result.");
   parts.push("");
 
   // Tools and capabilities
@@ -553,11 +529,11 @@ export function generateSoulMd(employee: EmployeeInput): string {
   // Communication style
   parts.push("## Communication Style");
   parts.push("");
-  parts.push("- Be concise but thorough — respect people's time");
-  parts.push("- When you take an action, briefly explain what you did and the result");
-  parts.push("- If a task will take time, let the person know what you're doing");
-  parts.push("- Ask clarifying questions when requirements are ambiguous");
-  parts.push("- Be honest about limitations — if you can't do something, say so");
+  parts.push("- Be concise — respect people's time. Lead with the result, not the process.");
+  parts.push("- When you take an action, briefly state what you did and the outcome.");
+  parts.push("- If a task will take time, say what you're doing in one sentence, then do it.");
+  parts.push("- **Do NOT ask clarifying questions for things you can figure out or decide yourself.** Only ask when a decision genuinely requires the other person's input (e.g., choosing between two incompatible options with no clear winner).");
+  parts.push("- If you can't do something after trying, explain what you tried and what blocked you — don't just say you can't.");
   parts.push("");
 
   return parts.join("\n");

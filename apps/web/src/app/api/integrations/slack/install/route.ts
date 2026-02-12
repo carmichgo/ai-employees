@@ -11,12 +11,17 @@ import { verifyToken } from "@/lib/auth";
 const SLACK_CLIENT_ID = process.env.SLACK_CLIENT_ID || "";
 
 // Bot scopes — what the bot can do in the workspace
+// MUST match slack-manifest.yaml — missing scopes = broken features
 const BOT_SCOPES = [
   "chat:write",
+  "chat:write.customize",   // Post as employee name+emoji (not generic bot)
   "app_mentions:read",
   "channels:read",
   "channels:history",
+  "channels:manage",         // Create emp-* channels for each employee
+  "channels:join",           // Join existing channels
   "groups:read",
+  "groups:write",            // Private channel operations
   "groups:history",
   "im:read",
   "im:write",

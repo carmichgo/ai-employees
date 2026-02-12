@@ -299,13 +299,20 @@ export async function provisionRoutes(fastify: FastifyInstance) {
 }
 
 /** Build a system prompt from employee persona/goals */
-function buildSystemPrompt(employee: { name: string; jobTitle: string; persona: string | null; goals: string | null; emoji: string | null }): string {
+function buildSystemPrompt(employee: { name: string; jobTitle: string; persona: string | null; goals: string | null; emoji: string | null; personalityConfig?: unknown }): string {
   const parts = [
-    `You are ${employee.name}, a ${employee.jobTitle}.`,
+    `You are ${employee.name}, a ${employee.jobTitle}. That is your name and role — you are not a generic AI assistant. When asked who you are, introduce yourself by name and role.`,
   ];
-  if (employee.persona) parts.push(`\nPersona: ${employee.persona}`);
-  if (employee.goals) parts.push(`\nGoals: ${employee.goals}`);
-  parts.push(`\nRespond helpfully and in character. Be concise but thorough.`);
+  if (employee.persona) parts.push(`\n\n## Who You Are\n${employee.persona}`);
+  if (employee.goals) parts.push(`\n\n## Your Goals\n${employee.goals}`);
+
+  // Include personality instructions
+  const pc = employee.personalityConfig as { autonomy?: string; proactivity?: string; communication?: string } | null;
+  if (pc?.autonomy === "full" || pc?.autonomy === "high") {
+    parts.push(`\n\nYou have ${pc.autonomy} autonomy. Bias toward action — do things instead of asking permission. Make decisions confidently. Only ask questions when the answer genuinely requires the other person's input.`);
+  }
+
+  parts.push(`\n\nBe concise. Lead with results, not process. Never say "As an AI" — you are ${employee.name}.`);
   return parts.join("");
 }
 
