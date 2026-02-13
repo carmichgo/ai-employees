@@ -22,7 +22,7 @@ import { db, employees, companies } from "@ai-employees/db";
 // Types we reference — kept minimal so we don't need the Slack packages at compile time
 type SlackApp = { message: Function; event: Function; start: Function; stop: Function };
 type SlackWebClient = {
-  conversations: { create: Function; setTopic: Function; setPurpose: Function; list: Function; join: Function; archive: Function };
+  conversations: { create: Function; setTopic: Function; setPurpose: Function; list: Function; join: Function; archive: Function; history: Function };
   chat: { postMessage: Function };
 };
 
@@ -353,6 +353,53 @@ export class SlackProxy {
     }
   }
 
+  /**
+   * Fetch recent conversation history from a Slack channel and convert
+   * to OpenAI-style messages so the AI employee has context of the conversation.
+   */
+  private async fetchChannelHistory(
+    channelId: string,
+    beforeTs?: string,
+  ): Promise<Array<{ role: "user" | "assistant"; content: string }>> {
+    if (!this.webClient) return [];
+
+    try {
+      const result: any = await this.webClient.conversations.history({
+        channel: channelId,
+        limit: 50, // Last 50 messages for context
+        ...(beforeTs ? { latest: beforeTs, inclusive: false } : {}),
+      });
+
+      const slackMessages: any[] = result.messages || [];
+
+      // Slack returns newest-first — reverse to chronological order
+      slackMessages.reverse();
+
+      const history: Array<{ role: "user" | "assistant"; content: string }> = [];
+
+      for (const msg of slackMessages) {
+        const content = (msg.text || "").trim();
+        if (!content) continue;
+
+        // Skip subtypes we don't care about (channel_join, channel_topic, etc.)
+        if (msg.subtype && msg.subtype !== "bot_message" && msg.subtype !== "file_share") continue;
+
+        if (msg.bot_id || msg.subtype === "bot_message") {
+          // Messages posted by our bot (the employee's responses)
+          history.push({ role: "assistant", content });
+        } else {
+          // Human messages
+          history.push({ role: "user", content });
+        }
+      }
+
+      return history;
+    } catch (err) {
+      console.error(`[slack-proxy] Failed to fetch channel history for ${channelId}:`, err);
+      return [];
+    }
+  }
+
   /** Handle incoming Slack messages */
   private async handleMessage(message: any, client: any): Promise<void> {
     if (message.bot_id || message.subtype === "bot_message") return;
@@ -384,6 +431,14 @@ export class SlackProxy {
       return;
     }
 
+    // Fetch recent conversation history from Slack so the employee has context
+    const history = await this.fetchChannelHistory(channelId, message.ts);
+    // Build messages array: history + current message
+    const messages = [
+      ...history,
+      { role: "user" as const, content: text },
+    ];
+
     const sendToContainer = (host: string) => {
       return fetch(`http://${host}:${employee.containerPort}/v1/chat/completions`, {
         method: "POST",
@@ -393,7 +448,7 @@ export class SlackProxy {
         },
         body: JSON.stringify({
           model: "default",
-          messages: [{ role: "user", content: text }],
+          messages,
         }),
       });
     };
