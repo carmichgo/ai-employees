@@ -241,6 +241,9 @@ export class SlackProxy {
         icon_emoji: emojiToSlackIcon(emp.emoji) || ":robot_face:",
       });
 
+      // Announce the new employee in #general so everyone knows
+      await this.announceNewEmployee(emp, channelId);
+
       // Store channel ID in employee record
       const currentAccounts = (emp.provisionedAccounts as Record<string, unknown>) || {};
       await db
@@ -509,6 +512,45 @@ export class SlackProxy {
 
     await this.refreshMappings();
     return results;
+  }
+
+  /**
+   * Announce a new AI employee in #general so everyone in the workspace gets notified.
+   * Uses <!everyone> so all members see the notification.
+   */
+  private async announceNewEmployee(
+    emp: { name: string; emoji: string | null; jobTitle: string },
+    channelId: string,
+  ): Promise<void> {
+    if (!this.webClient) return;
+
+    try {
+      // Find #general (or fall back to first public channel)
+      const list: any = await this.webClient.conversations.list({
+        types: "public_channel",
+        limit: 200,
+      });
+      const general = list.channels?.find((c: any) => c.name === "general" && !c.is_archived);
+      if (!general?.id) {
+        console.log("[slack-proxy] No #general channel found, skipping new employee announcement");
+        return;
+      }
+
+      // Join #general if not already a member
+      await this.webClient.conversations.join({ channel: general.id }).catch(() => {});
+
+      await this.webClient.chat.postMessage({
+        channel: general.id,
+        text: `<!everyone> ${emp.emoji || "\u{1F916}"} Meet *${emp.name}*, your new AI ${emp.jobTitle}! Head over to <#${channelId}> to chat with them.`,
+        username: emp.name,
+        icon_emoji: emojiToSlackIcon(emp.emoji) || ":robot_face:",
+      });
+
+      console.log(`[slack-proxy] Announced ${emp.name} in #general`);
+    } catch (err) {
+      // Non-fatal — don't block channel creation if announcement fails
+      console.error(`[slack-proxy] Failed to announce ${emp.name} in #general:`, err);
+    }
   }
 
   /** Post a message as an employee by employee ID (for use from other parts of the API) */
