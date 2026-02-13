@@ -15,7 +15,7 @@ export const createEmployeeSchema = z.object({
   personalityConfig: personalityConfigSchema.optional(),
   modelConfig: z
     .object({
-      primary: z.string().default("anthropic/claude-sonnet-4-20250514"),
+      primary: z.string().default("anthropic/claude-opus-4-6"),
       fallbacks: z.array(z.string()).optional(),
     })
     .optional(),

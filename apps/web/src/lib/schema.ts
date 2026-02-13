@@ -62,7 +62,7 @@ export const employees = pgTable("employees", {
   containerPort: integer("container_port").default(18789),
   gatewayToken: varchar("gateway_token", { length: 500 }),
   modelConfig: jsonb("model_config").notNull().default({
-    primary: "anthropic/claude-sonnet-4-20250514",
+    primary: "anthropic/claude-opus-4-6",
   }),
   persona: text("persona"),
   goals: text("goals"),

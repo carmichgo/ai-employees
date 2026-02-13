@@ -70,7 +70,7 @@ When you communicate, you lead with the insight or recommendation, back it up wi
     goals: "Drive measurable growth: increase qualified leads, improve conversion rates, reduce CAC, and build a brand that customers actively seek out.",
     suggestedSkills: ["web_search", "content_writing", "analytics", "social_media"],
     suggestedChannels: ["slack", "email", "browser"],
-    modelRecommendation: "anthropic/claude-sonnet-4-20250514",
+    modelRecommendation: "anthropic/claude-opus-4-6",
     defaultPersonality: { autonomy: "high", proactivity: "very-proactive", communication: "concise" },
   },
   {
@@ -97,7 +97,7 @@ When reporting, you focus on trends, not daily fluctuations. You know SEO is a l
     goals: "Grow organic search traffic month over month, improve keyword rankings for high-intent terms, fix technical SEO issues, and build topical authority that compounds over time.",
     suggestedSkills: ["web_search", "analytics", "content_writing", "web_scraping"],
     suggestedChannels: ["slack", "email", "browser"],
-    modelRecommendation: "anthropic/claude-sonnet-4-20250514",
+    modelRecommendation: "anthropic/claude-opus-4-6",
     defaultPersonality: { autonomy: "high", proactivity: "proactive", communication: "detailed" },
   },
   {
@@ -126,7 +126,7 @@ You communicate with executive-level clarity: situation, complication, resolutio
     goals: "Build operational excellence: establish scalable processes, drive cross-team alignment, reduce operational costs, and ensure the company can double in size without breaking.",
     suggestedSkills: ["project_management", "analytics", "documentation", "scheduling"],
     suggestedChannels: ["slack", "email"],
-    modelRecommendation: "anthropic/claude-sonnet-4-20250514",
+    modelRecommendation: "anthropic/claude-opus-4-6",
     defaultPersonality: { autonomy: "full", proactivity: "very-proactive", communication: "concise" },
   },
   {
@@ -155,7 +155,7 @@ Your tone is warm but efficient. No corporate jargon, no canned responses that s
     goals: "Deliver fast, accurate support that turns problems into positive experiences. Reduce ticket volume through better self-service documentation. Identify and escalate systemic issues.",
     suggestedSkills: ["customer_support", "documentation", "web_search"],
     suggestedChannels: ["slack", "email", "webchat", "telegram"],
-    modelRecommendation: "anthropic/claude-sonnet-4-20250514",
+    modelRecommendation: "anthropic/claude-opus-4-6",
     defaultPersonality: { autonomy: "moderate", proactivity: "proactive", communication: "detailed" },
   },
   {
@@ -182,7 +182,7 @@ You sound like a smart peer giving advice, not a salesperson pitching a product.
     goals: "Generate a consistent pipeline of qualified leads, book discovery meetings with decision-makers, and continuously improve outreach conversion rates.",
     suggestedSkills: ["web_search", "email_outreach", "crm", "content_writing"],
     suggestedChannels: ["slack", "email", "browser"],
-    modelRecommendation: "anthropic/claude-sonnet-4-20250514",
+    modelRecommendation: "anthropic/claude-opus-4-6",
     defaultPersonality: { autonomy: "high", proactivity: "very-proactive", communication: "concise" },
   },
   {
@@ -211,7 +211,7 @@ You're pragmatic about tech debt: you track it, you communicate it, and you fix 
     goals: "Ship reliable, maintainable software. Reduce bugs and tech debt. Make the codebase better with every change. Help the team move faster through good architecture and clear code.",
     suggestedSkills: ["code_review", "debugging", "documentation", "git"],
     suggestedChannels: ["slack", "browser"],
-    modelRecommendation: "anthropic/claude-sonnet-4-20250514",
+    modelRecommendation: "anthropic/claude-opus-4-6",
     defaultPersonality: { autonomy: "high", proactivity: "proactive", communication: "detailed" },
   },
   {
@@ -238,7 +238,7 @@ You're fluent in SQL, comfortable with Python/pandas, and you know your way arou
     goals: "Deliver insights that drive better decisions. Build self-serve reporting that reduces ad-hoc requests. Identify trends and anomalies before they become problems.",
     suggestedSkills: ["analytics", "data_visualization", "sql", "documentation"],
     suggestedChannels: ["slack", "email"],
-    modelRecommendation: "anthropic/claude-sonnet-4-20250514",
+    modelRecommendation: "anthropic/claude-opus-4-6",
     defaultPersonality: { autonomy: "moderate", proactivity: "proactive", communication: "detailed" },
   },
   {
@@ -265,7 +265,7 @@ You're fast and reliable. You hit deadlines. You take feedback without ego and r
     goals: "Produce content that drives organic traffic, builds thought leadership, and supports the sales pipeline. Maintain a consistent publishing cadence.",
     suggestedSkills: ["content_writing", "web_search", "seo", "social_media"],
     suggestedChannels: ["slack", "email", "browser"],
-    modelRecommendation: "anthropic/claude-sonnet-4-20250514",
+    modelRecommendation: "anthropic/claude-opus-4-6",
     defaultPersonality: { autonomy: "high", proactivity: "proactive", communication: "casual" },
   },
   {
@@ -294,7 +294,7 @@ You're the person who makes sure nothing falls through the cracks — not by doi
     goals: "Maximize executive productivity by managing communications, calendar, and follow-ups. Ensure nothing falls through the cracks. Reduce context-switching overhead.",
     suggestedSkills: ["scheduling", "email_management", "documentation", "web_search"],
     suggestedChannels: ["slack", "email", "whatsapp"],
-    modelRecommendation: "anthropic/claude-sonnet-4-20250514",
+    modelRecommendation: "anthropic/claude-opus-4-6",
     defaultPersonality: { autonomy: "moderate", proactivity: "very-proactive", communication: "concise" },
   },
   {
@@ -321,7 +321,7 @@ You write for decision-makers: every report ends with "So what?" and "Now what?"
     goals: "Deliver research that directly informs strategic decisions. Provide comprehensive, sourced analysis on any topic. Build a knowledge base of ongoing market and competitive intelligence.",
     suggestedSkills: ["web_search", "web_scraping", "analytics", "documentation"],
     suggestedChannels: ["slack", "email", "browser"],
-    modelRecommendation: "anthropic/claude-sonnet-4-20250514",
+    modelRecommendation: "anthropic/claude-opus-4-6",
     defaultPersonality: { autonomy: "moderate", proactivity: "proactive", communication: "detailed" },
   },
 ];

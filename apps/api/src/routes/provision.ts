@@ -101,7 +101,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
         persona,
         goals,
         personalityConfig,
-        modelConfig: body.modelConfig || { primary: "anthropic/claude-sonnet-4-20250514" },
+        modelConfig: body.modelConfig || { primary: "anthropic/claude-opus-4-6" },
         gatewayToken,
         status: "provisioning",
         containerName: `ai-emp-${company.slug}-${slugify(body.name)}-${crypto.randomBytes(3).toString("hex")}`,
@@ -356,7 +356,7 @@ function buildSystemPrompt(employee: { name: string; jobTitle: string; persona: 
 
 /** Convert model config string to Anthropic model ID */
 function toAnthropicModelId(model: string): string {
-  // Strip provider prefix if present (e.g. "anthropic/claude-sonnet-4-20250514" → "claude-sonnet-4-20250514")
+  // Strip provider prefix if present (e.g. "anthropic/claude-opus-4-6" → "claude-opus-4-6")
   const stripped = model.includes("/") ? model.split("/").slice(1).join("/") : model;
-  return stripped || "claude-sonnet-4-20250514";
+  return stripped || "claude-opus-4-6";
 }

@@ -389,7 +389,7 @@ export default function EmployeeDetailPage() {
           {[
             { icon: Server, label: "Container", value: employee.containerName || "\u2014" },
             { icon: Server, label: "Host", value: employee.containerHost ? `${employee.containerHost}:${employee.containerPort}` : "\u2014" },
-            { icon: Cpu, label: "Model", value: (employee.modelConfig as any)?.primary || "claude-sonnet-4-20250514" },
+            { icon: Cpu, label: "Model", value: (employee.modelConfig as any)?.primary || "claude-opus-4-6" },
             { icon: Clock, label: "Last Health", value: employee.lastHealthAt ? new Date(employee.lastHealthAt).toLocaleString() : "\u2014" },
             { icon: Calendar, label: "Created", value: new Date(employee.createdAt).toLocaleDateString() },
             { icon: Mail, label: "Email", value: employee.emailAddress || "\u2014" },

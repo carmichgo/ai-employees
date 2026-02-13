@@ -110,7 +110,7 @@ export async function employeeRoutes(fastify: FastifyInstance) {
           persona,
           goals,
           modelConfig: input.modelConfig || {
-            primary: "anthropic/claude-sonnet-4-20250514",
+            primary: "anthropic/claude-opus-4-6",
           },
           gatewayToken,
           status: "provisioning",

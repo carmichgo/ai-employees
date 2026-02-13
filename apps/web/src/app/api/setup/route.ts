@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
         container_host VARCHAR(255),
         container_port INTEGER DEFAULT 18789,
         gateway_token VARCHAR(500),
-        model_config JSONB NOT NULL DEFAULT '{"primary": "anthropic/claude-sonnet-4-20250514"}',
+        model_config JSONB NOT NULL DEFAULT '{"primary": "anthropic/claude-opus-4-6"}',
         persona TEXT,
         goals TEXT,
         tools_config JSONB NOT NULL DEFAULT '{}',
