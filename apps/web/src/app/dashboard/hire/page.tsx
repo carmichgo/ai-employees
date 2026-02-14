@@ -1120,6 +1120,7 @@ export default function HireEmployeePage() {
               marginTop: 40,
               display: "grid",
               gridTemplateColumns: "repeat(3, 1fr)",
+              gridAutoRows: "1fr",
               gap: 10,
             }}
           >
@@ -1156,6 +1157,7 @@ export default function HireEmployeePage() {
               marginTop: 40,
               display: "grid",
               gridTemplateColumns: "repeat(2, 1fr)",
+              gridAutoRows: "1fr",
               gap: 10,
             }}
           >
