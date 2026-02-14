@@ -55,6 +55,7 @@ export const employees = pgTable("employees", {
   templateId: varchar("template_id", { length: 100 }),
   avatar: varchar("avatar", { length: 500 }),
   emoji: varchar("emoji", { length: 10 }).default("🤖"),
+  tier: varchar("tier", { length: 20 }).notNull().default("junior"),
   status: varchar("status", { length: 20 }).notNull().default("provisioning"),
   containerId: varchar("container_id", { length: 100 }),
   containerName: varchar("container_name", { length: 255 }),
