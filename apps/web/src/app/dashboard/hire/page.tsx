@@ -367,6 +367,7 @@ export default function HireEmployeePage() {
         alignItems: "flex-start",
         gap: 12,
         position: "relative",
+        height: "100%",
       }}
       onMouseEnter={(e) => {
         if (!selected) {
@@ -1013,7 +1014,7 @@ export default function HireEmployeePage() {
             {CHANNEL_OPTIONS.map((ch) => {
               const selected = form.channels.includes(ch.id);
               return (
-                <div key={ch.id}>
+                <div key={ch.id} style={{ height: "100%" }}>
                   {renderSelectionCard({
                     selected,
                     onClick: () => toggleChannel(ch.id),
@@ -1050,7 +1051,7 @@ export default function HireEmployeePage() {
               const selected = form.capabilities.includes(cap.id);
               const Icon = CAPABILITY_ICONS[cap.id] || Sparkles;
               return (
-                <div key={cap.id}>
+                <div key={cap.id} style={{ height: "100%" }}>
                   {renderSelectionCard({
                     selected,
                     onClick: () => toggleCapability(cap.id),
