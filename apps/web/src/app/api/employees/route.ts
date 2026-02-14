@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
   const input = createEmployeeSchema.parse(body);
 
-  // Check employee limit for this company
+  // Fetch company for use throughout the handler
   const [company] = await db
     .select()
     .from(companies)
@@ -67,18 +67,6 @@ export async function POST(request: NextRequest) {
 
   if (!company) {
     return NextResponse.json({ error: "Company not found" }, { status: 404 });
-  }
-
-  const currentEmployees = await db
-    .select()
-    .from(employees)
-    .where(eq(employees.companyId, session.companyId));
-
-  if (currentEmployees.length >= company.maxEmployees) {
-    return NextResponse.json(
-      { error: `Employee limit reached (${company.maxEmployees}). Upgrade your plan or remove existing employees to hire more.` },
-      { status: 403 },
-    );
   }
 
   // Check if company has an active droplet backend
