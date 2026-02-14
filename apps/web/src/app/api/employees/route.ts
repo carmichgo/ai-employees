@@ -58,6 +58,29 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
   const input = createEmployeeSchema.parse(body);
 
+  // Check employee limit for this company
+  const [company] = await db
+    .select()
+    .from(companies)
+    .where(eq(companies.id, session.companyId))
+    .limit(1);
+
+  if (!company) {
+    return NextResponse.json({ error: "Company not found" }, { status: 404 });
+  }
+
+  const currentEmployees = await db
+    .select()
+    .from(employees)
+    .where(eq(employees.companyId, session.companyId));
+
+  if (currentEmployees.length >= company.maxEmployees) {
+    return NextResponse.json(
+      { error: `Employee limit reached (${company.maxEmployees}). Upgrade your plan or remove existing employees to hire more.` },
+      { status: 403 },
+    );
+  }
+
   // Check if company has an active droplet backend
   const backendConfig = await getCompanyBackend(session.companyId);
 
@@ -97,17 +120,6 @@ export async function POST(request: NextRequest) {
 
   // No active droplet — check if we should auto-provision one
   if (isDropletProvisioningEnabled()) {
-    // Get company to check droplet status
-    const [company] = await db
-      .select()
-      .from(companies)
-      .where(eq(companies.id, session.companyId))
-      .limit(1);
-
-    if (!company) {
-      return NextResponse.json({ error: "Company not found" }, { status: 404 });
-    }
-
     if (company.dropletStatus === "provisioning") {
       return NextResponse.json(
         {
@@ -181,14 +193,6 @@ export async function POST(request: NextRequest) {
   }
 
   // Demo mode fallback — no real provisioning
-  const [company] = await db
-    .select()
-    .from(companies)
-    .where(eq(companies.id, session.companyId))
-    .limit(1);
-  if (!company) {
-    return NextResponse.json({ error: "Company not found" }, { status: 404 });
-  }
 
   let persona = input.persona;
   let goals = input.goals;

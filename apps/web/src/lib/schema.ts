@@ -17,7 +17,7 @@ export const companies = pgTable("companies", {
   name: varchar("name", { length: 255 }).notNull(),
   slug: varchar("slug", { length: 100 }).unique().notNull(),
   plan: varchar("plan", { length: 50 }).notNull().default("starter"),
-  maxEmployees: integer("max_employees").notNull().default(5),
+  maxEmployees: integer("max_employees").notNull().default(50),
   status: varchar("status", { length: 20 }).notNull().default("active"),
   settings: jsonb("settings").notNull().default({}),
   // Per-company DigitalOcean droplet

@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
         name VARCHAR(255) NOT NULL,
         slug VARCHAR(100) UNIQUE NOT NULL,
         plan VARCHAR(50) NOT NULL DEFAULT 'starter',
-        max_employees INTEGER NOT NULL DEFAULT 5,
+        max_employees INTEGER NOT NULL DEFAULT 50,
         status VARCHAR(20) NOT NULL DEFAULT 'active',
         settings JSONB NOT NULL DEFAULT '{}',
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -212,6 +212,9 @@ export async function POST(request: NextRequest) {
     await sql`ALTER TABLE companies ADD COLUMN IF NOT EXISTS droplet_size VARCHAR(50) DEFAULT 's-2vcpu-4gb'`;
     await sql`ALTER TABLE companies ADD COLUMN IF NOT EXISTS droplet_status VARCHAR(20) DEFAULT 'none'`;
     await sql`ALTER TABLE companies ADD COLUMN IF NOT EXISTS interservice_secret VARCHAR(255)`;
+
+    // Raise default employee limit for existing companies (was 5, now 50)
+    await sql`UPDATE companies SET max_employees = 50 WHERE max_employees = 5`;
 
     // v2 migrations: personality config + tasks table
     await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS personality_config JSONB NOT NULL DEFAULT '{"autonomy": "high", "proactivity": "proactive", "communication": "concise"}'`;
