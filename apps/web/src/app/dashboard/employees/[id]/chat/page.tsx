@@ -81,6 +81,17 @@ export default function EmployeeChatPage() {
     loadChat();
   }, [loadChat]);
 
+  // Auto-poll while employee is provisioning so chat unlocks automatically
+  useEffect(() => {
+    if (!employee || (employee.status !== "provisioning" && employee.status !== "onboarding")) return;
+    const interval = setInterval(() => {
+      api.getEmployee(employeeId).then((res) => {
+        setEmployee(res.employee);
+      }).catch(() => {});
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [employee?.status, employeeId]);
+
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
@@ -462,7 +473,19 @@ export default function EmployeeChatPage() {
             )}
           </button>
         </div>
-        {employee.status !== "active" && (
+        {employee.status === "provisioning" && (
+          <div style={{
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+            marginTop: 8, padding: "8px 14px", borderRadius: 8,
+            background: "rgba(217, 119, 6, 0.06)", border: "1px solid rgba(217, 119, 6, 0.14)",
+          }}>
+            <Loader2 size={14} style={{ color: "#d97706", animation: "spin 1.5s linear infinite" }} />
+            <span style={{ fontSize: 13, color: "#b45309" }}>
+              Setting up {employee.name}&apos;s workstation... Chat will be available shortly.
+            </span>
+          </div>
+        )}
+        {employee.status !== "active" && employee.status !== "provisioning" && (
           <div style={{ fontSize: 12, color: "var(--text-tertiary, #a3a3a3)", textAlign: "center", marginTop: 8 }}>
             Chat is disabled — employee is {employee.status}
           </div>

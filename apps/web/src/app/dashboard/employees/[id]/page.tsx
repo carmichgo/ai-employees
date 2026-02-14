@@ -199,6 +199,17 @@ export default function EmployeeDetailPage() {
     api.listChannels(employeeId).then((res) => setChannelsList(res.channels || [])).catch(() => {});
   }, [employeeId]);
 
+  // Auto-poll while provisioning
+  useEffect(() => {
+    if (!employee || (employee.status !== "provisioning" && employee.status !== "onboarding")) return;
+    const interval = setInterval(() => {
+      api.getEmployee(employeeId).then((res) => {
+        setEmployee(res.employee);
+      }).catch(() => {});
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [employee?.status, employeeId]);
+
   // ── Employee actions ──
   const handlePause = async () => {
     setActionLoading(true);

@@ -29,6 +29,18 @@ export default function EmployeesPage() {
     fetchEmployees();
   }, []);
 
+  // Auto-poll while any employee is provisioning
+  useEffect(() => {
+    const hasProvisioning = employees.some((e) => e.status === "provisioning" || e.status === "onboarding");
+    if (!hasProvisioning) return;
+    const interval = setInterval(() => {
+      api.listEmployees().then((res) => {
+        setEmployees(res.employees);
+      }).catch(() => {});
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [employees]);
+
   if (loading) {
     return (
       <div
