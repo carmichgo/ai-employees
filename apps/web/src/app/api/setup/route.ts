@@ -213,8 +213,8 @@ export async function POST(request: NextRequest) {
     await sql`ALTER TABLE companies ADD COLUMN IF NOT EXISTS droplet_status VARCHAR(20) DEFAULT 'none'`;
     await sql`ALTER TABLE companies ADD COLUMN IF NOT EXISTS interservice_secret VARCHAR(255)`;
 
-    // Raise default employee limit for existing companies (was 5, now 50)
-    await sql`UPDATE companies SET max_employees = 50 WHERE max_employees = 5`;
+    // Raise employee limit for existing companies to 50
+    await sql`UPDATE companies SET max_employees = 50 WHERE max_employees < 50`;
 
     // v2 migrations: personality config + tasks table
     await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS personality_config JSONB NOT NULL DEFAULT '{"autonomy": "high", "proactivity": "proactive", "communication": "concise"}'`;
