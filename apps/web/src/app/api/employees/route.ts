@@ -40,16 +40,24 @@ function slugify(name: string) {
 
 // GET /api/employees — list
 export async function GET(request: NextRequest) {
-  const session = await authenticate(request);
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    const session = await authenticate(request);
+    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const result = await db
-    .select()
-    .from(employees)
-    .where(eq(employees.companyId, session.companyId))
-    .orderBy(employees.createdAt);
+    const result = await db
+      .select()
+      .from(employees)
+      .where(eq(employees.companyId, session.companyId))
+      .orderBy(employees.createdAt);
 
-  return NextResponse.json({ employees: result.map(sanitize) });
+    return NextResponse.json({ employees: result.map(sanitize) });
+  } catch (err: any) {
+    console.error("GET /api/employees error:", err);
+    return NextResponse.json(
+      { error: err.message || "Internal server error" },
+      { status: 500 },
+    );
+  }
 }
 
 // POST /api/employees — hire
