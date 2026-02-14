@@ -297,7 +297,7 @@ export default function EmployeeDetailPage() {
   if (loading || !employee) {
     return (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "60vh" }}>
-        <div style={{ width: 24, height: 24, border: "2px solid var(--border)", borderTopColor: "var(--text)", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+        <div style={{ width: 24, height: 24, border: "2px solid var(--border)", borderTopColor: "var(--text-tertiary)", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
         <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
       </div>
     );
@@ -313,7 +313,11 @@ export default function EmployeeDetailPage() {
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 32 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <div style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(135deg, rgba(93, 121, 223, 0.12), rgba(169, 75, 210, 0.12))", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 32 }}>
+          <div style={{
+            width: 64, height: 64, borderRadius: "var(--radius-lg)",
+            background: "var(--bg-secondary)", border: "1px solid var(--border)",
+            display: "flex", alignItems: "center", justifyContent: "center", fontSize: 32,
+          }}>
             {employee.emoji || "A"}
           </div>
           <div>
@@ -345,22 +349,22 @@ export default function EmployeeDetailPage() {
 
       {/* Provisioning animation */}
       {employee.status === "provisioning" && (
-        <div className="card glow-subtle animate-in" style={{ padding: 32, textAlign: "center", marginBottom: 24 }}>
+        <div className="card animate-in" style={{ padding: 32, textAlign: "center", marginBottom: 24, background: "#ffffff", border: "1px solid var(--border)" }}>
           <Loader2 size={40} style={{ color: "var(--blue)", animation: "spin 2s linear infinite", marginBottom: 16 }} />
           <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
-          <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>Setting up {employee.name}&apos;s workstation...</h3>
+          <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 8, color: "var(--text)" }}>Setting up {employee.name}&apos;s workstation...</h3>
           <p style={{ color: "var(--text-secondary)", fontSize: 14, maxWidth: 400, margin: "0 auto" }}>
             Spinning up an isolated environment, installing tools, and configuring accounts.
           </p>
           <div style={{ marginTop: 24, height: 3, background: "var(--border)", borderRadius: 2, overflow: "hidden", maxWidth: 300, margin: "24px auto 0" }}>
-            <div style={{ height: "100%", width: "60%", background: "linear-gradient(90deg, var(--blue), var(--purple))", borderRadius: 2, animation: "shimmer 2s ease-in-out infinite" }} />
+            <div style={{ height: "100%", width: "60%", background: "var(--blue)", borderRadius: 2, animation: "shimmer 2s ease-in-out infinite" }} />
           </div>
         </div>
       )}
 
       {/* Error state */}
       {employee.status === "error" && employee.errorMessage && (
-        <div className="card" style={{ padding: 20, marginBottom: 24, borderColor: "rgba(239, 68, 68, 0.2)", background: "var(--red-muted)" }}>
+        <div className="card" style={{ padding: 20, marginBottom: 24, borderColor: "rgba(220, 38, 38, 0.15)", background: "rgba(220, 38, 38, 0.04)" }}>
           <div style={{ fontWeight: 600, color: "var(--red)", marginBottom: 6, fontSize: 14 }}>Error</div>
           <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>{employee.errorMessage}</div>
         </div>
@@ -368,13 +372,13 @@ export default function EmployeeDetailPage() {
 
       {/* Details grid */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
-        <div className="card" style={{ padding: 20 }}>
+        <div className="card" style={{ padding: 20, background: "#ffffff", border: "1px solid var(--border)" }}>
           <p className="label" style={{ marginBottom: 12 }}>Persona</p>
           <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6, maxHeight: 200, overflow: "auto" }}>
             {employee.persona || "No persona configured"}
           </div>
         </div>
-        <div className="card" style={{ padding: 20 }}>
+        <div className="card" style={{ padding: 20, background: "#ffffff", border: "1px solid var(--border)" }}>
           <p className="label" style={{ marginBottom: 12 }}>Goals</p>
           <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6 }}>
             {employee.goals || "No goals configured"}
@@ -383,7 +387,7 @@ export default function EmployeeDetailPage() {
       </div>
 
       {/* Technical details */}
-      <div className="card" style={{ padding: 20, marginBottom: 16 }}>
+      <div className="card" style={{ padding: 20, marginBottom: 16, background: "#ffffff", border: "1px solid var(--border)" }}>
         <p className="label" style={{ marginBottom: 16 }}>Technical Details</p>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, fontSize: 13 }}>
           {[
@@ -400,7 +404,7 @@ export default function EmployeeDetailPage() {
                 <Icon size={14} style={{ color: "var(--text-tertiary)", flexShrink: 0 }} />
                 <div>
                   <span style={{ color: "var(--text-tertiary)" }}>{item.label}: </span>
-                  <span style={{ fontFamily: "monospace", fontSize: 12 }}>{item.value}</span>
+                  <span style={{ fontFamily: "monospace", fontSize: 12, color: "var(--text)" }}>{item.value}</span>
                 </div>
               </div>
             );
@@ -411,12 +415,12 @@ export default function EmployeeDetailPage() {
       {/* ════════════════════════════════════════════════════════════ */}
       {/* FILES SECTION */}
       {/* ════════════════════════════════════════════════════════════ */}
-      <div className="card" style={{ padding: 20, marginBottom: 16 }}>
+      <div className="card" style={{ padding: 20, marginBottom: 16, background: "#ffffff", border: "1px solid var(--border)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <FileText size={14} style={{ color: "var(--text-tertiary)" }} />
             <p className="label" style={{ margin: 0 }}>Files</p>
-            <span style={{ fontSize: 11, color: "var(--text-tertiary)", background: "var(--bg-secondary)", padding: "2px 6px", borderRadius: 4 }}>
+            <span style={{ fontSize: 11, color: "var(--text-tertiary)", background: "var(--bg-secondary)", padding: "2px 6px", borderRadius: "var(--radius-sm)" }}>
               {files.length}
             </span>
           </div>
@@ -436,9 +440,9 @@ export default function EmployeeDetailPage() {
 
         {fileNotice && (
           <div style={{
-            padding: "8px 12px", borderRadius: 6, marginBottom: 12, fontSize: 12,
-            background: fileNotice.type === "success" ? "rgba(34, 197, 94, 0.1)" : "rgba(239, 68, 68, 0.1)",
-            color: fileNotice.type === "success" ? "#22c55e" : "#ef4444",
+            padding: "8px 12px", borderRadius: "var(--radius-sm)", marginBottom: 12, fontSize: 12,
+            background: fileNotice.type === "success" ? "rgba(22, 163, 74, 0.06)" : "rgba(220, 38, 38, 0.06)",
+            color: fileNotice.type === "success" ? "var(--green)" : "var(--red)",
           }}>
             {fileNotice.message}
           </div>
@@ -453,11 +457,12 @@ export default function EmployeeDetailPage() {
             {files.map((file) => (
               <div key={file.name} style={{
                 display: "flex", justifyContent: "space-between", alignItems: "center",
-                padding: "8px 10px", background: "var(--bg-secondary)", borderRadius: 6, fontSize: 12,
+                padding: "8px 10px", background: "var(--bg-secondary)", borderRadius: "var(--radius-sm)", fontSize: 12,
+                border: "1px solid var(--border)",
               }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
                   <FileText size={13} style={{ color: "var(--text-tertiary)", flexShrink: 0 }} />
-                  <span style={{ fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{file.name}</span>
+                  <span style={{ fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)" }}>{file.name}</span>
                   <span style={{ color: "var(--text-tertiary)", flexShrink: 0 }}>{formatFileSize(file.size)}</span>
                 </div>
                 <button
@@ -472,19 +477,19 @@ export default function EmployeeDetailPage() {
           </div>
         )}
         <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 10 }}>
-          Files appear in the employee&apos;s workspace at <code style={{ fontSize: 10 }}>/uploads/</code> — max 10MB each
+          Files appear in the employee&apos;s workspace at <code style={{ fontSize: 10, background: "var(--bg-secondary)", padding: "1px 4px", borderRadius: 3 }}>/uploads/</code> — max 10MB each
         </div>
       </div>
 
       {/* ════════════════════════════════════════════════════════════ */}
       {/* TRIGGERS / WEBHOOKS SECTION */}
       {/* ════════════════════════════════════════════════════════════ */}
-      <div className="card" style={{ padding: 20, marginBottom: 16 }}>
+      <div className="card" style={{ padding: 20, marginBottom: 16, background: "#ffffff", border: "1px solid var(--border)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <Zap size={14} style={{ color: "var(--text-tertiary)" }} />
             <p className="label" style={{ margin: 0 }}>Triggers</p>
-            <span style={{ fontSize: 11, color: "var(--text-tertiary)", background: "var(--bg-secondary)", padding: "2px 6px", borderRadius: 4 }}>
+            <span style={{ fontSize: 11, color: "var(--text-tertiary)", background: "var(--bg-secondary)", padding: "2px 6px", borderRadius: "var(--radius-sm)" }}>
               {triggersList.length}
             </span>
           </div>
@@ -524,7 +529,7 @@ export default function EmployeeDetailPage() {
 
         {/* New trigger form */}
         {showNewTrigger && (
-          <div style={{ background: "var(--bg-secondary)", borderRadius: 8, padding: 16, marginBottom: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ background: "var(--bg-secondary)", borderRadius: "var(--radius-md)", padding: 16, marginBottom: 16, display: "flex", flexDirection: "column", gap: 12, border: "1px solid var(--border)" }}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div>
                 <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Type</label>
@@ -550,7 +555,7 @@ export default function EmployeeDetailPage() {
                 </label>
                 <input type="text" placeholder="*/30 * * * *" value={newTriggerCron} onChange={(e) => setNewTriggerCron(e.target.value)} className="input" style={{ width: "100%", fontSize: 13, fontFamily: "monospace" }} />
                 <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 4 }}>
-                  Examples: <code>*/30 * * * *</code> (every 30 min), <code>0 9 * * 1-5</code> (weekdays 9am), <code>0 */2 * * *</code> (every 2 hours)
+                  Examples: <code style={{ fontSize: 10, background: "#ffffff", padding: "1px 4px", borderRadius: 3 }}>*/30 * * * *</code> (every 30 min), <code style={{ fontSize: 10, background: "#ffffff", padding: "1px 4px", borderRadius: 3 }}>0 9 * * 1-5</code> (weekdays 9am), <code style={{ fontSize: 10, background: "#ffffff", padding: "1px 4px", borderRadius: 3 }}>0 */2 * * *</code> (every 2 hours)
                 </div>
               </div>
             )}
@@ -569,7 +574,7 @@ export default function EmployeeDetailPage() {
               />
               {newTriggerType === "webhook" && (
                 <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 4 }}>
-                  Use <code>{"{{body}}"}</code> to include the webhook payload in the message
+                  Use <code style={{ fontSize: 10, background: "#ffffff", padding: "1px 4px", borderRadius: 3 }}>{"{{body}}"}</code> to include the webhook payload in the message
                 </div>
               )}
             </div>
@@ -594,20 +599,20 @@ export default function EmployeeDetailPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {triggersList.map((trigger) => (
               <div key={trigger.id} style={{
-                padding: "10px 12px", background: "var(--bg-secondary)", borderRadius: 8,
-                border: `1px solid ${trigger.enabled ? "var(--border)" : "transparent"}`,
+                padding: "10px 12px", background: trigger.enabled ? "#ffffff" : "var(--bg-secondary)", borderRadius: "var(--radius-md)",
+                border: "1px solid var(--border)",
                 opacity: trigger.enabled ? 1 : 0.6,
               }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     {trigger.type === "schedule" ? <Timer size={13} style={{ color: "var(--blue)" }} /> : <Webhook size={13} style={{ color: "var(--purple)" }} />}
-                    <span style={{ fontSize: 13, fontWeight: 500 }}>{trigger.name}</span>
-                    <span style={{ fontSize: 10, color: "var(--text-tertiary)", background: "var(--bg)", padding: "1px 6px", borderRadius: 4 }}>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text)" }}>{trigger.name}</span>
+                    <span style={{ fontSize: 10, color: "var(--text-tertiary)", background: "var(--bg-secondary)", padding: "1px 6px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border)" }}>
                       {trigger.type}
                     </span>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <button onClick={() => handleToggleTrigger(trigger)} style={{ background: "none", border: "none", cursor: "pointer", color: trigger.enabled ? "#22c55e" : "var(--text-tertiary)", padding: 2 }} title={trigger.enabled ? "Disable" : "Enable"}>
+                    <button onClick={() => handleToggleTrigger(trigger)} style={{ background: "none", border: "none", cursor: "pointer", color: trigger.enabled ? "var(--green)" : "var(--text-tertiary)", padding: 2 }} title={trigger.enabled ? "Disable" : "Enable"}>
                       {trigger.enabled ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
                     </button>
                     <button onClick={() => handleDeleteTrigger(trigger.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", padding: 2 }} title="Delete">
@@ -618,7 +623,7 @@ export default function EmployeeDetailPage() {
 
                 <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 6 }}>
                   {trigger.type === "schedule" && (trigger.config as any)?.cron && (
-                    <span><code style={{ fontSize: 10 }}>{(trigger.config as any).cron}</code></span>
+                    <span><code style={{ fontSize: 10, background: "var(--bg-secondary)", padding: "1px 4px", borderRadius: 3 }}>{(trigger.config as any).cron}</code></span>
                   )}
                   {trigger.lastRunAt && (
                     <span style={{ marginLeft: 12 }}>Last run: {new Date(trigger.lastRunAt).toLocaleString()}</span>
@@ -628,12 +633,12 @@ export default function EmployeeDetailPage() {
                 {/* Webhook URL */}
                 {trigger.type === "webhook" && trigger.webhookToken && (
                   <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6 }}>
-                    <code style={{ fontSize: 10, background: "var(--bg)", padding: "3px 6px", borderRadius: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+                    <code style={{ fontSize: 10, background: "var(--bg-secondary)", padding: "3px 6px", borderRadius: "var(--radius-sm)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, border: "1px solid var(--border)", color: "var(--text-secondary)" }}>
                       {typeof window !== "undefined" ? `${window.location.origin}/api/webhooks/${trigger.webhookToken}` : `/api/webhooks/${trigger.webhookToken}`}
                     </code>
                     <button
                       onClick={() => copyWebhookUrl(trigger.webhookToken)}
-                      style={{ background: "none", border: "none", cursor: "pointer", color: copiedToken === trigger.webhookToken ? "#22c55e" : "var(--text-tertiary)", padding: 2, flexShrink: 0 }}
+                      style={{ background: "none", border: "none", cursor: "pointer", color: copiedToken === trigger.webhookToken ? "var(--green)" : "var(--text-tertiary)", padding: 2, flexShrink: 0 }}
                       title="Copy webhook URL"
                     >
                       {copiedToken === trigger.webhookToken ? <Check size={13} /> : <Copy size={13} />}
@@ -662,12 +667,12 @@ export default function EmployeeDetailPage() {
       {/* ════════════════════════════════════════════════════════════ */}
       {/* CREDENTIALS / LOGINS */}
       {/* ════════════════════════════════════════════════════════════ */}
-      <div className="card" style={{ padding: 20, marginBottom: 16 }}>
+      <div className="card" style={{ padding: 20, marginBottom: 16, background: "#ffffff", border: "1px solid var(--border)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <KeyRound size={14} style={{ color: "var(--text-tertiary)" }} />
             <p className="label" style={{ margin: 0 }}>Logins &amp; Passwords</p>
-            <span style={{ fontSize: 11, color: "var(--text-tertiary)", background: "var(--bg-secondary)", padding: "2px 6px", borderRadius: 4 }}>
+            <span style={{ fontSize: 11, color: "var(--text-tertiary)", background: "var(--bg-secondary)", padding: "2px 6px", borderRadius: "var(--radius-sm)" }}>
               {credentialsList.length}
             </span>
           </div>
@@ -684,9 +689,9 @@ export default function EmployeeDetailPage() {
 
         {credNotice && (
           <div style={{
-            padding: "8px 12px", borderRadius: 6, marginBottom: 12, fontSize: 12,
-            background: credNotice.type === "success" ? "rgba(34, 197, 94, 0.1)" : "rgba(239, 68, 68, 0.1)",
-            color: credNotice.type === "success" ? "#22c55e" : "#ef4444",
+            padding: "8px 12px", borderRadius: "var(--radius-sm)", marginBottom: 12, fontSize: 12,
+            background: credNotice.type === "success" ? "rgba(22, 163, 74, 0.06)" : "rgba(220, 38, 38, 0.06)",
+            color: credNotice.type === "success" ? "var(--green)" : "var(--red)",
           }}>
             {credNotice.message}
           </div>
@@ -694,8 +699,8 @@ export default function EmployeeDetailPage() {
 
         {/* Add / edit form */}
         {showNewCred && (
-          <div style={{ background: "var(--bg-secondary)", borderRadius: 8, padding: 16, marginBottom: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-            <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 2 }}>
+          <div style={{ background: "var(--bg-secondary)", borderRadius: "var(--radius-md)", padding: 16, marginBottom: 16, display: "flex", flexDirection: "column", gap: 12, border: "1px solid var(--border)" }}>
+            <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 2, color: "var(--text)" }}>
               {editingCredId ? "Edit Credential" : "New Credential"}
             </div>
             <div>
@@ -757,13 +762,13 @@ export default function EmployeeDetailPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {credentialsList.map((cred) => (
               <div key={cred.id} style={{
-                padding: "10px 12px", background: "var(--bg-secondary)", borderRadius: 8,
+                padding: "10px 12px", background: "#ffffff", borderRadius: "var(--radius-md)",
                 border: "1px solid var(--border)",
               }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <KeyRound size={13} style={{ color: "var(--blue)" }} />
-                    <span style={{ fontSize: 13, fontWeight: 500 }}>{cred.label}</span>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text)" }}>{cred.label}</span>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <button onClick={() => handleEditCred(cred)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", padding: 2 }} title="Edit">
@@ -775,12 +780,12 @@ export default function EmployeeDetailPage() {
                   </div>
                 </div>
                 <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 6, display: "flex", flexWrap: "wrap", gap: "4px 16px" }}>
-                  <span><span style={{ color: "var(--text-tertiary)" }}>User:</span> <code style={{ fontSize: 11 }}>{cred.username}</code></span>
-                  <span><span style={{ color: "var(--text-tertiary)" }}>Pass:</span> <code style={{ fontSize: 11 }}>{cred.hasPassword ? "********" : "Not set"}</code></span>
+                  <span><span style={{ color: "var(--text-tertiary)" }}>User:</span> <code style={{ fontSize: 11, background: "var(--bg-secondary)", padding: "1px 4px", borderRadius: 3 }}>{cred.username}</code></span>
+                  <span><span style={{ color: "var(--text-tertiary)" }}>Pass:</span> <code style={{ fontSize: 11, background: "var(--bg-secondary)", padding: "1px 4px", borderRadius: 3 }}>{cred.hasPassword ? "********" : "Not set"}</code></span>
                   {cred.url && (
                     <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
                       <Globe size={10} style={{ color: "var(--text-tertiary)" }} />
-                      <code style={{ fontSize: 11, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "inline-block" }}>{cred.url}</code>
+                      <code style={{ fontSize: 11, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "inline-block", background: "var(--bg-secondary)", padding: "1px 4px", borderRadius: 3 }}>{cred.url}</code>
                     </span>
                   )}
                 </div>
@@ -802,7 +807,7 @@ export default function EmployeeDetailPage() {
       {/* ════════════════════════════════════════════════════════════ */}
       {/* EMAIL CREDENTIALS */}
       {/* ════════════════════════════════════════════════════════════ */}
-      <div className="card" style={{ padding: 20 }}>
+      <div className="card" style={{ padding: 20, background: "#ffffff", border: "1px solid var(--border)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <Mail size={14} style={{ color: "var(--text-tertiary)" }} />
@@ -816,7 +821,7 @@ export default function EmployeeDetailPage() {
         </div>
 
         {emailNotice && (
-          <div style={{ padding: "8px 12px", borderRadius: 6, marginBottom: 12, fontSize: 12, background: emailNotice.type === "success" ? "rgba(34, 197, 94, 0.1)" : "rgba(239, 68, 68, 0.1)", color: emailNotice.type === "success" ? "#22c55e" : "#ef4444" }}>
+          <div style={{ padding: "8px 12px", borderRadius: "var(--radius-sm)", marginBottom: 12, fontSize: 12, background: emailNotice.type === "success" ? "rgba(22, 163, 74, 0.06)" : "rgba(220, 38, 38, 0.06)", color: emailNotice.type === "success" ? "var(--green)" : "var(--red)" }}>
             {emailNotice.message}
           </div>
         )}
@@ -829,17 +834,17 @@ export default function EmployeeDetailPage() {
 
         {!emailEditing && emailConfig && (
           <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 13 }}>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid var(--border)" }}>
               <span style={{ color: "var(--text-tertiary)" }}>Provider</span>
-              <span style={{ fontSize: 12 }}>{EMAIL_PROVIDERS[emailConfig.provider]?.label || emailConfig.provider}</span>
+              <span style={{ fontSize: 12, color: "var(--text)" }}>{EMAIL_PROVIDERS[emailConfig.provider]?.label || emailConfig.provider}</span>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid var(--border)" }}>
               <span style={{ color: "var(--text-tertiary)" }}>Address</span>
-              <span style={{ fontFamily: "monospace", fontSize: 12 }}>{emailConfig.address}</span>
+              <span style={{ fontFamily: "monospace", fontSize: 12, color: "var(--text)" }}>{emailConfig.address}</span>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0" }}>
               <span style={{ color: "var(--text-tertiary)" }}>Password</span>
-              <span style={{ fontFamily: "monospace", fontSize: 12 }}>{emailConfig.hasPassword ? "********" : "Not set"}</span>
+              <span style={{ fontFamily: "monospace", fontSize: 12, color: "var(--text)" }}>{emailConfig.hasPassword ? "********" : "Not set"}</span>
             </div>
           </div>
         )}
@@ -869,7 +874,7 @@ export default function EmployeeDetailPage() {
               </div>
             </div>
             {EMAIL_PROVIDERS[emailProvider]?.note && (
-              <div style={{ fontSize: 11, color: "var(--text-tertiary)", padding: "8px 10px", background: "var(--bg-secondary)", borderRadius: 6 }}>
+              <div style={{ fontSize: 11, color: "var(--text-secondary)", padding: "8px 10px", background: "var(--bg-secondary)", borderRadius: "var(--radius-sm)", border: "1px solid var(--border)" }}>
                 {EMAIL_PROVIDERS[emailProvider].note}
               </div>
             )}

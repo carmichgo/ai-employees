@@ -35,58 +35,61 @@ export default function LoginPage() {
         alignItems: "center",
         justifyContent: "center",
         padding: 20,
-        position: "relative",
+        background: "var(--bg)",
       }}
     >
-      {/* Background glow */}
-      <div
-        style={{
-          position: "absolute",
-          top: "30%",
-          left: "50%",
-          transform: "translateX(-50%)",
-          width: 500,
-          height: 300,
-          background: "radial-gradient(ellipse, rgba(93, 121, 223, 0.06) 0%, transparent 70%)",
-          pointerEvents: "none",
-        }}
-      />
-
-      <div className="animate-scale-in" style={{ maxWidth: 400, width: "100%", position: "relative" }}>
-        <div style={{ textAlign: "center", marginBottom: 40 }}>
+      <div className="animate-scale-in" style={{ maxWidth: 400, width: "100%" }}>
+        {/* Header */}
+        <div style={{ textAlign: "center", marginBottom: 32 }}>
           <div
             style={{
-              width: 48,
-              height: 48,
-              borderRadius: 14,
-              background: "linear-gradient(135deg, #5D79DF, #A94BD2)",
+              width: 44,
+              height: 44,
+              borderRadius: 10,
+              background: "var(--text)",
               display: "inline-flex",
               alignItems: "center",
               justifyContent: "center",
-              fontSize: 20,
+              fontSize: 15,
+              fontWeight: 700,
+              color: "var(--bg)",
+              letterSpacing: "-0.02em",
               marginBottom: 20,
             }}
           >
-            A
+            AI
           </div>
-          <h1 className="heading-1" style={{ marginBottom: 8 }}>Welcome back</h1>
-          <p style={{ color: "var(--text-secondary)", fontSize: 15 }}>
+          <h1
+            style={{
+              fontSize: 22,
+              fontWeight: 600,
+              letterSpacing: "-0.025em",
+              color: "var(--text)",
+              marginBottom: 6,
+              lineHeight: 1.2,
+            }}
+          >
+            Welcome back
+          </h1>
+          <p style={{ color: "var(--text-secondary)", fontSize: 14, margin: 0 }}>
             Sign in to manage your AI workforce
           </p>
         </div>
 
+        {/* Form Card */}
         <div
-          className="card"
           style={{
-            padding: 32,
-            borderRadius: "var(--radius-xl)",
+            background: "var(--bg)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius-lg)",
+            padding: 28,
+            boxShadow: "var(--shadow-md)",
           }}
         >
           {error && (
             <div
               style={{
                 background: "var(--red-muted)",
-                border: "1px solid rgba(239, 68, 68, 0.2)",
                 borderRadius: "var(--radius-sm)",
                 padding: "10px 14px",
                 marginBottom: 20,
@@ -98,7 +101,7 @@ export default function LoginPage() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <div>
               <label className="input-label">Email</label>
               <input
@@ -126,21 +129,29 @@ export default function LoginPage() {
               type="submit"
               className="btn-primary"
               disabled={loading}
-              style={{ marginTop: 4 }}
+              style={{ width: "100%", marginTop: 4, height: 36 }}
             >
               {loading ? "Signing in..." : "Sign In"}
             </button>
           </form>
         </div>
 
+        {/* Footer link */}
         <p style={{
           textAlign: "center",
-          marginTop: 24,
-          fontSize: 14,
+          marginTop: 20,
+          fontSize: 13,
           color: "var(--text-secondary)",
         }}>
           Don&apos;t have an account?{" "}
-          <Link href="/register" style={{ color: "var(--text)", fontWeight: 500, textDecoration: "none" }}>
+          <Link
+            href="/register"
+            style={{
+              color: "var(--blue)",
+              fontWeight: 500,
+              textDecoration: "none",
+            }}
+          >
             Create one
           </Link>
         </p>

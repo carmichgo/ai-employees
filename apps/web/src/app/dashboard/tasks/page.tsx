@@ -119,23 +119,81 @@ export default function TasksPage() {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "60vh" }}>
         <div style={{
           width: 24, height: 24, border: "2px solid var(--border)",
-          borderTopColor: "var(--text)", borderRadius: "50%", animation: "spin 0.8s linear infinite",
+          borderTopColor: "var(--text-tertiary)", borderRadius: "50%", animation: "spin 0.8s linear infinite",
         }} />
-        <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+        <style>{`
+          @keyframes spin { to { transform: rotate(360deg) } }
+          :root {
+            --text: #0a0a0a;
+            --text-secondary: #525252;
+            --text-tertiary: #a3a3a3;
+            --border: #e5e5e5;
+            --bg: #ffffff;
+            --bg-secondary: #f5f5f5;
+            --green: #16a34a;
+            --blue: #2563eb;
+            --red: #dc2626;
+            --orange: #ea580c;
+            --radius-sm: 6px;
+            --radius-md: 8px;
+            --radius-lg: 10px;
+            --shadow-xs: 0 1px 2px rgba(0,0,0,0.04);
+            --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+            --shadow-md: 0 4px 12px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.06);
+          }
+        `}</style>
       </div>
     );
   }
 
   return (
     <div className="animate-in">
+      <style>{`
+        :root {
+          --text: #0a0a0a;
+          --text-secondary: #525252;
+          --text-tertiary: #a3a3a3;
+          --border: #e5e5e5;
+          --bg: #ffffff;
+          --bg-secondary: #f5f5f5;
+          --green: #16a34a;
+          --blue: #2563eb;
+          --red: #dc2626;
+          --orange: #ea580c;
+          --radius-sm: 6px;
+          --radius-md: 8px;
+          --radius-lg: 10px;
+          --shadow-xs: 0 1px 2px rgba(0,0,0,0.04);
+          --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+          --shadow-md: 0 4px 12px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.06);
+        }
+        @keyframes spin { to { transform: rotate(360deg) } }
+        .task-row:hover { background: var(--bg-secondary); }
+        .delete-btn { opacity: 0; transition: opacity 0.15s, color 0.15s; }
+        .task-row:hover .delete-btn { opacity: 0.5; }
+        .delete-btn:hover { opacity: 1 !important; color: var(--red) !important; }
+        .filter-btn:hover { background: var(--bg-secondary); }
+      `}</style>
+
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 32 }}>
         <div>
-          <h1 className="heading-1" style={{ marginBottom: 4 }}>Tasks</h1>
-          <p style={{ color: "var(--text-secondary)", fontSize: 14 }}>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--text)", letterSpacing: "-0.02em", marginBottom: 4 }}>Tasks</h1>
+          <p style={{ color: "var(--text-secondary)", fontSize: 14, margin: 0 }}>
             Track what your employees are working on
           </p>
         </div>
-        <button className="btn-primary" onClick={() => setShowCreate(true)} style={{ gap: 6 }}>
+        <button
+          onClick={() => setShowCreate(true)}
+          style={{
+            display: "inline-flex", alignItems: "center", gap: 6,
+            padding: "0 16px", height: 36, fontSize: 13, fontWeight: 600,
+            color: "var(--bg)", background: "var(--text)",
+            border: "none", borderRadius: "var(--radius-sm)",
+            cursor: "pointer", transition: "opacity 0.15s",
+          }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.opacity = "0.85"; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.opacity = "1"; }}
+        >
           <Plus size={16} /> Assign Task
         </button>
       </div>
@@ -148,8 +206,14 @@ export default function TasksPage() {
           { label: "Blocked", value: counts.blocked, color: "var(--red)" },
           { label: "Completed", value: counts.completed, color: "var(--green)" },
         ].map((stat) => (
-          <div key={stat.label} className="card" style={{ padding: 16 }}>
-            <div style={{ fontSize: 12, color: "var(--text-tertiary)", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+          <div key={stat.label} style={{
+            padding: 16,
+            background: "var(--bg)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius-md)",
+            boxShadow: "var(--shadow-xs)",
+          }}>
+            <div style={{ fontSize: 12, color: "var(--text-tertiary)", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 500 }}>
               {stat.label}
             </div>
             <div style={{ fontSize: 24, fontWeight: 700, color: stat.color, letterSpacing: "-0.02em" }}>
@@ -160,7 +224,7 @@ export default function TasksPage() {
       </div>
 
       {/* Filters */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+      <div style={{ display: "flex", gap: 4, marginBottom: 20 }}>
         {[
           { key: "active", label: "Active" },
           { key: "all", label: "All" },
@@ -168,17 +232,19 @@ export default function TasksPage() {
         ].map(({ key, label }) => (
           <button
             key={key}
+            className="filter-btn"
             onClick={() => setFilter(key)}
             style={{
               padding: "6px 14px",
               fontSize: 13,
               fontWeight: filter === key ? 600 : 400,
               color: filter === key ? "var(--text)" : "var(--text-secondary)",
-              background: filter === key ? "rgba(255,255,255,0.08)" : "transparent",
-              border: filter === key ? "1px solid var(--border-hover)" : "1px solid transparent",
+              background: filter === key ? "var(--bg)" : "transparent",
+              border: filter === key ? "1px solid var(--border)" : "1px solid transparent",
               borderRadius: "var(--radius-sm)",
               cursor: "pointer",
               transition: "all 0.15s",
+              boxShadow: filter === key ? "var(--shadow-xs)" : "none",
             }}
           >
             {label}
@@ -191,22 +257,33 @@ export default function TasksPage() {
         <div
           style={{
             position: "fixed", inset: 0, zIndex: 100,
-            background: "rgba(0,0,0,0.6)", display: "flex",
+            background: "rgba(0,0,0,0.3)", display: "flex",
             alignItems: "center", justifyContent: "center",
           }}
           onClick={(e) => { if (e.target === e.currentTarget) setShowCreate(false); }}
         >
-          <div className="card" style={{ padding: 32, width: 480, maxWidth: "90vw" }}>
-            <h2 className="heading-2" style={{ marginBottom: 24 }}>Assign a Task</h2>
+          <div style={{
+            padding: 32, width: 480, maxWidth: "90vw",
+            background: "var(--bg)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius-lg)",
+            boxShadow: "var(--shadow-md)",
+          }}>
+            <h2 style={{ fontSize: 18, fontWeight: 700, color: "var(--text)", letterSpacing: "-0.01em", marginBottom: 24, marginTop: 0 }}>Assign a Task</h2>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <div>
-                <label className="input-label">Assign To</label>
+                <label style={{ display: "block", fontSize: 13, fontWeight: 500, color: "var(--text-secondary)", marginBottom: 6 }}>Assign To</label>
                 <select
-                  className="input"
                   value={newTask.employeeId}
                   onChange={(e) => setNewTask({ ...newTask, employeeId: e.target.value })}
-                  style={{ color: newTask.employeeId ? "var(--text)" : "var(--text-tertiary)" }}
+                  style={{
+                    width: "100%", height: 36, padding: "0 12px",
+                    fontSize: 13, color: newTask.employeeId ? "var(--text)" : "var(--text-tertiary)",
+                    background: "var(--bg)", border: "1px solid var(--border)",
+                    borderRadius: "var(--radius-sm)", outline: "none",
+                    transition: "border-color 0.15s",
+                  }}
                 >
                   <option value="">Select employee...</option>
                   {employees.map((emp) => (
@@ -218,21 +295,34 @@ export default function TasksPage() {
               </div>
 
               <div>
-                <label className="input-label">Task Title</label>
+                <label style={{ display: "block", fontSize: 13, fontWeight: 500, color: "var(--text-secondary)", marginBottom: 6 }}>Task Title</label>
                 <input
-                  className="input"
                   placeholder="What needs to be done?"
                   value={newTask.title}
                   onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
                   onKeyDown={(e) => { if (e.key === "Enter" && newTask.title && newTask.employeeId) handleCreate(); }}
+                  style={{
+                    width: "100%", height: 36, padding: "0 12px",
+                    fontSize: 13, color: "var(--text)",
+                    background: "var(--bg)", border: "1px solid var(--border)",
+                    borderRadius: "var(--radius-sm)", outline: "none",
+                    transition: "border-color 0.15s",
+                    boxSizing: "border-box",
+                  }}
                 />
               </div>
 
               <div>
-                <label className="input-label">Description (optional)</label>
+                <label style={{ display: "block", fontSize: 13, fontWeight: 500, color: "var(--text-secondary)", marginBottom: 6 }}>Description (optional)</label>
                 <textarea
-                  className="input"
-                  style={{ minHeight: 60 }}
+                  style={{
+                    width: "100%", minHeight: 60, padding: "8px 12px",
+                    fontSize: 13, color: "var(--text)",
+                    background: "var(--bg)", border: "1px solid var(--border)",
+                    borderRadius: "var(--radius-sm)", outline: "none",
+                    transition: "border-color 0.15s", resize: "vertical",
+                    fontFamily: "inherit", boxSizing: "border-box",
+                  }}
                   placeholder="More details about the task..."
                   value={newTask.description}
                   onChange={(e) => setNewTask({ ...newTask, description: e.target.value })}
@@ -240,7 +330,7 @@ export default function TasksPage() {
               </div>
 
               <div>
-                <label className="input-label">Priority</label>
+                <label style={{ display: "block", fontSize: 13, fontWeight: 500, color: "var(--text-secondary)", marginBottom: 6 }}>Priority</label>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
                   {["low", "medium", "high", "urgent"].map((p) => (
                     <button
@@ -252,7 +342,7 @@ export default function TasksPage() {
                         fontWeight: newTask.priority === p ? 600 : 400,
                         textTransform: "capitalize",
                         color: newTask.priority === p ? "var(--text)" : "var(--text-secondary)",
-                        background: newTask.priority === p ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.02)",
+                        background: "var(--bg)",
                         border: newTask.priority === p ? "1.5px solid var(--text)" : "1px solid var(--border)",
                         borderRadius: "var(--radius-sm)",
                         cursor: "pointer",
@@ -267,13 +357,30 @@ export default function TasksPage() {
             </div>
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 28 }}>
-              <button className="btn-secondary" onClick={() => setShowCreate(false)}>
+              <button
+                onClick={() => setShowCreate(false)}
+                style={{
+                  display: "inline-flex", alignItems: "center",
+                  padding: "0 16px", height: 36, fontSize: 13, fontWeight: 500,
+                  color: "var(--text-secondary)", background: "var(--bg)",
+                  border: "1px solid var(--border)", borderRadius: "var(--radius-sm)",
+                  cursor: "pointer", transition: "all 0.15s",
+                }}
+              >
                 Cancel
               </button>
               <button
-                className="btn-primary"
                 disabled={!newTask.employeeId || !newTask.title || creating}
                 onClick={handleCreate}
+                style={{
+                  display: "inline-flex", alignItems: "center",
+                  padding: "0 16px", height: 36, fontSize: 13, fontWeight: 600,
+                  color: "var(--bg)", background: "var(--text)",
+                  border: "none", borderRadius: "var(--radius-sm)",
+                  cursor: (!newTask.employeeId || !newTask.title || creating) ? "not-allowed" : "pointer",
+                  opacity: (!newTask.employeeId || !newTask.title || creating) ? 0.4 : 1,
+                  transition: "opacity 0.15s",
+                }}
               >
                 {creating ? "Creating..." : "Create Task"}
               </button>
@@ -285,16 +392,21 @@ export default function TasksPage() {
       {/* Task list */}
       {filteredTasks.length === 0 ? (
         <div
-          className="card"
-          style={{ padding: "64px 40px", textAlign: "center", borderStyle: "dashed" }}
+          style={{
+            padding: "64px 40px", textAlign: "center",
+            background: "var(--bg)",
+            border: "1px dashed var(--border)",
+            borderRadius: "var(--radius-lg)",
+          }}
         >
           <div style={{
-            width: 64, height: 64, borderRadius: 16, background: "rgba(255,255,255,0.04)",
+            width: 64, height: 64, borderRadius: "var(--radius-lg)",
+            background: "var(--bg-secondary)",
             display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 28, marginBottom: 20,
           }}>
             <Check size={28} strokeWidth={1} style={{ color: "var(--text-tertiary)" }} />
           </div>
-          <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>
+          <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 8, color: "var(--text)" }}>
             {filter === "completed" ? "No completed tasks yet" : "No active tasks"}
           </h3>
           <p style={{ color: "var(--text-secondary)", marginBottom: 24, fontSize: 14, maxWidth: 320, margin: "0 auto 24px" }}>
@@ -304,26 +416,44 @@ export default function TasksPage() {
             }
           </p>
           {filter !== "completed" && (
-            <button className="btn-primary" onClick={() => setShowCreate(true)} style={{ gap: 6 }}>
+            <button
+              onClick={() => setShowCreate(true)}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                padding: "0 16px", height: 36, fontSize: 13, fontWeight: 600,
+                color: "var(--bg)", background: "var(--text)",
+                border: "none", borderRadius: "var(--radius-sm)",
+                cursor: "pointer", transition: "opacity 0.15s",
+              }}
+            >
               <Plus size={16} /> Assign First Task
             </button>
           )}
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {filteredTasks.map((task) => {
+        <div style={{
+          background: "var(--bg)",
+          border: "1px solid var(--border)",
+          borderRadius: "var(--radius-lg)",
+          boxShadow: "var(--shadow-xs)",
+          overflow: "hidden",
+        }}>
+          {filteredTasks.map((task, index) => {
             const statusCfg = STATUS_CONFIG[task.status] || STATUS_CONFIG.pending;
             const StatusIcon = statusCfg.icon;
             return (
               <div
                 key={task.id}
-                className="card card-interactive"
+                className="task-row"
                 style={{
-                  padding: "16px 20px",
+                  padding: "14px 20px",
                   display: "flex",
                   alignItems: "center",
                   gap: 16,
-                  opacity: task.status === "completed" ? 0.6 : 1,
+                  opacity: task.status === "completed" ? 0.55 : 1,
+                  borderBottom: index < filteredTasks.length - 1 ? "1px solid var(--border)" : "none",
+                  transition: "background 0.15s",
+                  cursor: "default",
                 }}
               >
                 {/* Status button */}
@@ -338,11 +468,12 @@ export default function TasksPage() {
                     handleStatusChange(task.id, next[task.status] || "pending");
                   }}
                   style={{
-                    width: 24, height: 24, borderRadius: "50%",
+                    width: 22, height: 22, borderRadius: "50%",
                     border: task.status === "completed" ? "none" : `2px solid ${statusCfg.color}`,
                     background: task.status === "completed" ? "var(--green)" : "transparent",
                     cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
                     flexShrink: 0, transition: "all 0.15s",
+                    padding: 0,
                   }}
                   title={`Click to change status (current: ${statusCfg.label})`}
                 >
@@ -352,9 +483,9 @@ export default function TasksPage() {
                 {/* Task info */}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{
-                    fontSize: 14, fontWeight: 500,
+                    fontSize: 14, fontWeight: 500, color: "var(--text)",
                     textDecoration: task.status === "completed" ? "line-through" : "none",
-                    marginBottom: task.description ? 4 : 0,
+                    marginBottom: task.description ? 3 : 0,
                   }}>
                     {task.title}
                   </div>
@@ -368,7 +499,7 @@ export default function TasksPage() {
                 {/* Employee badge */}
                 <div style={{
                   display: "flex", alignItems: "center", gap: 6,
-                  background: "rgba(255,255,255,0.04)", padding: "4px 10px", borderRadius: 6,
+                  background: "var(--bg-secondary)", padding: "4px 10px", borderRadius: "var(--radius-sm)",
                   fontSize: 12, color: "var(--text-secondary)", flexShrink: 0,
                 }}>
                   <span>{task.employeeEmoji || "A"}</span>
@@ -396,14 +527,14 @@ export default function TasksPage() {
 
                 {/* Delete */}
                 <button
+                  className="delete-btn"
                   onClick={() => handleDelete(task.id)}
                   style={{
                     background: "none", border: "none", cursor: "pointer",
                     color: "var(--text-tertiary)", padding: 4, flexShrink: 0,
-                    opacity: 0.5, transition: "opacity 0.15s",
+                    transition: "opacity 0.15s, color 0.15s",
+                    display: "flex", alignItems: "center", justifyContent: "center",
                   }}
-                  onMouseEnter={(e) => { (e.target as HTMLElement).style.opacity = "1"; }}
-                  onMouseLeave={(e) => { (e.target as HTMLElement).style.opacity = "0.5"; }}
                   title="Delete task"
                 >
                   <Trash2 size={14} />

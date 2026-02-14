@@ -24,12 +24,12 @@ const STEPS: { key: Step; label: string }[] = [
 ];
 
 const CHANNEL_OPTIONS = [
-  { id: "slack", label: "Slack", icon: "💬", desc: "Workspace messaging" },
-  { id: "email", label: "Email", icon: "📧", desc: "Dedicated email inbox" },
-  { id: "browser", label: "Browser", icon: "🌐", desc: "Web browsing & research" },
-  { id: "telegram", label: "Telegram", icon: "✈️", desc: "Telegram messaging" },
-  { id: "whatsapp", label: "WhatsApp", icon: "📱", desc: "WhatsApp Business" },
-  { id: "discord", label: "Discord", icon: "🎮", desc: "Discord server" },
+  { id: "slack", label: "Slack", icon: "\u{1F4AC}", desc: "Workspace messaging" },
+  { id: "email", label: "Email", icon: "\u{1F4E7}", desc: "Dedicated email inbox" },
+  { id: "browser", label: "Browser", icon: "\u{1F310}", desc: "Web browsing & research" },
+  { id: "telegram", label: "Telegram", icon: "\u2708\uFE0F", desc: "Telegram messaging" },
+  { id: "whatsapp", label: "WhatsApp", icon: "\u{1F4F1}", desc: "WhatsApp Business" },
+  { id: "discord", label: "Discord", icon: "\u{1F3AE}", desc: "Discord server" },
 ];
 
 export default function HireEmployeePage() {
@@ -139,9 +139,9 @@ export default function HireEmployeePage() {
                       ? "var(--text)"
                       : isCompleted
                         ? "var(--green)"
-                        : "rgba(255,255,255,0.06)",
-                    color: isCurrent || isCompleted ? "var(--bg)" : "var(--text-tertiary)",
-                    border: isCurrent ? "none" : isCompleted ? "none" : "1px solid var(--border)",
+                        : "var(--bg-secondary)",
+                    color: isCurrent || isCompleted ? "#ffffff" : "var(--text-tertiary)",
+                    border: isCurrent || isCompleted ? "none" : "1px solid var(--border)",
                     transition: "all 0.3s",
                   }}
                 >
@@ -177,7 +177,7 @@ export default function HireEmployeePage() {
       {/* Step 1: Choose Role */}
       {step === "role" && (
         <div className="animate-in">
-          <h1 className="heading-1" style={{ marginBottom: 8 }}>
+          <h1 className="heading-1" style={{ marginBottom: 8, color: "var(--text)" }}>
             Who do you want to hire?
           </h1>
           <p style={{ color: "var(--text-secondary)", marginBottom: 40, fontSize: 15 }}>
@@ -186,7 +186,7 @@ export default function HireEmployeePage() {
 
           {categories.map((cat) => (
             <div key={cat} style={{ marginBottom: 28 }}>
-              <p className="label" style={{ marginBottom: 12 }}>{cat}</p>
+              <p className="label" style={{ marginBottom: 12, color: "var(--text-secondary)" }}>{cat}</p>
               <div
                 style={{
                   display: "grid",
@@ -203,11 +203,23 @@ export default function HireEmployeePage() {
                       padding: 20,
                       textAlign: "left",
                       cursor: "pointer",
-                      background: selectedTemplate === t.id ? "rgba(255,255,255,0.04)" : undefined,
+                      background: "#ffffff",
+                      border: selectedTemplate === t.id ? "1.5px solid var(--text)" : "1px solid var(--border)",
+                      borderRadius: "var(--radius-md)",
+                      transition: "all 0.15s ease",
+                      boxShadow: "none",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (selectedTemplate !== t.id) {
+                        (e.currentTarget as HTMLElement).style.boxShadow = "var(--shadow-sm)";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLElement).style.boxShadow = "none";
                     }}
                   >
                     <div style={{ fontSize: 28, marginBottom: 10 }}>{t.emoji}</div>
-                    <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4, letterSpacing: "-0.01em" }}>
+                    <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4, letterSpacing: "-0.01em", color: "var(--text)" }}>
                       {t.title}
                     </div>
                     <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5 }}>
@@ -232,6 +244,10 @@ export default function HireEmployeePage() {
               display: "flex",
               alignItems: "center",
               gap: 16,
+              background: "#ffffff",
+              border: isCustom ? "1.5px solid var(--text)" : "1px solid var(--border)",
+              borderRadius: "var(--radius-md)",
+              transition: "all 0.15s ease",
             }}
           >
             <div
@@ -239,7 +255,7 @@ export default function HireEmployeePage() {
                 width: 48,
                 height: 48,
                 borderRadius: 12,
-                background: "linear-gradient(135deg, rgba(93, 121, 223, 0.15), rgba(169, 75, 210, 0.15))",
+                background: "rgba(37, 99, 235, 0.08)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -248,7 +264,7 @@ export default function HireEmployeePage() {
               <Sparkles size={20} style={{ color: "var(--blue)" }} />
             </div>
             <div>
-              <div style={{ fontWeight: 600, fontSize: 15 }}>Build Your Own</div>
+              <div style={{ fontWeight: 600, fontSize: 15, color: "var(--text)" }}>Build Your Own</div>
               <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>
                 Create a custom role with your own persona and goals
               </div>
@@ -260,7 +276,7 @@ export default function HireEmployeePage() {
       {/* Step 2: Customize */}
       {step === "customize" && (
         <div className="animate-in">
-          <h1 className="heading-1" style={{ marginBottom: 8 }}>
+          <h1 className="heading-1" style={{ marginBottom: 8, color: "var(--text)" }}>
             {template ? `Set up your ${template.title}` : "Create Custom Employee"}
           </h1>
           <p style={{ color: "var(--text-secondary)", marginBottom: 32, fontSize: 15 }}>
@@ -271,28 +287,40 @@ export default function HireEmployeePage() {
             {/* Name & Title row */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
               <div>
-                <label className="input-label">Employee Name</label>
+                <label className="input-label" style={{ color: "var(--text)" }}>Employee Name</label>
                 <input
                   className="input"
                   placeholder="e.g., Sarah, Alex, Jordan"
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  style={{
+                    background: "#ffffff",
+                    border: "1px solid var(--border)",
+                    borderRadius: "var(--radius-sm)",
+                    color: "var(--text)",
+                  }}
                 />
               </div>
               <div>
-                <label className="input-label">Job Title</label>
+                <label className="input-label" style={{ color: "var(--text)" }}>Job Title</label>
                 <input
                   className="input"
                   placeholder="e.g., Marketing Manager"
                   value={form.jobTitle}
                   onChange={(e) => setForm({ ...form, jobTitle: e.target.value })}
+                  style={{
+                    background: "#ffffff",
+                    border: "1px solid var(--border)",
+                    borderRadius: "var(--radius-sm)",
+                    color: "var(--text)",
+                  }}
                 />
               </div>
             </div>
 
             {/* Personality: Autonomy */}
             <div>
-              <label className="input-label">Decision Making</label>
+              <label className="input-label" style={{ color: "var(--text)" }}>Decision Making</label>
               <p style={{ fontSize: 12, color: "var(--text-tertiary)", marginBottom: 10, marginTop: -4 }}>
                 How much should {form.name || "this employee"} check with you before acting?
               </p>
@@ -305,7 +333,7 @@ export default function HireEmployeePage() {
                       onClick={() => setForm({ ...form, personality: { ...form.personality, autonomy: opt.value } })}
                       style={{
                         padding: "12px 10px",
-                        background: selected ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.02)",
+                        background: selected ? "#ffffff" : "var(--bg-secondary)",
                         border: selected ? "1.5px solid var(--text)" : "1px solid var(--border)",
                         borderRadius: "var(--radius-sm)",
                         cursor: "pointer",
@@ -314,7 +342,7 @@ export default function HireEmployeePage() {
                         color: "var(--text)",
                       }}
                     >
-                      <div style={{ fontSize: 13, fontWeight: selected ? 600 : 500, marginBottom: 3 }}>
+                      <div style={{ fontSize: 13, fontWeight: selected ? 600 : 500, marginBottom: 3, color: "var(--text)" }}>
                         {opt.label}
                       </div>
                       <div style={{ fontSize: 11, color: "var(--text-tertiary)", lineHeight: 1.4 }}>
@@ -328,7 +356,7 @@ export default function HireEmployeePage() {
 
             {/* Personality: Proactivity */}
             <div>
-              <label className="input-label">Work Style</label>
+              <label className="input-label" style={{ color: "var(--text)" }}>Work Style</label>
               <p style={{ fontSize: 12, color: "var(--text-tertiary)", marginBottom: 10, marginTop: -4 }}>
                 Should {form.name || "they"} find things to do, or wait for instructions?
               </p>
@@ -341,7 +369,7 @@ export default function HireEmployeePage() {
                       onClick={() => setForm({ ...form, personality: { ...form.personality, proactivity: opt.value } })}
                       style={{
                         padding: "12px 10px",
-                        background: selected ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.02)",
+                        background: selected ? "#ffffff" : "var(--bg-secondary)",
                         border: selected ? "1.5px solid var(--text)" : "1px solid var(--border)",
                         borderRadius: "var(--radius-sm)",
                         cursor: "pointer",
@@ -350,7 +378,7 @@ export default function HireEmployeePage() {
                         color: "var(--text)",
                       }}
                     >
-                      <div style={{ fontSize: 13, fontWeight: selected ? 600 : 500, marginBottom: 3 }}>
+                      <div style={{ fontSize: 13, fontWeight: selected ? 600 : 500, marginBottom: 3, color: "var(--text)" }}>
                         {opt.label}
                       </div>
                       <div style={{ fontSize: 11, color: "var(--text-tertiary)", lineHeight: 1.4 }}>
@@ -364,7 +392,7 @@ export default function HireEmployeePage() {
 
             {/* Personality: Communication */}
             <div>
-              <label className="input-label">Communication Style</label>
+              <label className="input-label" style={{ color: "var(--text)" }}>Communication Style</label>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
                 {COMMUNICATION_OPTIONS.map((opt) => {
                   const selected = form.personality.communication === opt.value;
@@ -374,7 +402,7 @@ export default function HireEmployeePage() {
                       onClick={() => setForm({ ...form, personality: { ...form.personality, communication: opt.value } })}
                       style={{
                         padding: "12px 10px",
-                        background: selected ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.02)",
+                        background: selected ? "#ffffff" : "var(--bg-secondary)",
                         border: selected ? "1.5px solid var(--text)" : "1px solid var(--border)",
                         borderRadius: "var(--radius-sm)",
                         cursor: "pointer",
@@ -383,7 +411,7 @@ export default function HireEmployeePage() {
                         color: "var(--text)",
                       }}
                     >
-                      <div style={{ fontSize: 13, fontWeight: selected ? 600 : 500, marginBottom: 3 }}>
+                      <div style={{ fontSize: 13, fontWeight: selected ? 600 : 500, marginBottom: 3, color: "var(--text)" }}>
                         {opt.label}
                       </div>
                       <div style={{ fontSize: 11, color: "var(--text-tertiary)", lineHeight: 1.4 }}>
@@ -397,7 +425,7 @@ export default function HireEmployeePage() {
 
             {/* Channels */}
             <div>
-              <label className="input-label">Channels &amp; Tools</label>
+              <label className="input-label" style={{ color: "var(--text)" }}>Channels &amp; Tools</label>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
                 {CHANNEL_OPTIONS.map((ch) => {
                   const selected = form.channels.includes(ch.id);
@@ -407,7 +435,7 @@ export default function HireEmployeePage() {
                       onClick={() => toggleChannel(ch.id)}
                       style={{
                         padding: "12px 14px",
-                        background: selected ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.02)",
+                        background: selected ? "#ffffff" : "var(--bg-secondary)",
                         border: selected ? "1.5px solid var(--text)" : "1px solid var(--border)",
                         borderRadius: "var(--radius-sm)",
                         cursor: "pointer",
@@ -421,7 +449,7 @@ export default function HireEmployeePage() {
                     >
                       <span style={{ fontSize: 18 }}>{ch.icon}</span>
                       <div>
-                        <div style={{ fontSize: 13, fontWeight: selected ? 600 : 500 }}>{ch.label}</div>
+                        <div style={{ fontSize: 13, fontWeight: selected ? 600 : 500, color: "var(--text)" }}>{ch.label}</div>
                         <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>{ch.desc}</div>
                       </div>
                       {selected && (
@@ -464,20 +492,32 @@ export default function HireEmployeePage() {
               {showAdvanced && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 16 }}>
                   <div>
-                    <label className="input-label">Persona &amp; Instructions</label>
+                    <label className="input-label" style={{ color: "var(--text)" }}>Persona &amp; Instructions</label>
                     <textarea
                       className="input"
-                      style={{ minHeight: 120 }}
+                      style={{
+                        minHeight: 120,
+                        background: "#ffffff",
+                        border: "1px solid var(--border)",
+                        borderRadius: "var(--radius-sm)",
+                        color: "var(--text)",
+                      }}
                       placeholder="Describe how this employee should behave, their expertise, communication style..."
                       value={form.persona}
                       onChange={(e) => setForm({ ...form, persona: e.target.value })}
                     />
                   </div>
                   <div>
-                    <label className="input-label">Goals &amp; OKRs</label>
+                    <label className="input-label" style={{ color: "var(--text)" }}>Goals &amp; OKRs</label>
                     <textarea
                       className="input"
-                      style={{ minHeight: 60 }}
+                      style={{
+                        minHeight: 60,
+                        background: "#ffffff",
+                        border: "1px solid var(--border)",
+                        borderRadius: "var(--radius-sm)",
+                        color: "var(--text)",
+                      }}
                       placeholder="What should this employee focus on achieving?"
                       value={form.goals}
                       onChange={(e) => setForm({ ...form, goals: e.target.value })}
@@ -507,7 +547,7 @@ export default function HireEmployeePage() {
       {/* Step 3: Review & Hire */}
       {step === "review" && (
         <div className="animate-in">
-          <h1 className="heading-1" style={{ marginBottom: 8 }}>
+          <h1 className="heading-1" style={{ marginBottom: 8, color: "var(--text)" }}>
             Ready to hire {form.name}?
           </h1>
           <p style={{ color: "var(--text-secondary)", marginBottom: 40, fontSize: 15 }}>
@@ -517,12 +557,12 @@ export default function HireEmployeePage() {
           {error && (
             <div
               style={{
-                background: "var(--red-muted)",
-                border: "1px solid rgba(239, 68, 68, 0.2)",
+                background: "rgba(239, 68, 68, 0.06)",
+                border: "1px solid rgba(239, 68, 68, 0.15)",
                 borderRadius: "var(--radius-sm)",
                 padding: "10px 14px",
                 marginBottom: 20,
-                color: "var(--red)",
+                color: "#dc2626",
                 fontSize: 13,
               }}
             >
@@ -531,14 +571,24 @@ export default function HireEmployeePage() {
           )}
 
           {/* Employee summary card */}
-          <div className="card glow-subtle" style={{ padding: 28, marginBottom: 16 }}>
+          <div
+            className="card"
+            style={{
+              padding: 28,
+              marginBottom: 16,
+              background: "#ffffff",
+              border: "1px solid var(--border)",
+              borderRadius: "var(--radius-lg)",
+              boxShadow: "var(--shadow-xs)",
+            }}
+          >
             <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 24 }}>
               <div
                 style={{
                   width: 56,
                   height: 56,
                   borderRadius: 14,
-                  background: "linear-gradient(135deg, rgba(93, 121, 223, 0.15), rgba(169, 75, 210, 0.15))",
+                  background: "var(--bg-secondary)",
                   border: "1px solid var(--border)",
                   display: "flex",
                   alignItems: "center",
@@ -549,7 +599,7 @@ export default function HireEmployeePage() {
                 {template?.emoji || "A"}
               </div>
               <div>
-                <div style={{ fontSize: 20, fontWeight: 700, letterSpacing: "-0.02em" }}>
+                <div style={{ fontSize: 20, fontWeight: 700, letterSpacing: "-0.02em", color: "var(--text)" }}>
                   {form.name}
                 </div>
                 <div style={{ color: "var(--text-secondary)", fontSize: 14 }}>
@@ -562,7 +612,7 @@ export default function HireEmployeePage() {
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
               <div>
-                <p className="label" style={{ marginBottom: 10 }}>Personality</p>
+                <p className="label" style={{ marginBottom: 10, color: "var(--text-secondary)" }}>Personality</p>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   {[
                     { label: "Decision Making", value: AUTONOMY_OPTIONS.find(o => o.value === form.personality.autonomy)?.label },
@@ -571,13 +621,13 @@ export default function HireEmployeePage() {
                   ].map(({ label, value }) => (
                     <div key={label} style={{ fontSize: 13, display: "flex", gap: 8 }}>
                       <span style={{ color: "var(--text-tertiary)" }}>{label}:</span>
-                      <span>{value}</span>
+                      <span style={{ color: "var(--text)" }}>{value}</span>
                     </div>
                   ))}
                 </div>
               </div>
               <div>
-                <p className="label" style={{ marginBottom: 10 }}>Channels</p>
+                <p className="label" style={{ marginBottom: 10, color: "var(--text-secondary)" }}>Channels</p>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                   {form.channels.length > 0 ? (
                     form.channels.map((ch) => {
@@ -586,11 +636,12 @@ export default function HireEmployeePage() {
                         <span
                           key={ch}
                           style={{
-                            background: "rgba(255,255,255,0.04)",
+                            background: "var(--bg-secondary)",
                             border: "1px solid var(--border)",
                             padding: "4px 10px",
                             borderRadius: 6,
                             fontSize: 12,
+                            color: "var(--text)",
                           }}
                         >
                           {channel?.icon} {channel?.label}
@@ -610,9 +661,15 @@ export default function HireEmployeePage() {
           {/* What happens next */}
           <div
             className="card"
-            style={{ padding: 24, marginBottom: 40, background: "rgba(255,255,255,0.02)" }}
+            style={{
+              padding: 24,
+              marginBottom: 40,
+              background: "var(--bg-secondary)",
+              border: "1px solid var(--border)",
+              borderRadius: "var(--radius-lg)",
+            }}
           >
-            <div style={{ fontWeight: 600, marginBottom: 16, fontSize: 14 }}>
+            <div style={{ fontWeight: 600, marginBottom: 16, fontSize: 14, color: "var(--text)" }}>
               What happens next:
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -637,7 +694,8 @@ export default function HireEmployeePage() {
                       width: 20,
                       height: 20,
                       borderRadius: "50%",
-                      background: "rgba(255,255,255,0.06)",
+                      background: "#ffffff",
+                      border: "1px solid var(--border)",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",

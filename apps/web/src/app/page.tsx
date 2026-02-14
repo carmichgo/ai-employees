@@ -32,10 +32,9 @@ const FEATURES = [
 
 export default function LandingPage() {
   return (
-    <div style={{ minHeight: "100vh", overflow: "hidden" }}>
+    <div style={{ minHeight: "100vh", background: "var(--bg)" }}>
       {/* Nav */}
       <nav
-        className="glass"
         style={{
           position: "fixed",
           top: 0,
@@ -43,42 +42,53 @@ export default function LandingPage() {
           right: 0,
           zIndex: 100,
           padding: "0 32px",
-          height: 64,
+          height: 56,
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
+          background: "var(--bg)",
+          borderBottom: "1px solid var(--border)",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div
             style={{
-              width: 32,
-              height: 32,
-              borderRadius: 8,
-              background: "linear-gradient(135deg, #5D79DF, #A94BD2)",
+              width: 28,
+              height: 28,
+              borderRadius: 7,
+              background: "var(--text)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              fontSize: 16,
+              fontSize: 11,
+              fontWeight: 700,
+              color: "var(--bg)",
+              letterSpacing: "-0.02em",
             }}
           >
-            A
+            AI
           </div>
-          <span style={{ fontWeight: 600, fontSize: 15, letterSpacing: "-0.02em" }}>
+          <span style={{ fontWeight: 600, fontSize: 14, letterSpacing: "-0.02em", color: "var(--text)" }}>
             AI Employees
           </span>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <Link
             href="/login"
             style={{
-              color: "var(--text-secondary)",
-              textDecoration: "none",
-              fontSize: 14,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              height: 32,
+              padding: "0 14px",
+              background: "var(--bg)",
+              color: "var(--text)",
+              fontSize: 13,
               fontWeight: 500,
-              padding: "8px 16px",
+              border: "1px solid var(--border)",
               borderRadius: "var(--radius-sm)",
-              transition: "color 0.2s",
+              textDecoration: "none",
+              transition: "all 0.15s ease",
             }}
           >
             Sign In
@@ -97,26 +107,11 @@ export default function LandingPage() {
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          padding: "120px 24px 80px",
+          padding: "100px 24px 80px",
           textAlign: "center",
-          position: "relative",
         }}
       >
-        {/* Background glow */}
-        <div
-          style={{
-            position: "absolute",
-            top: "20%",
-            left: "50%",
-            transform: "translateX(-50%)",
-            width: 600,
-            height: 400,
-            background: "radial-gradient(ellipse, rgba(93, 121, 223, 0.08) 0%, rgba(169, 75, 210, 0.04) 40%, transparent 70%)",
-            pointerEvents: "none",
-          }}
-        />
-
-        <div className="animate-in" style={{ maxWidth: 720, position: "relative" }}>
+        <div className="animate-in" style={{ maxWidth: 680 }}>
           {/* Badge */}
           <div
             className="animate-in"
@@ -124,13 +119,14 @@ export default function LandingPage() {
               display: "inline-flex",
               alignItems: "center",
               gap: 8,
-              padding: "6px 16px",
+              padding: "5px 14px",
               borderRadius: 100,
               border: "1px solid var(--border)",
-              fontSize: 13,
+              fontSize: 12,
+              fontWeight: 500,
               color: "var(--text-secondary)",
-              marginBottom: 32,
-              background: "rgba(255,255,255,0.02)",
+              marginBottom: 28,
+              background: "var(--bg-secondary)",
             }}
           >
             <span style={{
@@ -138,22 +134,34 @@ export default function LandingPage() {
               height: 6,
               borderRadius: "50%",
               background: "var(--green)",
-              boxShadow: "0 0 8px var(--green)",
             }} />
             Powered by OpenClaw
           </div>
 
-          <h1 className="display gradient-text animate-in animate-in-delay-1">
+          <h1
+            className="animate-in animate-in-delay-1"
+            style={{
+              fontSize: "clamp(2.25rem, 5vw, 3.25rem)",
+              fontWeight: 700,
+              letterSpacing: "-0.03em",
+              lineHeight: 1.1,
+              color: "var(--text)",
+              margin: 0,
+            }}
+          >
             Hire AI Employees
             <br />
             That Actually Work
           </h1>
 
           <p
-            className="body-lg animate-in animate-in-delay-2"
+            className="animate-in animate-in-delay-2"
             style={{
-              maxWidth: 520,
-              margin: "24px auto 48px",
+              maxWidth: 500,
+              margin: "20px auto 40px",
+              fontSize: 16,
+              lineHeight: 1.6,
+              color: "var(--text-secondary)",
             }}
           >
             Each employee gets their own isolated workstation with email, browser, Slack,
@@ -162,13 +170,48 @@ export default function LandingPage() {
 
           <div
             className="animate-in animate-in-delay-3"
-            style={{ display: "flex", gap: 12, justifyContent: "center" }}
+            style={{ display: "flex", gap: 10, justifyContent: "center" }}
           >
-            <Link href="/register" className="btn-primary" style={{ gap: 8 }}>
+            <Link
+              href="/register"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                height: 36,
+                padding: "0 18px",
+                background: "var(--text)",
+                color: "var(--bg)",
+                fontSize: 13,
+                fontWeight: 500,
+                border: "none",
+                borderRadius: "var(--radius-md)",
+                textDecoration: "none",
+                transition: "all 0.15s ease",
+              }}
+            >
               Start Hiring
-              <ArrowRight size={16} />
+              <ArrowRight size={15} />
             </Link>
-            <Link href="/login" className="btn-secondary">
+            <Link
+              href="/login"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                height: 36,
+                padding: "0 18px",
+                background: "var(--bg)",
+                color: "var(--text)",
+                fontSize: 13,
+                fontWeight: 500,
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius-md)",
+                textDecoration: "none",
+                transition: "all 0.15s ease",
+              }}
+            >
               Sign In
             </Link>
           </div>
@@ -179,53 +222,91 @@ export default function LandingPage() {
           className="animate-in animate-in-delay-4"
           style={{
             display: "flex",
-            gap: 24,
-            marginTop: 80,
+            gap: 20,
+            marginTop: 64,
             color: "var(--text-tertiary)",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-            <Mail size={14} /> Email
+          <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12 }}>
+            <Mail size={13} /> Email
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-            <MessageSquare size={14} /> Slack
+          <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12 }}>
+            <MessageSquare size={13} /> Slack
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-            <Monitor size={14} /> Browser
+          <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12 }}>
+            <Monitor size={13} /> Browser
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-            <Globe size={14} /> WhatsApp
+          <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12 }}>
+            <Globe size={13} /> WhatsApp
           </div>
         </div>
       </section>
 
       {/* Roles Grid */}
-      <section style={{ padding: "80px 24px 120px", maxWidth: 960, margin: "0 auto" }}>
-        <div style={{ textAlign: "center", marginBottom: 64 }}>
-          <p className="label" style={{ marginBottom: 12 }}>Pre-built Roles</p>
-          <h2 className="heading-1 gradient-text">Choose a role, we handle the rest</h2>
+      <section style={{ padding: "64px 24px 96px", maxWidth: 920, margin: "0 auto" }}>
+        <div style={{ textAlign: "center", marginBottom: 48 }}>
+          <p
+            style={{
+              fontSize: 11,
+              fontWeight: 500,
+              letterSpacing: "0.05em",
+              textTransform: "uppercase",
+              color: "var(--text-tertiary)",
+              marginBottom: 10,
+            }}
+          >
+            Pre-built Roles
+          </p>
+          <h2
+            style={{
+              fontSize: 24,
+              fontWeight: 600,
+              letterSpacing: "-0.025em",
+              color: "var(--text)",
+              lineHeight: 1.2,
+              margin: 0,
+            }}
+          >
+            Choose a role, we handle the rest
+          </h2>
         </div>
 
         <div
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(3, 1fr)",
-            gap: 16,
+            gap: 12,
           }}
         >
           {ROLES.map((role) => (
             <div
               key={role.title}
-              className={`card card-interactive animate-in animate-in-delay-${role.delay}`}
-              style={{ padding: 28 }}
+              className={`animate-in animate-in-delay-${role.delay}`}
+              style={{
+                background: "var(--bg)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius-lg)",
+                padding: 24,
+                cursor: "pointer",
+                transition: "all 0.15s ease",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.boxShadow = "var(--shadow-sm)";
+                e.currentTarget.style.borderColor = "var(--border-hover)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.boxShadow = "none";
+                e.currentTarget.style.borderColor = "var(--border)";
+              }}
             >
-              <div style={{ fontSize: 36, marginBottom: 16 }}>{role.icon}</div>
+              <div style={{ fontSize: 32, marginBottom: 14 }}>{role.icon}</div>
               <div
                 style={{
                   fontWeight: 600,
-                  fontSize: 15,
-                  marginBottom: 6,
+                  fontSize: 14,
+                  marginBottom: 4,
                   letterSpacing: "-0.01em",
+                  color: "var(--text)",
                 }}
               >
                 {role.title}
@@ -241,27 +322,26 @@ export default function LandingPage() {
       {/* Features */}
       <section
         style={{
-          padding: "80px 24px",
-          maxWidth: 960,
+          padding: "64px 24px",
+          maxWidth: 920,
           margin: "0 auto",
           borderTop: "1px solid var(--border)",
         }}
       >
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 32 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 28 }}>
           {FEATURES.map((f) => (
-            <div key={f.title} style={{ padding: "8px 0" }}>
+            <div key={f.title} style={{ padding: "4px 0" }}>
               <div
                 style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 10,
-                  background: "rgba(255,255,255,0.04)",
-                  border: "1px solid var(--border)",
+                  width: 38,
+                  height: 38,
+                  borderRadius: "var(--radius-md)",
+                  background: "var(--bg-secondary)",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
                   color: "var(--text-secondary)",
-                  marginBottom: 16,
+                  marginBottom: 14,
                 }}
               >
                 {f.icon}
@@ -269,16 +349,17 @@ export default function LandingPage() {
               <div
                 style={{
                   fontWeight: 600,
-                  fontSize: 15,
-                  marginBottom: 8,
+                  fontSize: 14,
+                  marginBottom: 6,
                   letterSpacing: "-0.01em",
+                  color: "var(--text)",
                 }}
               >
                 {f.title}
               </div>
               <div
                 style={{
-                  fontSize: 14,
+                  fontSize: 13,
                   color: "var(--text-secondary)",
                   lineHeight: 1.6,
                 }}
@@ -293,20 +374,57 @@ export default function LandingPage() {
       {/* CTA */}
       <section
         style={{
-          padding: "80px 24px 120px",
+          padding: "64px 24px 96px",
           textAlign: "center",
           borderTop: "1px solid var(--border)",
         }}
       >
-        <h2 className="heading-1" style={{ marginBottom: 16 }}>
+        <h2
+          style={{
+            fontSize: 24,
+            fontWeight: 600,
+            letterSpacing: "-0.025em",
+            color: "var(--text)",
+            marginBottom: 12,
+            lineHeight: 1.2,
+          }}
+        >
           Ready to scale your team?
         </h2>
-        <p className="body-lg" style={{ marginBottom: 40, maxWidth: 480, margin: "0 auto 40px" }}>
+        <p
+          style={{
+            fontSize: 15,
+            lineHeight: 1.6,
+            color: "var(--text-secondary)",
+            marginBottom: 32,
+            maxWidth: 440,
+            marginLeft: "auto",
+            marginRight: "auto",
+          }}
+        >
           Deploy your first AI employee in under 2 minutes.
         </p>
-        <Link href="/register" className="btn-primary" style={{ gap: 8 }}>
+        <Link
+          href="/register"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+            height: 36,
+            padding: "0 18px",
+            background: "var(--text)",
+            color: "var(--bg)",
+            fontSize: 13,
+            fontWeight: 500,
+            border: "none",
+            borderRadius: "var(--radius-md)",
+            textDecoration: "none",
+            transition: "all 0.15s ease",
+          }}
+        >
           Get Started Free
-          <ArrowRight size={16} />
+          <ArrowRight size={15} />
         </Link>
       </section>
     </div>

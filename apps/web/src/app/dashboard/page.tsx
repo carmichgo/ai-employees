@@ -3,32 +3,66 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
-import { Plus, Users, Zap, AlertTriangle, Pause } from "lucide-react";
+import { Plus, Users, Zap, AlertTriangle, Pause, ArrowRight } from "lucide-react";
+
+function getGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
+}
+
+function getFirstName(fullName: string | undefined): string {
+  if (!fullName) return "";
+  return fullName.split(" ")[0];
+}
 
 export default function DashboardOverview() {
   const [data, setData] = useState<any>(null);
   const [employees, setEmployees] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [user, setUser] = useState<any>(null);
+  const [company, setCompany] = useState<any>(null);
 
   useEffect(() => {
     api.getDashboard().then(setData).catch((err) => {
       setError(err.message || "Failed to load dashboard");
     });
     api.listEmployees().then((res) => setEmployees(res.employees)).catch(() => {});
+    api.me().then((res) => {
+      setUser(res.user);
+      setCompany(res.company);
+    }).catch(() => {});
   }, []);
 
   if (error) {
     return (
-      <div className="animate-in" style={{ textAlign: "center", paddingTop: 80 }}>
-        <p style={{ color: "var(--red)", marginBottom: 16 }}>{error}</p>
+      <div style={{ textAlign: "center", paddingTop: 120 }}>
+        <p style={{
+          color: "var(--red)",
+          marginBottom: 16,
+          fontSize: 14,
+        }}>
+          {error}
+        </p>
         <button
-          className="btn-primary"
           onClick={() => {
             setError(null);
             api.getDashboard().then(setData).catch((err) => {
               setError(err.message || "Failed to load dashboard");
             });
             api.listEmployees().then((res) => setEmployees(res.employees)).catch(() => {});
+          }}
+          style={{
+            height: 36,
+            padding: "0 16px",
+            fontSize: 13,
+            fontWeight: 500,
+            color: "#fff",
+            background: "var(--text)",
+            border: "none",
+            borderRadius: "var(--radius-md)",
+            cursor: "pointer",
           }}
         >
           Retry
@@ -49,12 +83,12 @@ export default function DashboardOverview() {
       >
         <div
           style={{
-            width: 24,
-            height: 24,
+            width: 20,
+            height: 20,
             border: "2px solid var(--border)",
-            borderTopColor: "var(--text)",
+            borderTopColor: "var(--text-tertiary)",
             borderRadius: "50%",
-            animation: "spin 0.8s linear infinite",
+            animation: "spin 0.7s linear infinite",
           }}
         />
         <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
@@ -70,134 +104,298 @@ export default function DashboardOverview() {
   ];
 
   return (
-    <div className="animate-in">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 32 }}>
-        <div>
-          <h1 className="heading-1" style={{ marginBottom: 4 }}>Dashboard</h1>
-          <p style={{ color: "var(--text-secondary)", fontSize: 14 }}>
-            Manage your AI workforce
-          </p>
-        </div>
-        <Link href="/dashboard/hire" className="btn-primary" style={{ textDecoration: "none", gap: 6 }}>
-          <Plus size={16} />
-          Hire Employee
-        </Link>
+    <div>
+      {/* Header / Greeting */}
+      <div style={{ marginBottom: 32 }}>
+        <h1 style={{
+          fontSize: 24,
+          fontWeight: 600,
+          color: "var(--text)",
+          letterSpacing: "-0.02em",
+          marginBottom: 4,
+          lineHeight: 1.3,
+        }}>
+          {getGreeting()}{user ? `, ${getFirstName(user.name)}` : ""}
+        </h1>
+        <p style={{
+          fontSize: 14,
+          color: "var(--text-tertiary)",
+          margin: 0,
+        }}>
+          {company ? company.name : "Your workspace"}
+        </p>
       </div>
 
-      {/* Stats */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 40 }}>
-        {stats.map((stat) => {
-          const Icon = stat.icon;
-          return (
-            <div key={stat.label} className="card" style={{ padding: 20 }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                <span className="label" style={{ margin: 0 }}>{stat.label}</span>
-                <Icon size={14} style={{ color: stat.color, opacity: 0.6 }} />
-              </div>
-              <div style={{ fontSize: 28, fontWeight: 700, color: stat.color, letterSpacing: "-0.02em" }}>
-                {stat.value}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Employee list */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-        <h2 className="heading-2">Your Team</h2>
-        {employees.length > 0 && (
-          <Link
-            href="/dashboard/employees"
+      {/* Stat cards */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(4, 1fr)",
+        gap: 12,
+        marginBottom: 40,
+      }}>
+        {stats.map((stat) => (
+          <div
+            key={stat.label}
             style={{
-              fontSize: 13,
-              color: "var(--text-secondary)",
-              textDecoration: "none",
+              background: "#fff",
+              border: "1px solid var(--border)",
+              borderRadius: "var(--radius-lg)",
+              padding: "16px 20px",
             }}
           >
-            View all
-          </Link>
-        )}
+            <div style={{
+              fontSize: 12,
+              fontWeight: 500,
+              color: "var(--text-tertiary)",
+              marginBottom: 8,
+              letterSpacing: "0.01em",
+            }}>
+              {stat.label}
+            </div>
+            <div style={{
+              fontSize: 28,
+              fontWeight: 600,
+              color: stat.color,
+              letterSpacing: "-0.02em",
+              lineHeight: 1,
+            }}>
+              {stat.value}
+            </div>
+          </div>
+        ))}
       </div>
 
+      {/* Your Team header */}
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        marginBottom: 16,
+      }}>
+        <h2 style={{
+          fontSize: 15,
+          fontWeight: 600,
+          color: "var(--text)",
+          letterSpacing: "-0.01em",
+          margin: 0,
+        }}>
+          Your Team
+        </h2>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {employees.length > 0 && (
+            <Link
+              href="/dashboard/employees"
+              style={{
+                fontSize: 13,
+                color: "var(--text-tertiary)",
+                textDecoration: "none",
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+              }}
+            >
+              View all
+              <ArrowRight size={12} />
+            </Link>
+          )}
+          <Link
+            href="/dashboard/hire"
+            style={{
+              height: 32,
+              padding: "0 12px",
+              fontSize: 13,
+              fontWeight: 500,
+              color: "#fff",
+              background: "var(--text)",
+              border: "none",
+              borderRadius: "var(--radius-sm)",
+              cursor: "pointer",
+              textDecoration: "none",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+            }}
+          >
+            <Plus size={14} strokeWidth={2} />
+            Hire
+          </Link>
+        </div>
+      </div>
+
+      {/* Employee grid */}
       {employees.length === 0 ? (
         <div
-          className="card"
           style={{
-            padding: "64px 40px",
+            padding: "56px 40px",
             textAlign: "center",
-            borderStyle: "dashed",
+            background: "#fff",
+            border: "1px dashed var(--border)",
+            borderRadius: "var(--radius-lg)",
           }}
         >
           <div
             style={{
-              width: 64,
-              height: 64,
-              borderRadius: 16,
-              background: "rgba(255,255,255,0.04)",
+              width: 56,
+              height: 56,
+              borderRadius: 14,
+              background: "var(--bg-secondary)",
               display: "inline-flex",
               alignItems: "center",
               justifyContent: "center",
-              fontSize: 28,
-              marginBottom: 20,
+              marginBottom: 16,
             }}
           >
-            <Users size={28} strokeWidth={1} style={{ color: "var(--text-tertiary)" }} />
+            <Users size={24} strokeWidth={1.5} style={{ color: "var(--text-tertiary)" }} />
           </div>
-          <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>
+          <h3 style={{
+            fontSize: 15,
+            fontWeight: 600,
+            color: "var(--text)",
+            marginBottom: 6,
+          }}>
             No employees yet
           </h3>
-          <p style={{ color: "var(--text-secondary)", marginBottom: 24, fontSize: 14, maxWidth: 320, margin: "0 auto 24px" }}>
-            Hire your first AI employee to get started building your workforce
+          <p style={{
+            color: "var(--text-tertiary)",
+            fontSize: 13,
+            maxWidth: 300,
+            margin: "0 auto 20px",
+            lineHeight: 1.5,
+          }}>
+            Hire your first AI employee to get started
           </p>
-          <Link href="/dashboard/hire" className="btn-primary" style={{ textDecoration: "none", gap: 6 }}>
-            <Plus size={16} />
-            Hire Your First Employee
+          <Link
+            href="/dashboard/hire"
+            style={{
+              height: 36,
+              padding: "0 16px",
+              fontSize: 13,
+              fontWeight: 500,
+              color: "#fff",
+              background: "var(--text)",
+              border: "none",
+              borderRadius: "var(--radius-md)",
+              cursor: "pointer",
+              textDecoration: "none",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            <Plus size={14} />
+            Hire Employee
           </Link>
         </div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
-          {employees.map((emp, i) => (
-            <Link
-              key={emp.id}
-              href={`/dashboard/employees/${emp.id}`}
-              style={{ textDecoration: "none", color: "inherit" }}
-            >
-              <div
-                className={`card card-interactive animate-in animate-in-delay-${(i % 4) + 1}`}
-                style={{ padding: 20 }}
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
+          gap: 12,
+        }}>
+          {employees.map((emp) => {
+            const statusColors: Record<string, { bg: string; text: string; dot: string }> = {
+              active: { bg: "#f0fdf4", text: "var(--green)", dot: "var(--green)" },
+              paused: { bg: "#fff7ed", text: "var(--orange)", dot: "var(--orange)" },
+              error: { bg: "#fef2f2", text: "var(--red)", dot: "var(--red)" },
+              provisioning: { bg: "#eff6ff", text: "var(--blue)", dot: "var(--blue)" },
+              onboarding: { bg: "#eff6ff", text: "var(--blue)", dot: "var(--blue)" },
+              terminated: { bg: "var(--bg-secondary)", text: "var(--text-tertiary)", dot: "var(--text-tertiary)" },
+            };
+            const sc = statusColors[emp.status] || statusColors.active;
+
+            return (
+              <Link
+                key={emp.id}
+                href={`/dashboard/employees/${emp.id}`}
+                style={{ textDecoration: "none", color: "inherit" }}
               >
-                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
-                  <div
-                    style={{
-                      width: 44,
-                      height: 44,
-                      borderRadius: 12,
-                      background: "rgba(255,255,255,0.04)",
-                      border: "1px solid var(--border)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: 22,
-                    }}
-                  >
-                    {emp.emoji || "A"}
+                <div
+                  style={{
+                    background: "#fff",
+                    border: "1px solid var(--border)",
+                    borderRadius: "var(--radius-lg)",
+                    padding: "16px 20px",
+                    cursor: "pointer",
+                    transition: "box-shadow 0.15s ease, border-color 0.15s ease",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.boxShadow = "var(--shadow-sm)";
+                    e.currentTarget.style.borderColor = "#d4d4d4";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.boxShadow = "none";
+                    e.currentTarget.style.borderColor = "var(--border)";
+                  }}
+                >
+                  <div style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    marginBottom: 12,
+                  }}>
+                    <div
+                      style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: 10,
+                        background: "var(--bg-secondary)",
+                        border: "1px solid var(--border)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: 20,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {emp.emoji || "A"}
+                    </div>
+                    <div style={{ overflow: "hidden" }}>
+                      <div style={{
+                        fontWeight: 600,
+                        fontSize: 14,
+                        color: "var(--text)",
+                        letterSpacing: "-0.01em",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}>
+                        {emp.name}
+                      </div>
+                      <div style={{
+                        fontSize: 12,
+                        color: "var(--text-tertiary)",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}>
+                        {emp.jobTitle}
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: 15, letterSpacing: "-0.01em" }}>
-                      {emp.name}
-                    </div>
-                    <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>
-                      {emp.jobTitle}
-                    </div>
+                  <div style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    fontSize: 12,
+                    fontWeight: 500,
+                    color: sc.text,
+                    background: sc.bg,
+                    padding: "3px 10px",
+                    borderRadius: 99,
+                  }}>
+                    <span style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: "50%",
+                      background: sc.dot,
+                      flexShrink: 0,
+                    }} />
+                    <span style={{ textTransform: "capitalize" }}>{emp.status}</span>
                   </div>
                 </div>
-                <div className={`status-badge status-${emp.status}`}>
-                  <span className="status-dot" />
-                  <span style={{ textTransform: "capitalize" }}>{emp.status}</span>
-                </div>
-              </div>
-            </Link>
-          ))}
+              </Link>
+            );
+          })}
         </div>
       )}
     </div>

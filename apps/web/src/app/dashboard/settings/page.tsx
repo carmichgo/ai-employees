@@ -7,19 +7,50 @@ import { Building2, User, Server, RefreshCw, Trash2, Link2, Unlink, CheckCircle2
 
 const DROPLET_STATUS_LABELS: Record<string, { label: string; color: string }> = {
   none: { label: "Not provisioned", color: "var(--text-tertiary)" },
-  provisioning: { label: "Provisioning...", color: "#f59e0b" },
-  booting: { label: "Booting...", color: "#f59e0b" },
-  active: { label: "Active", color: "#22c55e" },
-  error: { label: "Error", color: "#ef4444" },
+  provisioning: { label: "Provisioning...", color: "#d97706" },
+  booting: { label: "Booting...", color: "#d97706" },
+  active: { label: "Active", color: "#16a34a" },
+  error: { label: "Error", color: "#dc2626" },
   destroyed: { label: "Destroyed", color: "var(--text-tertiary)" },
 };
+
+const cssVars = `
+  :root {
+    --text: #0a0a0a;
+    --text-secondary: #525252;
+    --text-tertiary: #a3a3a3;
+    --border: #e5e5e5;
+    --bg: #ffffff;
+    --bg-secondary: #f5f5f5;
+    --green: #16a34a;
+    --red: #dc2626;
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --radius-lg: 10px;
+    --shadow-xs: 0 1px 2px rgba(0,0,0,0.04);
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  }
+  @keyframes spin { to { transform: rotate(360deg) } }
+  @keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: 0.3 } }
+  @keyframes settingsFadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+`;
 
 export default function SettingsPage() {
   return (
     <Suspense fallback={
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "60vh" }}>
-        <div style={{ width: 24, height: 24, border: "2px solid var(--border)", borderTopColor: "var(--text)", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-        <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+        <div style={{
+          width: 24,
+          height: 24,
+          border: "2px solid var(--border)",
+          borderTopColor: "var(--text-tertiary)",
+          borderRadius: "50%",
+          animation: "spin 0.8s linear infinite",
+        }} />
+        <style>{cssVars}</style>
       </div>
     }>
       <SettingsContent />
@@ -142,39 +173,149 @@ function SettingsContent() {
             width: 24,
             height: 24,
             border: "2px solid var(--border)",
-            borderTopColor: "var(--text)",
+            borderTopColor: "var(--text-tertiary)",
             borderRadius: "50%",
             animation: "spin 0.8s linear infinite",
           }}
         />
-        <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+        <style>{cssVars}</style>
       </div>
     );
   }
 
   const dropletStatusInfo = DROPLET_STATUS_LABELS[droplet?.status || "none"] || DROPLET_STATUS_LABELS.none;
 
-  return (
-    <div className="animate-in" style={{ maxWidth: 600 }}>
-      <h1 className="heading-1" style={{ marginBottom: 32 }}>Settings</h1>
+  /* ---- shared style objects ---- */
 
-      <div className="card" style={{ padding: 24, marginBottom: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+  const sectionCard: React.CSSProperties = {
+    padding: 24,
+    marginBottom: 16,
+    background: "var(--bg)",
+    border: "1px solid var(--border)",
+    borderRadius: "var(--radius-lg)",
+    boxShadow: "var(--shadow-sm)",
+  };
+
+  const sectionHeader: React.CSSProperties = {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 20,
+    paddingBottom: 16,
+    borderBottom: "1px solid var(--border)",
+  };
+
+  const sectionTitle: React.CSSProperties = {
+    fontSize: 14,
+    fontWeight: 600,
+    color: "var(--text)",
+    letterSpacing: "-0.01em",
+  };
+
+  const kvRow: React.CSSProperties = {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+  };
+
+  const kvLabel: React.CSSProperties = {
+    fontSize: 13,
+    color: "var(--text-secondary)",
+    fontWeight: 400,
+  };
+
+  const kvValue: React.CSSProperties = {
+    fontSize: 13,
+    fontWeight: 500,
+    color: "var(--text)",
+  };
+
+  const btnBase: React.CSSProperties = {
+    height: 32,
+    padding: "0 12px",
+    fontSize: 12,
+    fontWeight: 500,
+    borderRadius: "var(--radius-sm)",
+    border: "1px solid var(--border)",
+    cursor: "pointer",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    transition: "all 0.15s ease",
+    lineHeight: 1,
+  };
+
+  const btnPrimary: React.CSSProperties = {
+    ...btnBase,
+    background: "var(--text)",
+    color: "var(--bg)",
+    border: "1px solid var(--text)",
+  };
+
+  const btnSecondary: React.CSSProperties = {
+    ...btnBase,
+    background: "var(--bg)",
+    color: "var(--text)",
+    border: "1px solid var(--border)",
+  };
+
+  const btnDanger: React.CSSProperties = {
+    ...btnBase,
+    background: "var(--bg)",
+    color: "var(--red)",
+    border: "1px solid rgba(220,38,38,0.25)",
+  };
+
+  const integrationCard: React.CSSProperties = {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: "12px 16px",
+    borderRadius: "var(--radius-md)",
+    border: "1px solid var(--border)",
+    background: "var(--bg-secondary)",
+  };
+
+  const statusDot = (color: string, pulsing = false): React.CSSProperties => ({
+    display: "inline-block",
+    width: 8,
+    height: 8,
+    borderRadius: "50%",
+    backgroundColor: color,
+    ...(pulsing ? { animation: "pulse 1.5s ease-in-out infinite" } : {}),
+  });
+
+  return (
+    <div style={{ maxWidth: 600, animation: "settingsFadeIn 0.3s ease-out" }}>
+      <style>{cssVars}</style>
+
+      <h1 style={{
+        fontSize: 22,
+        fontWeight: 700,
+        color: "var(--text)",
+        marginBottom: 28,
+        letterSpacing: "-0.02em",
+      }}>
+        Settings
+      </h1>
+
+      {/* Company Card */}
+      <div style={sectionCard}>
+        <div style={sectionHeader}>
           <Building2 size={16} style={{ color: "var(--text-tertiary)" }} />
-          <h3 style={{ fontSize: 14, fontWeight: 600 }}>Company</h3>
+          <h3 style={sectionTitle}>Company</h3>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           {[
             { label: "Name", value: company.name },
             { label: "Slug", value: company.slug },
             { label: "Plan", value: company.plan, capitalize: true },
             { label: "Max Employees", value: company.maxEmployees },
           ].map((item) => (
-            <div key={item.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: 13, color: "var(--text-tertiary)" }}>{item.label}</span>
+            <div key={item.label} style={kvRow}>
+              <span style={kvLabel}>{item.label}</span>
               <span style={{
-                fontSize: 13,
-                fontWeight: 500,
+                ...kvValue,
                 textTransform: item.capitalize ? "capitalize" : undefined,
               }}>
                 {item.value}
@@ -185,14 +326,14 @@ function SettingsContent() {
       </div>
 
       {/* Infrastructure Card */}
-      <div className="card" style={{ padding: 24, marginBottom: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+      <div style={sectionCard}>
+        <div style={sectionHeader}>
           <Server size={16} style={{ color: "var(--text-tertiary)" }} />
-          <h3 style={{ fontSize: 14, fontWeight: 600 }}>Infrastructure</h3>
+          <h3 style={sectionTitle}>Infrastructure</h3>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: 13, color: "var(--text-tertiary)" }}>Status</span>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={kvRow}>
+            <span style={kvLabel}>Status</span>
             <span style={{
               fontSize: 12,
               fontWeight: 600,
@@ -202,57 +343,31 @@ function SettingsContent() {
               gap: 6,
             }}>
               {(droplet?.status === "provisioning" || droplet?.status === "booting") && (
-                <span style={{
-                  display: "inline-block",
-                  width: 8,
-                  height: 8,
-                  borderRadius: "50%",
-                  backgroundColor: "#f59e0b",
-                  animation: "pulse 1.5s ease-in-out infinite",
-                }} />
+                <span style={statusDot("#d97706", true)} />
               )}
               {droplet?.status === "active" && (
-                <span style={{
-                  display: "inline-block",
-                  width: 8,
-                  height: 8,
-                  borderRadius: "50%",
-                  backgroundColor: "#22c55e",
-                }} />
+                <span style={statusDot("#16a34a")} />
               )}
               {dropletStatusInfo.label}
             </span>
           </div>
 
           {droplet?.status === "active" && droplet?.phase && (
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: 13, color: "var(--text-tertiary)" }}>Services</span>
+            <div style={kvRow}>
+              <span style={kvLabel}>Services</span>
               <span style={{
                 fontSize: 12,
                 fontWeight: 600,
-                color: droplet.phase === "ready" ? "#22c55e" : droplet.phase === "failed" ? "#ef4444" : "#f59e0b",
+                color: droplet.phase === "ready" ? "#16a34a" : droplet.phase === "failed" ? "#dc2626" : "#d97706",
                 display: "flex",
                 alignItems: "center",
                 gap: 6,
               }}>
                 {droplet.phase === "provisioning" && (
-                  <span style={{
-                    display: "inline-block",
-                    width: 8,
-                    height: 8,
-                    borderRadius: "50%",
-                    backgroundColor: "#f59e0b",
-                    animation: "pulse 1.5s ease-in-out infinite",
-                  }} />
+                  <span style={statusDot("#d97706", true)} />
                 )}
                 {droplet.phase === "ready" && (
-                  <span style={{
-                    display: "inline-block",
-                    width: 8,
-                    height: 8,
-                    borderRadius: "50%",
-                    backgroundColor: "#22c55e",
-                  }} />
+                  <span style={statusDot("#16a34a")} />
                 )}
                 {droplet.phase === "provisioning" ? "Building..." : droplet.phase === "ready" ? "Ready" : droplet.phase === "failed" ? "Build Failed" : droplet.phase}
               </span>
@@ -260,59 +375,71 @@ function SettingsContent() {
           )}
 
           {droplet?.ip && (
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: 13, color: "var(--text-tertiary)" }}>IP Address</span>
-              <span style={{ fontSize: 13, fontWeight: 500, fontFamily: "monospace" }}>{droplet.ip}</span>
+            <div style={kvRow}>
+              <span style={kvLabel}>IP Address</span>
+              <span style={{
+                ...kvValue,
+                fontFamily: "'SF Mono', 'Fira Code', 'Fira Mono', 'Roboto Mono', monospace",
+                fontSize: 12,
+                color: "var(--text-secondary)",
+                background: "var(--bg-secondary)",
+                padding: "2px 8px",
+                borderRadius: "var(--radius-sm)",
+              }}>
+                {droplet.ip}
+              </span>
             </div>
           )}
 
           {droplet?.region && droplet?.status !== "none" && (
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: 13, color: "var(--text-tertiary)" }}>Region</span>
-              <span style={{ fontSize: 13, fontWeight: 500 }}>{droplet.region}</span>
+            <div style={kvRow}>
+              <span style={kvLabel}>Region</span>
+              <span style={kvValue}>{droplet.region}</span>
             </div>
           )}
 
           {droplet?.size && droplet?.status !== "none" && (
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: 13, color: "var(--text-tertiary)" }}>Size</span>
-              <span style={{ fontSize: 13, fontWeight: 500 }}>{droplet.size}</span>
+            <div style={kvRow}>
+              <span style={kvLabel}>Size</span>
+              <span style={kvValue}>{droplet.size}</span>
             </div>
           )}
 
           <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
             {(!droplet || droplet.status === "none" || droplet.status === "destroyed") && (
               <button
-                className="btn-primary btn-sm"
                 onClick={handleProvision}
                 disabled={dropletLoading}
-                style={{ fontSize: 12 }}
+                style={{
+                  ...btnPrimary,
+                  ...(dropletLoading ? { opacity: 0.5, cursor: "not-allowed" } : {}),
+                }}
               >
                 Provision Infrastructure
               </button>
             )}
             {(droplet?.status === "provisioning" || droplet?.status === "booting") && (
               <button
-                className="btn-secondary btn-sm"
                 onClick={loadDroplet}
-                style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
+                style={btnSecondary}
               >
                 <RefreshCw size={12} /> Refresh
               </button>
             )}
             {(droplet?.status === "active" || droplet?.status === "booting" || droplet?.status === "provisioning" || droplet?.status === "error") && (
               <button
-                className="btn-danger btn-sm"
                 onClick={handleDestroy}
                 disabled={dropletLoading}
-                style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
+                style={{
+                  ...btnDanger,
+                  ...(dropletLoading ? { opacity: 0.5, cursor: "not-allowed" } : {}),
+                }}
               >
                 <Trash2 size={12} /> Destroy
               </button>
             )}
             {droplet?.status === "active" && (
               <button
-                className="btn-secondary btn-sm"
                 onClick={async () => {
                   setLogsLoading(true);
                   try {
@@ -325,7 +452,10 @@ function SettingsContent() {
                   }
                 }}
                 disabled={logsLoading}
-                style={{ fontSize: 12 }}
+                style={{
+                  ...btnSecondary,
+                  ...(logsLoading ? { opacity: 0.5, cursor: "not-allowed" } : {}),
+                }}
               >
                 {logsLoading ? "Loading..." : "View Build Logs"}
               </button>
@@ -334,27 +464,35 @@ function SettingsContent() {
 
           {buildLogs && (
             <div style={{
-              marginTop: 12,
-              padding: 12,
+              marginTop: 8,
+              padding: 14,
               backgroundColor: "var(--bg-secondary)",
-              borderRadius: 8,
+              borderRadius: "var(--radius-md)",
+              border: "1px solid var(--border)",
               maxHeight: 300,
               overflow: "auto",
             }}>
-              <pre style={{ fontSize: 11, whiteSpace: "pre-wrap", wordBreak: "break-all", margin: 0, fontFamily: "monospace", color: "var(--text-secondary)" }}>
+              <pre style={{
+                fontSize: 11,
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-all",
+                margin: 0,
+                fontFamily: "'SF Mono', 'Fira Code', 'Fira Mono', 'Roboto Mono', monospace",
+                color: "var(--text-secondary)",
+                lineHeight: 1.6,
+              }}>
                 {buildLogs}
               </pre>
             </div>
           )}
         </div>
-        <style>{`@keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: 0.3 } }`}</style>
       </div>
 
       {/* Integrations Card */}
-      <div className="card" style={{ padding: 24, marginBottom: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+      <div style={sectionCard}>
+        <div style={sectionHeader}>
           <Link2 size={16} style={{ color: "var(--text-tertiary)" }} />
-          <h3 style={{ fontSize: 14, fontWeight: 600 }}>Integrations</h3>
+          <h3 style={sectionTitle}>Integrations</h3>
         </div>
 
         {/* Slack OAuth notice */}
@@ -362,28 +500,29 @@ function SettingsContent() {
           <div
             style={{
               padding: "10px 14px",
-              borderRadius: 8,
+              borderRadius: "var(--radius-md)",
               marginBottom: 16,
               fontSize: 13,
+              fontWeight: 500,
               background:
                 slackNotice.type === "success"
-                  ? "rgba(34, 197, 94, 0.1)"
+                  ? "rgba(22,163,74,0.06)"
                   : slackNotice.type === "denied"
-                    ? "rgba(245, 158, 11, 0.1)"
-                    : "rgba(239, 68, 68, 0.1)",
+                    ? "rgba(217,119,6,0.06)"
+                    : "rgba(220,38,38,0.06)",
               border: `1px solid ${
                 slackNotice.type === "success"
-                  ? "rgba(34, 197, 94, 0.2)"
+                  ? "rgba(22,163,74,0.15)"
                   : slackNotice.type === "denied"
-                    ? "rgba(245, 158, 11, 0.2)"
-                    : "rgba(239, 68, 68, 0.2)"
+                    ? "rgba(217,119,6,0.15)"
+                    : "rgba(220,38,38,0.15)"
               }`,
               color:
                 slackNotice.type === "success"
-                  ? "#22c55e"
+                  ? "#16a34a"
                   : slackNotice.type === "denied"
-                    ? "#f59e0b"
-                    : "#ef4444",
+                    ? "#d97706"
+                    : "#dc2626",
               display: "flex",
               alignItems: "center",
               gap: 8,
@@ -394,30 +533,20 @@ function SettingsContent() {
           </div>
         )}
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {/* Slack */}
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              padding: "12px 16px",
-              borderRadius: 10,
-              border: "1px solid var(--border)",
-              background: "var(--bg-secondary)",
-            }}
-          >
+          <div style={integrationCard}>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <span style={{ fontSize: 24 }}>💬</span>
+              <span style={{ fontSize: 22, lineHeight: 1 }}>💬</span>
               <div>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>Slack</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>Slack</div>
                 {integrations.slack ? (
-                  <div style={{ fontSize: 12, color: "#22c55e", display: "flex", alignItems: "center", gap: 4 }}>
+                  <div style={{ fontSize: 12, color: "#16a34a", display: "flex", alignItems: "center", gap: 4, marginTop: 2 }}>
                     <CheckCircle2 size={11} />
                     Connected to {integrations.slack.teamName}
                   </div>
                 ) : (
-                  <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
+                  <div style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 2 }}>
                     Let employees chat in your Slack workspace
                   </div>
                 )}
@@ -425,18 +554,19 @@ function SettingsContent() {
             </div>
             {integrations.slack ? (
               <button
-                className="btn-danger btn-sm"
                 onClick={handleDisconnectSlack}
                 disabled={integrationsLoading}
-                style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
+                style={{
+                  ...btnDanger,
+                  ...(integrationsLoading ? { opacity: 0.5, cursor: "not-allowed" } : {}),
+                }}
               >
                 <Unlink size={12} /> Disconnect
               </button>
             ) : (
               <button
-                className="btn-primary btn-sm"
                 onClick={handleConnectSlack}
-                style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
+                style={btnPrimary}
               >
                 <ExternalLink size={12} /> Connect
               </button>
@@ -444,74 +574,61 @@ function SettingsContent() {
           </div>
 
           {/* Email — per-employee config */}
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              padding: "12px 16px",
-              borderRadius: 10,
-              border: "1px solid var(--border)",
-              background: "var(--bg-secondary)",
-            }}
-          >
+          <div style={integrationCard}>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <span style={{ fontSize: 24 }}>📧</span>
+              <span style={{ fontSize: 22, lineHeight: 1 }}>📧</span>
               <div>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>Email</div>
-                <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>Email</div>
+                <div style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 2 }}>
                   Configure per employee — add IMAP/SMTP credentials on each employee&apos;s page
                 </div>
               </div>
             </div>
-            <CheckCircle2 size={16} style={{ color: "#22c55e", flexShrink: 0 }} />
+            <CheckCircle2 size={16} style={{ color: "#16a34a", flexShrink: 0 }} />
           </div>
 
           {/* Discord — coming soon */}
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              padding: "12px 16px",
-              borderRadius: 10,
-              border: "1px solid var(--border)",
-              background: "var(--bg-secondary)",
-              opacity: 0.6,
-            }}
-          >
+          <div style={{ ...integrationCard, opacity: 0.55 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <span style={{ fontSize: 24 }}>🎮</span>
+              <span style={{ fontSize: 22, lineHeight: 1 }}>🎮</span>
               <div>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>Discord</div>
-                <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>Discord</div>
+                <div style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 2 }}>
                   Add employees to your Discord server
                 </div>
               </div>
             </div>
-            <span style={{ fontSize: 11, color: "var(--text-tertiary)", fontWeight: 500 }}>
+            <span style={{
+              fontSize: 11,
+              color: "var(--text-tertiary)",
+              fontWeight: 500,
+              background: "var(--bg)",
+              padding: "3px 8px",
+              borderRadius: "var(--radius-sm)",
+              border: "1px solid var(--border)",
+            }}>
               Coming soon
             </span>
           </div>
         </div>
       </div>
 
-      <div className="card" style={{ padding: 24 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+      {/* Account Card */}
+      <div style={{ ...sectionCard, marginBottom: 0 }}>
+        <div style={sectionHeader}>
           <User size={16} style={{ color: "var(--text-tertiary)" }} />
-          <h3 style={{ fontSize: 14, fontWeight: 600 }}>Account</h3>
+          <h3 style={sectionTitle}>Account</h3>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           {[
             { label: "Name", value: user.name },
             { label: "Email", value: user.email },
             { label: "Role", value: user.role, capitalize: true },
           ].map((item) => (
-            <div key={item.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: 13, color: "var(--text-tertiary)" }}>{item.label}</span>
+            <div key={item.label} style={kvRow}>
+              <span style={kvLabel}>{item.label}</span>
               <span style={{
-                fontSize: 13,
-                fontWeight: 500,
+                ...kvValue,
                 textTransform: item.capitalize ? "capitalize" : undefined,
               }}>
                 {item.value}

@@ -10,27 +10,43 @@ export default function EmployeesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const fetchEmployees = () => {
+    setLoading(true);
+    setError(null);
+    api
+      .listEmployees()
+      .then((res) => {
+        setEmployees(res.employees);
+        setLoading(false);
+      })
+      .catch((err) => {
+        setError(err.message || "Failed to load employees");
+        setLoading(false);
+      });
+  };
+
   useEffect(() => {
-    api.listEmployees().then((res) => {
-      setEmployees(res.employees);
-      setLoading(false);
-    }).catch((err) => {
-      setError(err.message || "Failed to load employees");
-      setLoading(false);
-    });
+    fetchEmployees();
   }, []);
 
   if (loading) {
     return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "60vh" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          height: "60vh",
+        }}
+      >
         <div
           style={{
-            width: 24,
-            height: 24,
-            border: "2px solid var(--border)",
-            borderTopColor: "var(--text)",
+            width: 20,
+            height: 20,
+            border: "2px solid var(--border, #e5e5e5)",
+            borderTopColor: "var(--text-tertiary, #a3a3a3)",
             borderRadius: "50%",
-            animation: "spin 0.8s linear infinite",
+            animation: "spin 0.7s linear infinite",
           }}
         />
         <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
@@ -40,20 +56,28 @@ export default function EmployeesPage() {
 
   if (error) {
     return (
-      <div className="animate-in" style={{ textAlign: "center", paddingTop: 80 }}>
-        <p style={{ color: "var(--red)", marginBottom: 16 }}>{error}</p>
+      <div style={{ textAlign: "center", paddingTop: 80 }}>
+        <p
+          style={{
+            color: "#dc2626",
+            marginBottom: 16,
+            fontSize: 14,
+          }}
+        >
+          {error}
+        </p>
         <button
-          className="btn-primary"
-          onClick={() => {
-            setLoading(true);
-            setError(null);
-            api.listEmployees().then((res) => {
-              setEmployees(res.employees);
-              setLoading(false);
-            }).catch((err) => {
-              setError(err.message || "Failed to load employees");
-              setLoading(false);
-            });
+          onClick={fetchEmployees}
+          style={{
+            height: 36,
+            padding: "0 16px",
+            fontSize: 13,
+            fontWeight: 500,
+            color: "#fff",
+            background: "var(--text, #0a0a0a)",
+            border: "none",
+            borderRadius: "var(--radius-md, 8px)",
+            cursor: "pointer",
           }}
         >
           Retry
@@ -63,92 +87,233 @@ export default function EmployeesPage() {
   }
 
   return (
-    <div className="animate-in">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 32 }}>
+    <div style={{ maxWidth: 720, margin: "0 auto" }}>
+      {/* Header */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          marginBottom: 24,
+        }}
+      >
         <div>
-          <h1 className="heading-1" style={{ marginBottom: 4 }}>Employees</h1>
-          <p style={{ color: "var(--text-secondary)", fontSize: 14 }}>
+          <h1
+            style={{
+              fontSize: 20,
+              fontWeight: 600,
+              color: "var(--text, #0a0a0a)",
+              letterSpacing: "-0.02em",
+              lineHeight: 1.3,
+              margin: 0,
+            }}
+          >
+            Employees
+          </h1>
+          <p
+            style={{
+              fontSize: 13,
+              color: "var(--text-tertiary, #a3a3a3)",
+              margin: "4px 0 0 0",
+            }}
+          >
             {employees.length} team member{employees.length !== 1 ? "s" : ""}
           </p>
         </div>
-        <Link href="/dashboard/hire" className="btn-primary" style={{ textDecoration: "none", gap: 6 }}>
-          <Plus size={16} />
+        <Link
+          href="/dashboard/hire"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            height: 36,
+            padding: "0 14px",
+            fontSize: 13,
+            fontWeight: 500,
+            color: "#fff",
+            background: "var(--text, #0a0a0a)",
+            border: "none",
+            borderRadius: "var(--radius-md, 8px)",
+            textDecoration: "none",
+            cursor: "pointer",
+            boxShadow: "var(--shadow-xs, 0 1px 2px rgba(0,0,0,0.05))",
+          }}
+        >
+          <Plus size={15} strokeWidth={2} />
           Hire Employee
         </Link>
       </div>
 
+      {/* Employee List */}
       {employees.length === 0 ? (
         <div
-          className="card"
-          style={{ padding: "64px 40px", textAlign: "center", borderStyle: "dashed" }}
+          style={{
+            padding: "56px 40px",
+            textAlign: "center",
+            background: "#fff",
+            border: "1px dashed var(--border, #e5e5e5)",
+            borderRadius: "var(--radius-lg, 10px)",
+          }}
         >
           <div
             style={{
-              width: 64,
-              height: 64,
-              borderRadius: 16,
-              background: "rgba(255,255,255,0.04)",
+              width: 56,
+              height: 56,
+              borderRadius: "var(--radius-lg, 10px)",
+              background: "var(--bg-secondary, #f5f5f5)",
+              border: "1px solid var(--border, #e5e5e5)",
               display: "inline-flex",
               alignItems: "center",
               justifyContent: "center",
-              marginBottom: 20,
+              marginBottom: 16,
             }}
           >
-            <Users size={28} strokeWidth={1} style={{ color: "var(--text-tertiary)" }} />
+            <Users
+              size={24}
+              strokeWidth={1.5}
+              style={{ color: "var(--text-tertiary, #a3a3a3)" }}
+            />
           </div>
-          <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>No employees yet</h3>
-          <p style={{ color: "var(--text-secondary)", marginBottom: 24, fontSize: 14, maxWidth: 320, margin: "0 auto 24px" }}>
+          <h3
+            style={{
+              fontSize: 15,
+              fontWeight: 600,
+              color: "var(--text, #0a0a0a)",
+              margin: "0 0 6px 0",
+            }}
+          >
+            No employees yet
+          </h3>
+          <p
+            style={{
+              color: "var(--text-secondary, #525252)",
+              fontSize: 13,
+              lineHeight: 1.5,
+              maxWidth: 280,
+              margin: "0 auto 20px",
+            }}
+          >
             Hire your first AI employee to get started
           </p>
-          <Link href="/dashboard/hire" className="btn-primary" style={{ textDecoration: "none", gap: 6 }}>
-            <Plus size={16} />
+          <Link
+            href="/dashboard/hire"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              height: 36,
+              padding: "0 14px",
+              fontSize: 13,
+              fontWeight: 500,
+              color: "#fff",
+              background: "var(--text, #0a0a0a)",
+              border: "none",
+              borderRadius: "var(--radius-md, 8px)",
+              textDecoration: "none",
+              cursor: "pointer",
+              boxShadow: "var(--shadow-xs, 0 1px 2px rgba(0,0,0,0.05))",
+            }}
+          >
+            <Plus size={15} strokeWidth={2} />
             Hire Your First Employee
           </Link>
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <div
+          style={{
+            border: "1px solid var(--border, #e5e5e5)",
+            borderRadius: "var(--radius-lg, 10px)",
+            background: "#fff",
+            overflow: "hidden",
+            boxShadow: "var(--shadow-sm, 0 1px 3px rgba(0,0,0,0.06))",
+          }}
+        >
           {employees.map((emp, i) => (
             <Link
               key={emp.id}
               href={`/dashboard/employees/${emp.id}`}
-              style={{ textDecoration: "none", color: "inherit" }}
+              style={{
+                textDecoration: "none",
+                color: "inherit",
+                display: "block",
+              }}
             >
               <div
-                className={`card card-interactive animate-in animate-in-delay-${(i % 4) + 1}`}
                 style={{
-                  padding: "16px 20px",
+                  padding: "12px 16px",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "space-between",
+                  borderBottom:
+                    i < employees.length - 1
+                      ? "1px solid var(--border, #e5e5e5)"
+                      : "none",
+                  transition: "background 0.12s ease",
+                  cursor: "pointer",
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLDivElement).style.background =
+                    "var(--bg-secondary, #f5f5f5)";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLDivElement).style.background =
+                    "transparent";
                 }}
               >
-                <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                {/* Left: Avatar + Info */}
+                <div
+                  style={{ display: "flex", alignItems: "center", gap: 12 }}
+                >
                   <div
                     style={{
-                      width: 40,
-                      height: 40,
-                      borderRadius: 10,
-                      background: "rgba(255,255,255,0.04)",
-                      border: "1px solid var(--border)",
+                      width: 36,
+                      height: 36,
+                      borderRadius: "var(--radius-md, 8px)",
+                      background: "var(--bg-secondary, #f5f5f5)",
+                      border: "1px solid var(--border, #e5e5e5)",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      fontSize: 20,
+                      fontSize: 18,
+                      flexShrink: 0,
                     }}
                   >
                     {emp.emoji || "A"}
                   </div>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: 15, letterSpacing: "-0.01em" }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontWeight: 500,
+                        fontSize: 14,
+                        color: "var(--text, #0a0a0a)",
+                        letterSpacing: "-0.01em",
+                        lineHeight: 1.3,
+                      }}
+                    >
                       {emp.name}
                     </div>
-                    <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+                    <div
+                      style={{
+                        fontSize: 13,
+                        color: "var(--text-secondary, #525252)",
+                        lineHeight: 1.3,
+                        marginTop: 1,
+                      }}
+                    >
                       {emp.jobTitle}
                     </div>
                   </div>
                 </div>
 
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                {/* Right: Chat + Status + Chevron */}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    flexShrink: 0,
+                  }}
+                >
                   {emp.status === "active" && (
                     <Link
                       href={`/dashboard/employees/${emp.id}/chat`}
@@ -159,21 +324,74 @@ export default function EmployeesPage() {
                         justifyContent: "center",
                         width: 32,
                         height: 32,
-                        borderRadius: 8,
-                        background: "rgba(93, 121, 223, 0.1)",
-                        border: "1px solid rgba(93, 121, 223, 0.2)",
-                        color: "var(--blue)",
-                        transition: "all 0.15s",
+                        borderRadius: "var(--radius-sm, 6px)",
+                        background: "rgba(37, 99, 235, 0.06)",
+                        border: "1px solid rgba(37, 99, 235, 0.12)",
+                        color: "var(--blue, #2563eb)",
+                        transition: "all 0.12s ease",
+                      }}
+                      onMouseEnter={(e) => {
+                        (e.currentTarget as HTMLAnchorElement).style.background =
+                          "rgba(37, 99, 235, 0.1)";
+                        (e.currentTarget as HTMLAnchorElement).style.borderColor =
+                          "rgba(37, 99, 235, 0.2)";
+                      }}
+                      onMouseLeave={(e) => {
+                        (e.currentTarget as HTMLAnchorElement).style.background =
+                          "rgba(37, 99, 235, 0.06)";
+                        (e.currentTarget as HTMLAnchorElement).style.borderColor =
+                          "rgba(37, 99, 235, 0.12)";
                       }}
                     >
                       <MessageCircle size={14} />
                     </Link>
                   )}
-                  <div className={`status-badge status-${emp.status}`}>
-                    <span className="status-dot" />
-                    <span style={{ textTransform: "capitalize" }}>{emp.status}</span>
-                  </div>
-                  <ChevronRight size={16} style={{ color: "var(--text-tertiary)" }} />
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 5,
+                      height: 24,
+                      padding: "0 8px",
+                      fontSize: 12,
+                      fontWeight: 500,
+                      borderRadius: "var(--radius-sm, 6px)",
+                      textTransform: "capitalize" as const,
+                      ...(emp.status === "active"
+                        ? {
+                            color: "var(--green, #16a34a)",
+                            background: "rgba(22, 163, 74, 0.06)",
+                            border: "1px solid rgba(22, 163, 74, 0.14)",
+                          }
+                        : emp.status === "provisioning"
+                          ? {
+                              color: "#d97706",
+                              background: "rgba(217, 119, 6, 0.06)",
+                              border: "1px solid rgba(217, 119, 6, 0.14)",
+                            }
+                          : {
+                              color: "var(--text-tertiary, #a3a3a3)",
+                              background: "var(--bg-secondary, #f5f5f5)",
+                              border: "1px solid var(--border, #e5e5e5)",
+                            }),
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 5,
+                        height: 5,
+                        borderRadius: "50%",
+                        background: "currentColor",
+                        flexShrink: 0,
+                      }}
+                    />
+                    {emp.status}
+                  </span>
+                  <ChevronRight
+                    size={15}
+                    strokeWidth={1.5}
+                    style={{ color: "var(--text-tertiary, #a3a3a3)" }}
+                  />
                 </div>
               </div>
             </Link>

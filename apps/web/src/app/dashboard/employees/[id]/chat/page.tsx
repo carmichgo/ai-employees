@@ -158,9 +158,15 @@ export default function EmployeeChatPage() {
   if (loading) {
     return (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "80vh" }}>
-        <Loader2
-          size={24}
-          style={{ animation: "spin 0.8s linear infinite", color: "var(--text-tertiary)" }}
+        <div
+          style={{
+            width: 24,
+            height: 24,
+            borderRadius: "50%",
+            border: "2px solid var(--border, #e5e5e5)",
+            borderTopColor: "var(--text-tertiary, #a3a3a3)",
+            animation: "spin 0.8s linear infinite",
+          }}
         />
         <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
       </div>
@@ -170,15 +176,15 @@ export default function EmployeeChatPage() {
   if (error || !employee) {
     return (
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "80vh", gap: 16 }}>
-        <div style={{ fontSize: 14, color: "var(--red, #ef4444)" }}>{error || "Failed to load employee"}</div>
+        <div style={{ fontSize: 14, color: "#ef4444" }}>{error || "Failed to load employee"}</div>
         <button
           onClick={loadChat}
           style={{
             padding: "8px 20px",
-            borderRadius: 8,
-            border: "1px solid var(--border)",
-            background: "var(--bg-card)",
-            color: "var(--text)",
+            borderRadius: "var(--radius-md, 8px)",
+            border: "1px solid var(--border, #e5e5e5)",
+            background: "var(--bg, #ffffff)",
+            color: "var(--text, #0a0a0a)",
             cursor: "pointer",
             fontSize: 13,
           }}
@@ -194,12 +200,22 @@ export default function EmployeeChatPage() {
     <div
       className="animate-in"
       style={{
+        "--text": "#0a0a0a",
+        "--text-secondary": "#525252",
+        "--text-tertiary": "#a3a3a3",
+        "--border": "#e5e5e5",
+        "--bg": "#ffffff",
+        "--bg-secondary": "#f5f5f5",
+        "--blue": "#2563eb",
+        "--radius-sm": "6px",
+        "--radius-md": "8px",
+        "--radius-lg": "10px",
         display: "flex",
         flexDirection: "column",
         height: "calc(100vh - 48px)",
         maxWidth: 900,
         margin: "0 auto",
-      }}
+      } as React.CSSProperties}
     >
       {/* Header */}
       <div
@@ -208,7 +224,7 @@ export default function EmployeeChatPage() {
           alignItems: "center",
           gap: 12,
           padding: "16px 0",
-          borderBottom: "1px solid var(--border)",
+          borderBottom: "1px solid var(--border, #e5e5e5)",
           flexShrink: 0,
         }}
       >
@@ -220,9 +236,10 @@ export default function EmployeeChatPage() {
             justifyContent: "center",
             width: 32,
             height: 32,
-            borderRadius: 8,
-            border: "1px solid var(--border)",
-            color: "var(--text-secondary)",
+            borderRadius: "var(--radius-md, 8px)",
+            border: "1px solid var(--border, #e5e5e5)",
+            background: "var(--bg, #ffffff)",
+            color: "var(--text-secondary, #525252)",
             textDecoration: "none",
             transition: "all 0.15s",
           }}
@@ -233,9 +250,9 @@ export default function EmployeeChatPage() {
           style={{
             width: 40,
             height: 40,
-            borderRadius: 12,
-            background: "linear-gradient(135deg, rgba(93, 121, 223, 0.12), rgba(169, 75, 210, 0.12))",
-            border: "1px solid var(--border)",
+            borderRadius: "var(--radius-lg, 10px)",
+            background: "var(--bg-secondary, #f5f5f5)",
+            border: "1px solid var(--border, #e5e5e5)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -245,8 +262,8 @@ export default function EmployeeChatPage() {
           {employee.emoji || "A"}
         </div>
         <div style={{ flex: 1 }}>
-          <div style={{ fontWeight: 600, fontSize: 14 }}>{employee.name}</div>
-          <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>{employee.jobTitle}</div>
+          <div style={{ fontWeight: 600, fontSize: 14, color: "var(--text, #0a0a0a)" }}>{employee.name}</div>
+          <div style={{ fontSize: 12, color: "var(--text-tertiary, #a3a3a3)" }}>{employee.jobTitle}</div>
         </div>
         <div className={`status-badge status-${employee.status}`}>
           <span className="status-dot" />
@@ -280,27 +297,20 @@ export default function EmployeeChatPage() {
               style={{
                 width: 32,
                 height: 32,
-                borderRadius: 10,
+                borderRadius: "var(--radius-lg, 10px)",
                 flexShrink: 0,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                ...(msg.role === "assistant"
-                  ? {
-                      background: "linear-gradient(135deg, rgba(93, 121, 223, 0.15), rgba(169, 75, 210, 0.15))",
-                      border: "1px solid var(--border)",
-                      fontSize: 16,
-                    }
-                  : {
-                      background: "rgba(255, 255, 255, 0.06)",
-                      border: "1px solid var(--border)",
-                    }),
+                background: "var(--bg-secondary, #f5f5f5)",
+                border: "1px solid var(--border, #e5e5e5)",
+                ...(msg.role === "assistant" ? { fontSize: 16 } : {}),
               }}
             >
               {msg.role === "assistant" ? (
                 <span>{employee.emoji || <Bot size={16} />}</span>
               ) : (
-                <User size={14} style={{ color: "var(--text-secondary)" }} />
+                <User size={14} style={{ color: "var(--text-secondary, #525252)" }} />
               )}
             </div>
 
@@ -312,12 +322,12 @@ export default function EmployeeChatPage() {
                 borderRadius: msg.role === "user" ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
                 background:
                   msg.role === "user"
-                    ? "linear-gradient(135deg, rgba(93, 121, 223, 0.15), rgba(93, 121, 223, 0.08))"
-                    : "var(--bg-card)",
-                border: "1px solid var(--border)",
+                    ? "rgba(37, 99, 235, 0.06)"
+                    : "var(--bg-secondary, #f5f5f5)",
+                border: "1px solid var(--border, #e5e5e5)",
                 fontSize: 14,
                 lineHeight: 1.6,
-                color: "var(--text)",
+                color: "var(--text, #0a0a0a)",
                 wordBreak: "break-word",
               }}
             >
@@ -328,10 +338,10 @@ export default function EmployeeChatPage() {
                     marginTop: 8,
                     padding: "4px 8px",
                     borderRadius: 4,
-                    background: "rgba(245, 158, 11, 0.1)",
+                    background: "rgba(245, 158, 11, 0.08)",
                     border: "1px solid rgba(245, 158, 11, 0.2)",
                     fontSize: 11,
-                    color: "#f59e0b",
+                    color: "#b45309",
                   }}
                 >
                   Demo mode — provision infrastructure in Settings for live responses
@@ -348,13 +358,13 @@ export default function EmployeeChatPage() {
               style={{
                 width: 32,
                 height: 32,
-                borderRadius: 10,
+                borderRadius: "var(--radius-lg, 10px)",
                 flexShrink: 0,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                background: "linear-gradient(135deg, rgba(93, 121, 223, 0.15), rgba(169, 75, 210, 0.15))",
-                border: "1px solid var(--border)",
+                background: "var(--bg-secondary, #f5f5f5)",
+                border: "1px solid var(--border, #e5e5e5)",
                 fontSize: 16,
               }}
             >
@@ -364,16 +374,16 @@ export default function EmployeeChatPage() {
               style={{
                 padding: "12px 16px",
                 borderRadius: "16px 16px 16px 4px",
-                background: "var(--bg-card)",
-                border: "1px solid var(--border)",
+                background: "var(--bg-secondary, #f5f5f5)",
+                border: "1px solid var(--border, #e5e5e5)",
                 display: "flex",
                 gap: 4,
                 alignItems: "center",
               }}
             >
-              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--text-tertiary)", animation: "bounce 1.4s infinite ease-in-out", animationDelay: "0s" }} />
-              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--text-tertiary)", animation: "bounce 1.4s infinite ease-in-out", animationDelay: "0.2s" }} />
-              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--text-tertiary)", animation: "bounce 1.4s infinite ease-in-out", animationDelay: "0.4s" }} />
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--text-tertiary, #a3a3a3)", animation: "bounce 1.4s infinite ease-in-out", animationDelay: "0s" }} />
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--text-tertiary, #a3a3a3)", animation: "bounce 1.4s infinite ease-in-out", animationDelay: "0.2s" }} />
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--text-tertiary, #a3a3a3)", animation: "bounce 1.4s infinite ease-in-out", animationDelay: "0.4s" }} />
             </div>
           </div>
         )}
@@ -386,7 +396,7 @@ export default function EmployeeChatPage() {
         style={{
           flexShrink: 0,
           padding: "16px 0",
-          borderTop: "1px solid var(--border)",
+          borderTop: "1px solid var(--border, #e5e5e5)",
         }}
       >
         <div
@@ -394,9 +404,9 @@ export default function EmployeeChatPage() {
             display: "flex",
             gap: 8,
             alignItems: "flex-end",
-            background: "var(--bg-card)",
+            background: "var(--bg, #ffffff)",
             borderRadius: 16,
-            border: "1px solid var(--border)",
+            border: "1px solid var(--border, #e5e5e5)",
             padding: "8px 12px",
             transition: "border-color 0.15s",
           }}
@@ -415,7 +425,7 @@ export default function EmployeeChatPage() {
               border: "none",
               outline: "none",
               resize: "none",
-              color: "var(--text)",
+              color: "var(--text, #0a0a0a)",
               fontSize: 14,
               lineHeight: 1.5,
               padding: "4px 0",
@@ -429,7 +439,7 @@ export default function EmployeeChatPage() {
             style={{
               width: 36,
               height: 36,
-              borderRadius: 10,
+              borderRadius: "var(--radius-lg, 10px)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -437,10 +447,10 @@ export default function EmployeeChatPage() {
               cursor: input.trim() && !sending ? "pointer" : "default",
               background:
                 input.trim() && !sending
-                  ? "linear-gradient(135deg, var(--blue), var(--purple))"
-                  : "rgba(255, 255, 255, 0.04)",
+                  ? "var(--text, #0a0a0a)"
+                  : "var(--bg-secondary, #f5f5f5)",
               color:
-                input.trim() && !sending ? "#fff" : "var(--text-tertiary)",
+                input.trim() && !sending ? "#ffffff" : "var(--text-tertiary, #a3a3a3)",
               transition: "all 0.2s",
               flexShrink: 0,
             }}
@@ -453,7 +463,7 @@ export default function EmployeeChatPage() {
           </button>
         </div>
         {employee.status !== "active" && (
-          <div style={{ fontSize: 12, color: "var(--text-tertiary)", textAlign: "center", marginTop: 8 }}>
+          <div style={{ fontSize: 12, color: "var(--text-tertiary, #a3a3a3)", textAlign: "center", marginTop: 8 }}>
             Chat is disabled — employee is {employee.status}
           </div>
         )}
@@ -467,7 +477,7 @@ export default function EmployeeChatPage() {
         }
 
         /* Markdown styles for chat messages */
-        .markdown-body { overflow-wrap: break-word; }
+        .markdown-body { overflow-wrap: break-word; color: var(--text, #0a0a0a); }
         .markdown-body > *:first-child { margin-top: 0; }
         .markdown-body > *:last-child { margin-bottom: 0; }
         .markdown-body p { margin: 0.4em 0; }
@@ -476,6 +486,7 @@ export default function EmployeeChatPage() {
           margin: 0.6em 0 0.3em;
           font-weight: 600;
           line-height: 1.3;
+          color: var(--text, #0a0a0a);
         }
         .markdown-body h1 { font-size: 1.35em; }
         .markdown-body h2 { font-size: 1.2em; }
@@ -484,21 +495,22 @@ export default function EmployeeChatPage() {
         .markdown-body strong { font-weight: 600; }
         .markdown-body em { font-style: italic; }
         .markdown-body del { text-decoration: line-through; opacity: 0.7; }
-        .markdown-body a { color: var(--blue); text-decoration: underline; }
+        .markdown-body a { color: var(--blue, #2563eb); text-decoration: underline; }
         .markdown-body code {
           font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
           font-size: 0.88em;
           padding: 0.15em 0.4em;
           border-radius: 4px;
-          background: rgba(255, 255, 255, 0.06);
-          border: 1px solid var(--border);
+          background: #f5f5f5;
+          border: 1px solid var(--border, #e5e5e5);
+          color: var(--text, #0a0a0a);
         }
         .markdown-body pre {
           margin: 0.5em 0;
           padding: 12px 14px;
-          border-radius: 8px;
-          background: rgba(0, 0, 0, 0.3);
-          border: 1px solid var(--border);
+          border-radius: var(--radius-md, 8px);
+          background: #f9fafb;
+          border: 1px solid var(--border, #e5e5e5);
           overflow-x: auto;
         }
         .markdown-body pre code {
@@ -517,14 +529,14 @@ export default function EmployeeChatPage() {
         .markdown-body blockquote {
           margin: 0.5em 0;
           padding: 0.3em 0 0.3em 1em;
-          border-left: 3px solid var(--border);
-          color: var(--text-secondary);
+          border-left: 3px solid var(--border, #e5e5e5);
+          color: var(--text-secondary, #525252);
         }
         .markdown-body blockquote > p { margin: 0.2em 0; }
         .markdown-body hr {
           margin: 0.8em 0;
           border: none;
-          border-top: 1px solid var(--border);
+          border-top: 1px solid var(--border, #e5e5e5);
         }
         .markdown-body table {
           margin: 0.5em 0;
@@ -534,17 +546,18 @@ export default function EmployeeChatPage() {
         }
         .markdown-body th, .markdown-body td {
           padding: 6px 10px;
-          border: 1px solid var(--border);
+          border: 1px solid var(--border, #e5e5e5);
           text-align: left;
         }
         .markdown-body th {
           font-weight: 600;
-          background: rgba(255, 255, 255, 0.04);
+          background: var(--bg-secondary, #f5f5f5);
+          color: var(--text, #0a0a0a);
         }
         .markdown-body tr:nth-child(even) {
-          background: rgba(255, 255, 255, 0.02);
+          background: rgba(0, 0, 0, 0.02);
         }
-        .markdown-body img { max-width: 100%; border-radius: 8px; }
+        .markdown-body img { max-width: 100%; border-radius: var(--radius-md, 8px); }
         .markdown-body input[type="checkbox"] {
           margin-right: 6px;
           vertical-align: middle;
@@ -557,10 +570,10 @@ export default function EmployeeChatPage() {
           gap: 6px;
           padding: 4px 10px;
           margin: 2px 0;
-          border-radius: 6px;
-          background: rgba(93, 121, 223, 0.08);
-          border: 1px solid rgba(93, 121, 223, 0.2);
-          color: var(--blue);
+          border-radius: var(--radius-sm, 6px);
+          background: rgba(37, 99, 235, 0.04);
+          border: 1px solid rgba(37, 99, 235, 0.15);
+          color: var(--blue, #2563eb);
           font-size: 12px;
           font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
           cursor: pointer;
@@ -569,8 +582,8 @@ export default function EmployeeChatPage() {
           vertical-align: middle;
         }
         .file-chip:hover {
-          background: rgba(93, 121, 223, 0.15);
-          border-color: rgba(93, 121, 223, 0.35);
+          background: rgba(37, 99, 235, 0.1);
+          border-color: rgba(37, 99, 235, 0.3);
         }
         .file-chip:disabled {
           opacity: 0.6;
@@ -756,10 +769,10 @@ function ImageEmbed({ src, alt }: { src: string; alt: string }) {
             alignItems: "center",
             gap: 6,
             padding: "8px 12px",
-            borderRadius: 8,
-            background: "rgba(255,255,255,0.04)",
-            border: "1px solid var(--border)",
-            color: "var(--blue)",
+            borderRadius: "var(--radius-md, 8px)",
+            background: "var(--bg-secondary, #f5f5f5)",
+            border: "1px solid var(--border, #e5e5e5)",
+            color: "var(--blue, #2563eb)",
             fontSize: 13,
             textDecoration: "none",
           }}
@@ -781,8 +794,8 @@ function ImageEmbed({ src, alt }: { src: string; alt: string }) {
           style={{
             maxWidth: "100%",
             maxHeight: 400,
-            borderRadius: 8,
-            border: "1px solid var(--border)",
+            borderRadius: "var(--radius-md, 8px)",
+            border: "1px solid var(--border, #e5e5e5)",
             cursor: "pointer",
           }}
           loading="lazy"

@@ -4,14 +4,40 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { LayoutDashboard, Users, UserPlus, ListTodo, Settings, LogOut, ChevronRight } from "lucide-react";
+import {
+  LayoutDashboard,
+  Users,
+  UserPlus,
+  ListTodo,
+  Settings,
+  LogOut,
+  ChevronDown,
+  MessageCircle,
+  Server,
+  Link2,
+} from "lucide-react";
 
-const NAV_ITEMS = [
-  { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
-  { href: "/dashboard/employees", label: "Employees", icon: Users },
-  { href: "/dashboard/tasks", label: "Tasks", icon: ListTodo },
-  { href: "/dashboard/hire", label: "Hire New", icon: UserPlus },
-  { href: "/dashboard/settings", label: "Settings", icon: Settings },
+const NAV_SECTIONS = [
+  {
+    label: "Configure",
+    items: [
+      { href: "/dashboard/employees", label: "Employees", icon: Users },
+      { href: "/dashboard/hire", label: "Hire Employee", icon: UserPlus },
+      { href: "/dashboard/tasks", label: "Tasks", icon: ListTodo },
+    ],
+  },
+  {
+    label: "Monitor",
+    items: [
+      { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
+    ],
+  },
+  {
+    label: "Settings",
+    items: [
+      { href: "/dashboard/settings", label: "Settings", icon: Settings },
+    ],
+  },
 ];
 
 export default function DashboardLayout({
@@ -22,6 +48,7 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const router = useRouter();
   const [company, setCompany] = useState<any>(null);
+  const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
     const token = api.getToken();
@@ -29,21 +56,31 @@ export default function DashboardLayout({
       router.push("/login");
       return;
     }
-    api.me().then((data) => setCompany(data.company)).catch(() => {
-      api.clearToken();
-      router.push("/login");
-    });
+    api
+      .me()
+      .then((data) => {
+        setCompany(data.company);
+        setUser(data.user);
+      })
+      .catch(() => {
+        api.clearToken();
+        router.push("/login");
+      });
   }, [router]);
+
+  const isActive = (href: string) => {
+    if (href === "/dashboard") return pathname === "/dashboard";
+    return pathname.startsWith(href);
+  };
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
       {/* Sidebar */}
       <aside
         style={{
-          width: 240,
-          background: "var(--bg-elevated)",
+          width: 220,
+          background: "var(--bg-sidebar)",
           borderRight: "1px solid var(--border)",
-          padding: "20px 0",
           display: "flex",
           flexDirection: "column",
           position: "fixed",
@@ -53,74 +90,167 @@ export default function DashboardLayout({
           zIndex: 50,
         }}
       >
-        <div style={{ padding: "0 20px", marginBottom: 32 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+        {/* Logo + Company */}
+        <div style={{ padding: "16px 16px 8px" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "6px 8px",
+              borderRadius: "var(--radius-md)",
+              cursor: "default",
+            }}
+          >
             <div
               style={{
-                width: 32,
-                height: 32,
-                borderRadius: 8,
-                background: "linear-gradient(135deg, #5D79DF, #A94BD2)",
+                width: 24,
+                height: 24,
+                borderRadius: 6,
+                background: "var(--text)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                fontSize: 14,
+                fontSize: 11,
                 fontWeight: 700,
+                color: "var(--bg)",
+                flexShrink: 0,
               }}
             >
-              A
+              AI
             </div>
-            <span style={{ fontWeight: 600, fontSize: 15, letterSpacing: "-0.02em" }}>
+            <span
+              style={{
+                fontWeight: 600,
+                fontSize: 13,
+                letterSpacing: "-0.01em",
+                color: "var(--text)",
+              }}
+            >
               AI Employees
             </span>
           </div>
-          {company && (
-            <div
-              style={{
-                fontSize: 12,
-                color: "var(--text-tertiary)",
-                padding: "8px 12px",
-                background: "rgba(255,255,255,0.03)",
-                borderRadius: "var(--radius-sm)",
-                border: "1px solid var(--border)",
-              }}
-            >
-              {company.name}
-            </div>
-          )}
         </div>
 
-        <nav style={{ flex: 1, padding: "0 8px" }}>
-          {NAV_ITEMS.map((item) => {
-            const isActive = pathname === item.href;
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
+        {/* Workspace selector */}
+        {company && (
+          <div style={{ padding: "0 16px", marginBottom: 8 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "6px 8px",
+                borderRadius: "var(--radius-sm)",
+                border: "1px solid var(--border)",
+                background: "var(--bg)",
+                fontSize: 12,
+                color: "var(--text-secondary)",
+                cursor: "default",
+              }}
+            >
+              <span style={{ fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {company.name}
+              </span>
+              <ChevronDown size={12} style={{ color: "var(--text-tertiary)", flexShrink: 0 }} />
+            </div>
+          </div>
+        )}
+
+        {/* Navigation */}
+        <nav style={{ flex: 1, padding: "4px 8px", overflow: "auto" }}>
+          {NAV_SECTIONS.map((section) => (
+            <div key={section.label} style={{ marginBottom: 16 }}>
+              <div
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "10px 12px",
-                  margin: "2px 0",
-                  color: isActive ? "var(--text)" : "var(--text-secondary)",
-                  textDecoration: "none",
-                  fontSize: 14,
-                  fontWeight: isActive ? 500 : 400,
-                  background: isActive ? "rgba(255,255,255,0.06)" : "transparent",
-                  borderRadius: "var(--radius-sm)",
-                  transition: "all 0.15s",
+                  fontSize: 11,
+                  fontWeight: 500,
+                  color: "var(--text-tertiary)",
+                  padding: "0 8px",
+                  marginBottom: 4,
+                  letterSpacing: "0.02em",
                 }}
               >
-                <Icon size={16} strokeWidth={isActive ? 2 : 1.5} />
-                {item.label}
-              </Link>
-            );
-          })}
+                {section.label}
+              </div>
+              {section.items.map((item) => {
+                const active = isActive(item.href);
+                const Icon = item.icon;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "6px 8px",
+                      margin: "1px 0",
+                      color: active ? "var(--text)" : "var(--text-secondary)",
+                      textDecoration: "none",
+                      fontSize: 13,
+                      fontWeight: active ? 500 : 400,
+                      background: active ? "var(--bg)" : "transparent",
+                      borderRadius: "var(--radius-sm)",
+                      transition: "all 0.1s ease",
+                      boxShadow: active ? "var(--shadow-xs)" : "none",
+                    }}
+                  >
+                    <Icon size={15} strokeWidth={active ? 2 : 1.5} />
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </div>
+          ))}
         </nav>
 
-        <div style={{ padding: "0 8px" }}>
+        {/* Bottom */}
+        <div style={{ padding: "8px", borderTop: "1px solid var(--border)" }}>
+          {user && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "6px 8px",
+                marginBottom: 4,
+              }}
+            >
+              <div
+                style={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: "50%",
+                  background: "var(--bg-secondary)",
+                  border: "1px solid var(--border)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 10,
+                  fontWeight: 600,
+                  color: "var(--text-secondary)",
+                  flexShrink: 0,
+                }}
+              >
+                {user.name?.charAt(0)?.toUpperCase() || "U"}
+              </div>
+              <div style={{ overflow: "hidden" }}>
+                <div
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 500,
+                    color: "var(--text)",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {user.name}
+                </div>
+              </div>
+            </div>
+          )}
           <button
             onClick={() => {
               api.clearToken();
@@ -128,21 +258,21 @@ export default function DashboardLayout({
             }}
             style={{
               width: "100%",
-              padding: "10px 12px",
-              fontSize: 13,
+              padding: "6px 8px",
+              fontSize: 12,
               color: "var(--text-tertiary)",
               background: "none",
-              border: "1px solid var(--border)",
+              border: "none",
               borderRadius: "var(--radius-sm)",
               cursor: "pointer",
               display: "flex",
               alignItems: "center",
-              gap: 8,
-              transition: "all 0.15s",
+              gap: 6,
+              transition: "all 0.1s ease",
             }}
           >
-            <LogOut size={14} />
-            Sign Out
+            <LogOut size={13} />
+            Sign out
           </button>
         </div>
       </aside>
@@ -151,12 +281,19 @@ export default function DashboardLayout({
       <main
         style={{
           flex: 1,
-          marginLeft: 240,
-          padding: "32px 40px",
+          marginLeft: 220,
           minHeight: "100vh",
         }}
       >
-        {children}
+        <div
+          style={{
+            maxWidth: 1100,
+            margin: "0 auto",
+            padding: "24px 32px",
+          }}
+        >
+          {children}
+        </div>
       </main>
     </div>
   );
