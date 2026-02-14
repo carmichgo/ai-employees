@@ -365,6 +365,40 @@ textarea.input {
   opacity: 0;
 }
 
+/* ── Wizard Step Transitions ───────────── */
+
+@keyframes step-forward {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes step-back {
+  from {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.wizard-step-forward {
+  animation: step-forward 0.3s ease forwards;
+  opacity: 0;
+}
+
+.wizard-step-back {
+  animation: step-back 0.3s ease forwards;
+  opacity: 0;
+}
+
 /* ── Divider ────────────────────────────── */
 
 .divider {
