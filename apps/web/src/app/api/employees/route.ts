@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "node:crypto";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { employees, companies } from "@/lib/schema";
+import { employees, companies, channelConnections } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
 import { getCompanyBackend, createBackendClient } from "@/lib/backend";
 import { createCompanyDroplet, isDropletProvisioningEnabled } from "@/lib/digitalocean";
@@ -82,6 +82,12 @@ export async function POST(request: NextRequest) {
         toolsAllow: input.toolsAllow || undefined,
         skills: input.skills || undefined,
       });
+
+      // Create channel connection rows for tracking
+      if (result.employee?.id && input.channels?.length) {
+        await createChannelConnectionRows(result.employee.id, input.channels);
+      }
+
       return NextResponse.json(result, { status: 201 });
     } catch (err: any) {
       return NextResponse.json({ error: err.message }, { status: 500 });
@@ -165,6 +171,11 @@ export async function POST(request: NextRequest) {
         })
         .returning();
 
+      // Create channel connection rows for tracking
+      if (input.channels?.length) {
+        await createChannelConnectionRows(employee.id, input.channels);
+      }
+
       return NextResponse.json(
         {
           employee: sanitize(employee),
@@ -236,12 +247,35 @@ export async function POST(request: NextRequest) {
     })
     .returning();
 
+  // Create channel connection rows for tracking
+  if (input.channels?.length) {
+    await createChannelConnectionRows(employee.id, input.channels);
+  }
+
   return NextResponse.json(
     {
       employee: sanitize(employee),
       message: `${input.name} has been hired! (demo mode — no OpenClaw container)`,
     },
     { status: 201 },
+  );
+}
+
+/** Create channelConnections rows for selected channels */
+async function createChannelConnectionRows(employeeId: string, channels: string[]) {
+  if (!channels.length) return;
+  const CHANNEL_NAMES: Record<string, string> = {
+    slack: "Slack", email: "Email", telegram: "Telegram",
+    whatsapp: "WhatsApp", discord: "Discord", signal: "Signal",
+    teams: "Microsoft Teams", "google-chat": "Google Chat", matrix: "Matrix",
+  };
+  await db.insert(channelConnections).values(
+    channels.map((ch) => ({
+      employeeId,
+      channelType: ch,
+      name: CHANNEL_NAMES[ch] || ch,
+      status: ch === "slack" ? "connected" : "pending", // Slack is auto-connected via proxy
+    })),
   );
 }
 

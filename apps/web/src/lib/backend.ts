@@ -120,5 +120,16 @@ export function createBackendClient(config: CompanyBackendConfig) {
       const res = await backendFetch(config, `/internal/employees/${id}/status`);
       return res.json();
     },
+
+    async connectChannel(employeeId: string, data: {
+      agentId: string;
+      allChannels: Array<{ type: string; credentials: Record<string, unknown>; config: Record<string, unknown> }>;
+    }) {
+      const res = await backendFetch(config, `/internal/employees/${employeeId}/channels/connect`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
   };
 }

@@ -7,6 +7,7 @@ import {
   ArrowLeft, Pause, Play, Trash2, Loader2, Server, Mail, Cpu, Clock, Calendar,
   MessageCircle, Save, X, Eye, EyeOff, ChevronDown, Upload, FileText, Zap,
   Webhook, Timer, Plus, ToggleLeft, ToggleRight, Copy, Check, KeyRound, Globe, Edit3,
+  MessageSquare, Send, Smartphone, Gamepad2, Shield, MonitorSmartphone, Hash, Radio,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -17,6 +18,92 @@ const EMAIL_PROVIDERS: Record<string, { label: string; smtpHost: string; smtpPor
   zoho: { label: "Zoho Mail", smtpHost: "smtp.zoho.com", smtpPort: 587, imapHost: "imap.zoho.com", imapPort: 993, webmail: "https://mail.zoho.com" },
   icloud: { label: "iCloud Mail", smtpHost: "smtp.mail.me.com", smtpPort: 587, imapHost: "imap.mail.me.com", imapPort: 993, webmail: "https://www.icloud.com/mail", note: "Generate an App-Specific Password in Apple ID settings" },
   custom: { label: "Other / Custom", smtpHost: "", smtpPort: 587, imapHost: "", imapPort: 993, webmail: "" },
+};
+
+// ── Channel metadata ──────────────────────────────────
+
+const CHANNEL_META: Record<string, {
+  label: string;
+  icon: any;
+  fields: Array<{ key: string; label: string; placeholder: string; type?: string }>;
+  helpText: string;
+  helpUrl?: string;
+}> = {
+  telegram: {
+    label: "Telegram",
+    icon: Send,
+    fields: [{ key: "token", label: "Bot Token", placeholder: "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11" }],
+    helpText: "Create a bot via @BotFather on Telegram, then paste the token here.",
+    helpUrl: "https://core.telegram.org/bots#botfather",
+  },
+  discord: {
+    label: "Discord",
+    icon: Gamepad2,
+    fields: [{ key: "token", label: "Bot Token", placeholder: "MTIzNDU2Nzg5MDEyMzQ1Njc4OQ..." }],
+    helpText: "Create a bot at Discord Developer Portal, copy the token from the Bot section.",
+    helpUrl: "https://discord.com/developers/applications",
+  },
+  whatsapp: {
+    label: "WhatsApp",
+    icon: Smartphone,
+    fields: [
+      { key: "phoneNumberId", label: "Phone Number ID", placeholder: "1234567890" },
+      { key: "accessToken", label: "Access Token", placeholder: "EAABsbCS..." },
+    ],
+    helpText: "Get credentials from Meta Business Suite > WhatsApp > API Setup. Or scan a QR code if using WhatsApp Web mode.",
+    helpUrl: "https://business.facebook.com/",
+  },
+  signal: {
+    label: "Signal",
+    icon: Shield,
+    fields: [
+      { key: "number", label: "Phone Number", placeholder: "+1234567890" },
+      { key: "apiUrl", label: "Signal API URL", placeholder: "http://localhost:8080" },
+    ],
+    helpText: "Requires a signal-cli REST API server running with a registered phone number.",
+  },
+  teams: {
+    label: "Microsoft Teams",
+    icon: MonitorSmartphone,
+    fields: [
+      { key: "appId", label: "Bot App ID", placeholder: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" },
+      { key: "appPassword", label: "Bot Password", placeholder: "Enter bot password", type: "password" },
+      { key: "tenantId", label: "Tenant ID", placeholder: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" },
+    ],
+    helpText: "Register a bot in Azure Bot Service, then paste the credentials here.",
+    helpUrl: "https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
+  },
+  "google-chat": {
+    label: "Google Chat",
+    icon: MessageSquare,
+    fields: [
+      { key: "serviceAccountJson", label: "Service Account JSON", placeholder: '{"type": "service_account", ...}' },
+      { key: "spaceId", label: "Space ID", placeholder: "spaces/AAAA..." },
+    ],
+    helpText: "Create a Google Chat bot in Google Cloud Console with a service account.",
+    helpUrl: "https://console.cloud.google.com/",
+  },
+  matrix: {
+    label: "Matrix",
+    icon: Hash,
+    fields: [
+      { key: "homeserverUrl", label: "Homeserver URL", placeholder: "https://matrix.org" },
+      { key: "accessToken", label: "Access Token", placeholder: "syt_..." },
+    ],
+    helpText: "Get an access token from your Matrix homeserver (Element > Settings > Help & About > Access Token).",
+  },
+  slack: {
+    label: "Slack",
+    icon: MessageSquare,
+    fields: [],
+    helpText: "Slack is connected via your company's Slack integration. No per-employee setup needed.",
+  },
+  email: {
+    label: "Email",
+    icon: Mail,
+    fields: [],
+    helpText: "Email is configured in the Email Account section below.",
+  },
 };
 
 const TRIGGER_PRESETS = [
@@ -68,6 +155,13 @@ export default function EmployeeDetailPage() {
   const [triggerSaving, setTriggerSaving] = useState(false);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
 
+  // Channels state
+  const [channelsList, setChannelsList] = useState<any[]>([]);
+  const [setupChannel, setSetupChannel] = useState<string | null>(null);
+  const [channelForm, setChannelForm] = useState<Record<string, string>>({});
+  const [channelSaving, setChannelSaving] = useState(false);
+  const [channelNotice, setChannelNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
   // Credentials state
   const [credentialsList, setCredentialsList] = useState<any[]>([]);
   const [showNewCred, setShowNewCred] = useState(false);
@@ -102,6 +196,7 @@ export default function EmployeeDetailPage() {
     api.listFiles(employeeId).then((res) => setFiles(res.files || [])).catch(() => {});
     api.listTriggers(employeeId).then((res) => setTriggersList(res.triggers || [])).catch(() => {});
     api.listCredentials(employeeId).then((res) => setCredentialsList(res.credentials || [])).catch(() => {});
+    api.listChannels(employeeId).then((res) => setChannelsList(res.channels || [])).catch(() => {});
   }, [employeeId]);
 
   // ── Employee actions ──
@@ -239,6 +334,41 @@ export default function EmployeeDetailPage() {
     if (preset.config.cron) setNewTriggerCron(preset.config.cron);
     setShowNewTrigger(true);
   };
+  // ── Channel handlers ──
+  const handleConnectChannel = async (channelType: string) => {
+    setChannelSaving(true);
+    setChannelNotice(null);
+    try {
+      await api.connectChannel(employeeId, channelType, channelForm);
+      setChannelsList((prev) =>
+        prev.map((c) =>
+          c.channelType === channelType ? { ...c, status: "connected", hasCredentials: true } : c,
+        ),
+      );
+      setSetupChannel(null);
+      setChannelForm({});
+      setChannelNotice({ type: "success", message: `${CHANNEL_META[channelType]?.label || channelType} connected` });
+    } catch (err: any) {
+      setChannelNotice({ type: "error", message: err.message });
+    } finally {
+      setChannelSaving(false);
+    }
+  };
+  const handleDisconnectChannel = async (channelType: string) => {
+    if (!confirm(`Disconnect ${CHANNEL_META[channelType]?.label || channelType}?`)) return;
+    try {
+      await api.disconnectChannel(employeeId, channelType);
+      setChannelsList((prev) =>
+        prev.map((c) =>
+          c.channelType === channelType ? { ...c, status: "disconnected", hasCredentials: false } : c,
+        ),
+      );
+      setChannelNotice({ type: "success", message: `${CHANNEL_META[channelType]?.label || channelType} disconnected` });
+    } catch (err: any) {
+      setChannelNotice({ type: "error", message: err.message });
+    }
+  };
+
   // ── Credential handlers ──
   const resetCredForm = () => {
     setCredLabel(""); setCredUsername(""); setCredPassword("");
@@ -411,6 +541,157 @@ export default function EmployeeDetailPage() {
           })}
         </div>
       </div>
+
+      {/* ════════════════════════════════════════════════════════════ */}
+      {/* CHANNELS SECTION */}
+      {/* ════════════════════════════════════════════════════════════ */}
+      {channelsList.length > 0 && (
+        <div className="card" style={{ padding: 20, marginBottom: 16, background: "#ffffff", border: "1px solid var(--border)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <Radio size={14} style={{ color: "var(--text-tertiary)" }} />
+              <p className="label" style={{ margin: 0 }}>Channels</p>
+              <span style={{ fontSize: 11, color: "var(--text-tertiary)", background: "var(--bg-secondary)", padding: "2px 6px", borderRadius: "var(--radius-sm)" }}>
+                {channelsList.length}
+              </span>
+            </div>
+          </div>
+
+          {channelNotice && (
+            <div style={{
+              padding: "8px 12px", borderRadius: "var(--radius-sm)", marginBottom: 12, fontSize: 12,
+              background: channelNotice.type === "success" ? "rgba(22, 163, 74, 0.06)" : "rgba(220, 38, 38, 0.06)",
+              color: channelNotice.type === "success" ? "var(--green)" : "var(--red)",
+            }}>
+              {channelNotice.message}
+            </div>
+          )}
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {channelsList.map((ch) => {
+              const meta = CHANNEL_META[ch.channelType];
+              const Icon = meta?.icon || MessageSquare;
+              const isAutoHandled = ch.channelType === "slack" || ch.channelType === "email";
+              const needsSetup = !isAutoHandled && meta?.fields?.length > 0;
+              const isSettingUp = setupChannel === ch.channelType;
+
+              return (
+                <div key={ch.id} style={{
+                  padding: "12px 14px", background: "#ffffff", borderRadius: "var(--radius-md)",
+                  border: "1px solid var(--border)",
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <Icon size={16} style={{ color: ch.status === "connected" ? "var(--text)" : "var(--text-tertiary)" }} />
+                      <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text)" }}>
+                        {meta?.label || ch.channelType}
+                      </span>
+                      <span style={{
+                        fontSize: 10, padding: "2px 8px", borderRadius: 10,
+                        fontWeight: 500,
+                        ...(ch.status === "connected"
+                          ? { background: "rgba(22, 163, 74, 0.08)", color: "var(--green)" }
+                          : ch.status === "error"
+                            ? { background: "rgba(220, 38, 38, 0.08)", color: "var(--red)" }
+                            : { background: "var(--bg-secondary)", color: "var(--text-tertiary)", border: "1px solid var(--border)" }),
+                      }}>
+                        {ch.status === "connected" ? "Connected" : ch.status === "error" ? "Error" : "Needs setup"}
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      {needsSetup && ch.status !== "connected" && !isSettingUp && (
+                        <button
+                          className="btn-primary btn-sm"
+                          onClick={() => { setSetupChannel(ch.channelType); setChannelForm({}); setChannelNotice(null); }}
+                          style={{ fontSize: 11, padding: "4px 12px" }}
+                        >
+                          Set Up
+                        </button>
+                      )}
+                      {needsSetup && ch.status === "connected" && !isSettingUp && (
+                        <>
+                          <button
+                            className="btn-secondary btn-sm"
+                            onClick={() => { setSetupChannel(ch.channelType); setChannelForm({}); setChannelNotice(null); }}
+                            style={{ fontSize: 11, padding: "4px 10px" }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleDisconnectChannel(ch.channelType)}
+                            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", padding: 2 }}
+                            title="Disconnect"
+                          >
+                            <X size={14} />
+                          </button>
+                        </>
+                      )}
+                      {isAutoHandled && (
+                        <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
+                          {ch.channelType === "slack" ? "Via Slack proxy" : "See Email section below"}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Setup form */}
+                  {isSettingUp && meta && meta.fields.length > 0 && (
+                    <div style={{
+                      marginTop: 12, padding: 14, background: "var(--bg-secondary)",
+                      borderRadius: "var(--radius-md)", border: "1px solid var(--border)",
+                      display: "flex", flexDirection: "column", gap: 10,
+                    }}>
+                      <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                        {meta.helpText}
+                        {meta.helpUrl && (
+                          <> <a href={meta.helpUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--blue)" }}>Learn more</a></>
+                        )}
+                      </div>
+                      {meta.fields.map((field) => (
+                        <div key={field.key}>
+                          <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>
+                            {field.label}
+                          </label>
+                          <input
+                            type={field.type || "text"}
+                            placeholder={field.placeholder}
+                            value={channelForm[field.key] || ""}
+                            onChange={(e) => setChannelForm((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                            className="input"
+                            style={{ width: "100%", fontSize: 13 }}
+                          />
+                        </div>
+                      ))}
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button
+                          className="btn-primary btn-sm"
+                          onClick={() => handleConnectChannel(ch.channelType)}
+                          disabled={channelSaving || meta.fields.some((f) => !channelForm[f.key])}
+                          style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
+                        >
+                          {channelSaving ? <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} /> : <Save size={12} />}
+                          {channelSaving ? "Connecting..." : "Connect"}
+                        </button>
+                        <button
+                          className="btn-secondary btn-sm"
+                          onClick={() => { setSetupChannel(null); setChannelForm({}); }}
+                          style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
+                        >
+                          <X size={12} /> Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 10 }}>
+            Connected channels let {employee.name} send and receive messages on these platforms. The employee&apos;s container restarts when channels are updated.
+          </div>
+        </div>
+      )}
 
       {/* ════════════════════════════════════════════════════════════ */}
       {/* FILES SECTION */}

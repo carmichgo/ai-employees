@@ -4,10 +4,12 @@
  */
 import type { FastifyInstance } from "fastify";
 import crypto from "node:crypto";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { eq, and } from "drizzle-orm";
 import { db, employees, companies } from "@ai-employees/db";
 import { getJobTemplate, PLAN_LIMITS, type PlanTier } from "@ai-employees/shared";
+import { regenerateChannelConfig, type ChannelInput } from "@ai-employees/openclaw-config";
 import { getProvisionQueue } from "../queues.js";
 
 function slugify(name: string) {
@@ -202,6 +204,60 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     if (!employee) return reply.status(404).send({ error: "Employee not found" });
 
     return { employee: sanitize(employee) };
+  });
+
+  // POST /internal/employees/:id/channels/connect — update OpenClaw config with channel credentials
+  fastify.post<{ Params: { id: string } }>("/internal/employees/:id/channels/connect", async (request, reply) => {
+    const { id } = request.params;
+    const body = request.body as {
+      agentId: string;
+      allChannels: ChannelInput[];
+    };
+
+    const employee = await db.query.employees.findFirst({
+      where: eq(employees.id, id),
+    });
+    if (!employee) return reply.status(404).send({ error: "Employee not found" });
+
+    const configDir = `/opt/ai-employees/openclaw-configs/${id}`;
+    const configPath = `${configDir}/openclaw.json`;
+
+    if (!existsSync(configPath)) {
+      return reply.status(400).send({ error: "Employee config not found — container may not be provisioned yet" });
+    }
+
+    try {
+      // Read existing config, merge in new channels
+      const existing = JSON.parse(readFileSync(configPath, "utf-8"));
+      const updated = regenerateChannelConfig(existing, body.agentId, body.allChannels);
+      writeFileSync(configPath, JSON.stringify(updated, null, 2));
+
+      // Restart container to pick up new config
+      if (employee.containerName) {
+        execSync(`docker restart ${employee.containerName}`, { timeout: 30000 });
+
+        // Wait briefly for container to come up, then get new IP
+        await new Promise((r) => setTimeout(r, 3000));
+        try {
+          const newIp = execSync(
+            `docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ${employee.containerName}`,
+            { timeout: 5000 },
+          ).toString().trim();
+
+          if (newIp) {
+            await db.update(employees).set({ containerHost: newIp, updatedAt: new Date() }).where(eq(employees.id, id));
+          }
+        } catch {
+          // Non-fatal — IP lookup can fail briefly during restart
+        }
+      }
+
+      return { success: true };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      fastify.log.error(`Channel connect failed for ${id}: ${message}`);
+      return reply.status(500).send({ error: `Failed to update channel config: ${message}` });
+    }
   });
 
   // POST /internal/employees/:id/chat — proxy chat to container or call Anthropic directly

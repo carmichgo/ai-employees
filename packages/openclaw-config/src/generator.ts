@@ -638,6 +638,33 @@ const BUNDLED_PLUGINS = [
   "bluebubbles",   // BlueBubbles (iMessage bridge)
 ];
 
+/**
+ * Update an existing OpenClaw config with new channel connections.
+ * This avoids needing the full employee data — just the existing config
+ * and the new list of channels with their credentials.
+ */
+export function regenerateChannelConfig(
+  existingConfig: OpenClawConfig,
+  agentId: string,
+  channels: ChannelInput[],
+): OpenClawConfig {
+  const validChannels = filterValidChannels(channels);
+  const channelMap = buildChannels(validChannels);
+  const bindings = buildBindings(agentId, validChannels);
+
+  // Clone and update
+  const config = { ...existingConfig };
+  if (Object.keys(channelMap).length > 0) {
+    config.channels = channelMap;
+    config.bindings = bindings;
+  } else {
+    delete config.channels;
+    delete config.bindings;
+  }
+
+  return config;
+}
+
 /** Build plugins.entries object enabling all bundled plugins */
 function buildPluginEntries(): Record<string, { enabled: boolean }> {
   const entries: Record<string, { enabled: boolean }> = {};

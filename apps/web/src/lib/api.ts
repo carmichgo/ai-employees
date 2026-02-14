@@ -203,6 +203,35 @@ class ApiClient {
     );
   }
 
+  // Employee channels
+  async listChannels(employeeId: string) {
+    return this.request<{
+      channels: Array<{
+        id: string;
+        channelType: string;
+        name: string;
+        status: string;
+        hasCredentials: boolean;
+        createdAt: string;
+        updatedAt: string;
+      }>;
+    }>(`/api/employees/${employeeId}/channels`);
+  }
+
+  async connectChannel(employeeId: string, channelType: string, credentials: Record<string, unknown>) {
+    return this.request<{ message: string; status: string }>(
+      `/api/employees/${employeeId}/channels`,
+      { method: "POST", body: JSON.stringify({ channelType, credentials }) },
+    );
+  }
+
+  async disconnectChannel(employeeId: string, channelType: string) {
+    return this.request<{ message: string }>(
+      `/api/employees/${employeeId}/channels?type=${encodeURIComponent(channelType)}`,
+      { method: "DELETE" },
+    );
+  }
+
   async getChatHistory(id: string) {
     return this.request<{
       messages: Array<{
