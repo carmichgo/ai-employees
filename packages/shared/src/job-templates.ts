@@ -16,12 +16,14 @@ export interface PersonalityConfig {
   autonomy: "full" | "high" | "moderate" | "low";
   proactivity: "very-proactive" | "proactive" | "balanced" | "reactive";
   communication: "concise" | "detailed" | "casual" | "formal";
+  bossTechnicalLevel?: "very-technical" | "technical" | "somewhat-technical" | "non-technical";
 }
 
 export const DEFAULT_PERSONALITY: PersonalityConfig = {
   autonomy: "high",
   proactivity: "proactive",
   communication: "concise",
+  bossTechnicalLevel: "somewhat-technical",
 };
 
 export const AUTONOMY_OPTIONS = [
@@ -43,6 +45,13 @@ export const COMMUNICATION_OPTIONS = [
   { value: "detailed", label: "Detailed", desc: "Thorough explanations with context" },
   { value: "casual", label: "Casual", desc: "Friendly, informal tone" },
   { value: "formal", label: "Formal", desc: "Professional, structured communication" },
+] as const;
+
+export const BOSS_TECHNICAL_LEVEL_OPTIONS = [
+  { value: "very-technical", label: "Very technical", desc: "I'm an engineer — give me APIs, code, and CLI tools" },
+  { value: "technical", label: "Technical", desc: "I can handle APIs and configs, but prefer simple setups" },
+  { value: "somewhat-technical", label: "Somewhat technical", desc: "I know the basics but prefer no-code solutions" },
+  { value: "non-technical", label: "Non-technical", desc: "Keep everything simple — no code, no APIs" },
 ] as const;
 
 export const JOB_TEMPLATES: JobTemplate[] = [

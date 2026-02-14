@@ -4,6 +4,7 @@ export const personalityConfigSchema = z.object({
   autonomy: z.enum(["full", "high", "moderate", "low"]).default("high"),
   proactivity: z.enum(["very-proactive", "proactive", "balanced", "reactive"]).default("proactive"),
   communication: z.enum(["concise", "detailed", "casual", "formal"]).default("concise"),
+  bossTechnicalLevel: z.enum(["very-technical", "technical", "somewhat-technical", "non-technical"]).optional(),
 });
 
 export const createEmployeeSchema = z.object({

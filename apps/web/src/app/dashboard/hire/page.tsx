@@ -10,6 +10,7 @@ import {
   AUTONOMY_OPTIONS,
   PROACTIVITY_OPTIONS,
   COMMUNICATION_OPTIONS,
+  BOSS_TECHNICAL_LEVEL_OPTIONS,
   DEFAULT_PERSONALITY,
   CAPABILITY_OPTIONS,
   EXPERTISE_OPTIONS,
@@ -42,12 +43,13 @@ import {
   Grid3X3,
   Hash,
   MonitorSmartphone,
+  Wrench,
 } from "lucide-react";
 
 // ── Steps ──────────────────────────────────────
 
-type Step = "role" | "identity" | "personality" | "channels" | "tools" | "skills" | "review";
-const STEPS: Step[] = ["role", "identity", "personality", "channels", "tools", "skills", "review"];
+type Step = "role" | "identity" | "personality" | "boss-tech" | "channels" | "tools" | "skills" | "review";
+const STEPS: Step[] = ["role", "identity", "personality", "boss-tech", "channels", "tools", "skills", "review"];
 const SKIPPABLE_STEPS: Step[] = ["channels", "tools", "skills"];
 
 // ── Channel Options ────────────────────────────
@@ -866,7 +868,133 @@ export default function HireEmployeePage() {
         </div>
       )}
 
-      {/* ═══ Step 4: Channels ═══ */}
+      {/* ═══ Step 4: Boss Technical Level ═══ */}
+      {step === "boss-tech" && (
+        <div key={animKey} className={animClass}>
+          <h1 style={styles.heading}>How technical are you?</h1>
+          <p style={styles.subtitle}>
+            This helps {form.name || "your employee"} understand how to work with you —
+            whether to use APIs and code, or stick to simple browser-based automation
+          </p>
+
+          <div style={{ marginTop: 40 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10, maxWidth: 520 }}>
+              {BOSS_TECHNICAL_LEVEL_OPTIONS.map((opt) => {
+                const selected = form.personality.bossTechnicalLevel === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    onClick={() =>
+                      setForm({
+                        ...form,
+                        personality: { ...form.personality, bossTechnicalLevel: opt.value as any },
+                      })
+                    }
+                    style={{
+                      padding: "20px 22px",
+                      background: selected ? "#ffffff" : "var(--bg-secondary)",
+                      border: selected ? "1.5px solid var(--text)" : "1px solid var(--border)",
+                      borderRadius: "var(--radius-xl)",
+                      cursor: "pointer",
+                      textAlign: "left",
+                      transition: "all 0.15s ease",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 16,
+                      position: "relative",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!selected) {
+                        (e.currentTarget as HTMLElement).style.borderColor = "var(--border-hover)";
+                        (e.currentTarget as HTMLElement).style.boxShadow = "var(--shadow-sm)";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!selected) {
+                        (e.currentTarget as HTMLElement).style.borderColor = "var(--border)";
+                        (e.currentTarget as HTMLElement).style.boxShadow = "none";
+                      }
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: 10,
+                        background: selected ? "var(--text)" : "var(--bg-secondary)",
+                        border: selected ? "none" : "1px solid var(--border)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexShrink: 0,
+                        transition: "all 0.15s ease",
+                      }}
+                    >
+                      <Wrench size={18} style={{ color: selected ? "#ffffff" : "var(--text-secondary)" }} />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div
+                        style={{
+                          fontSize: 15,
+                          fontWeight: 600,
+                          color: "var(--text)",
+                          marginBottom: 2,
+                        }}
+                      >
+                        {opt.label}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 13,
+                          color: "var(--text-secondary)",
+                          lineHeight: 1.4,
+                        }}
+                      >
+                        {opt.desc}
+                      </div>
+                    </div>
+                    {selected && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: 12,
+                          right: 12,
+                          width: 20,
+                          height: 20,
+                          borderRadius: "50%",
+                          background: "var(--text)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <Check size={12} style={{ color: "#ffffff" }} />
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            <p
+              style={{
+                fontSize: 12,
+                color: "var(--text-tertiary)",
+                marginTop: 16,
+                lineHeight: 1.5,
+                maxWidth: 520,
+              }}
+            >
+              Non-technical? {form.name || "Your employee"} will prefer browser automation (clicking through websites)
+              over APIs and code. Technical? They&apos;ll use the fastest approach — APIs, scripts, and integrations.
+            </p>
+          </div>
+
+          {renderBottomNav({})}
+        </div>
+      )}
+
+      {/* ═══ Step 5: Channels ═══ */}
       {step === "channels" && (
         <div key={animKey} className={animClass}>
           <h1 style={styles.heading}>Where should they communicate?</h1>
@@ -902,7 +1030,7 @@ export default function HireEmployeePage() {
         </div>
       )}
 
-      {/* ═══ Step 5: Tools / Capabilities ═══ */}
+      {/* ═══ Step 6: Tools / Capabilities ═══ */}
       {step === "tools" && (
         <div key={animKey} className={animClass}>
           <h1 style={styles.heading}>What can they do?</h1>
@@ -939,7 +1067,7 @@ export default function HireEmployeePage() {
         </div>
       )}
 
-      {/* ═══ Step 6: Skills / Expertise ═══ */}
+      {/* ═══ Step 7: Skills / Expertise ═══ */}
       {step === "skills" && (
         <div key={animKey} className={animClass}>
           <h1 style={styles.heading}>What should they be great at?</h1>
@@ -1041,7 +1169,7 @@ export default function HireEmployeePage() {
         </div>
       )}
 
-      {/* ═══ Step 7: Review & Hire ═══ */}
+      {/* ═══ Step 8: Review & Hire ═══ */}
       {step === "review" && (
         <div key={animKey} className={animClass}>
           <h1 style={styles.heading}>Ready to hire {form.name}?</h1>
@@ -1120,7 +1248,10 @@ export default function HireEmployeePage() {
                   AUTONOMY_OPTIONS.find((o) => o.value === form.personality.autonomy)?.label,
                   PROACTIVITY_OPTIONS.find((o) => o.value === form.personality.proactivity)?.label,
                   COMMUNICATION_OPTIONS.find((o) => o.value === form.personality.communication)?.label,
-                ].map((label) => (
+                  BOSS_TECHNICAL_LEVEL_OPTIONS.find((o) => o.value === form.personality.bossTechnicalLevel)?.label
+                    ? `Boss: ${BOSS_TECHNICAL_LEVEL_OPTIONS.find((o) => o.value === form.personality.bossTechnicalLevel)?.label}`
+                    : null,
+                ].filter(Boolean).map((label) => (
                   <span key={label} style={pillStyle}>{label}</span>
                 ))}
               </div>
