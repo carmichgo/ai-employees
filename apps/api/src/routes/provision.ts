@@ -44,6 +44,8 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       channels?: string[];
       channelCredentials?: Record<string, Record<string, unknown>>;
       modelConfig?: { primary: string };
+      toolsAllow?: string[];
+      skills?: string[];
     };
 
     // Get company
@@ -102,6 +104,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
         goals,
         personalityConfig,
         modelConfig: body.modelConfig || { primary: "anthropic/claude-opus-4-6" },
+        toolsConfig: body.toolsAllow ? { allow: body.toolsAllow } : {},
         gatewayToken,
         status: "provisioning",
         containerName: `ai-emp-${company.slug}-${slugify(body.name)}-${crypto.randomBytes(3).toString("hex")}`,
@@ -115,6 +118,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       companyId: body.companyId,
       channels: body.channels || [],
       channelCredentials: body.channelCredentials || {},
+      skills: body.skills || [],
     });
 
     return reply.status(201).send({

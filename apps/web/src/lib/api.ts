@@ -95,6 +95,8 @@ class ApiClient {
     persona?: string;
     goals?: string;
     channels?: string[];
+    toolsAllow?: string[];
+    skills?: string[];
     personalityConfig?: {
       autonomy?: string;
       proactivity?: string;

@@ -34,6 +34,7 @@ export interface ProvisionJobData {
   companyId: string;
   channels: string[];
   channelCredentials?: Record<string, Record<string, unknown>>;
+  skills?: string[];
 }
 
 export async function provisionEmployee(data: ProvisionJobData): Promise<void> {

@@ -20,7 +20,13 @@ export const createEmployeeSchema = z.object({
     })
     .optional(),
   channels: z
-    .array(z.enum(["slack", "discord", "telegram", "whatsapp", "email", "webchat", "browser"]))
+    .array(z.enum(["slack", "discord", "telegram", "whatsapp", "email", "webchat", "signal", "teams", "google-chat", "matrix"]))
+    .optional(),
+  toolsAllow: z
+    .array(z.string())
+    .optional(),
+  skills: z
+    .array(z.string().max(100))
     .optional(),
 });
 

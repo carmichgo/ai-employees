@@ -85,6 +85,8 @@ export function createBackendClient(config: CompanyBackendConfig) {
       channels?: string[];
       channelCredentials?: Record<string, Record<string, unknown>>;
       modelConfig?: { primary: string };
+      toolsAllow?: string[];
+      skills?: string[];
     }) {
       const res = await backendFetch(config, "/internal/employees/provision", {
         method: "POST",

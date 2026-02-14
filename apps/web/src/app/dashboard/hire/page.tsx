@@ -11,6 +11,8 @@ import {
   PROACTIVITY_OPTIONS,
   COMMUNICATION_OPTIONS,
   DEFAULT_PERSONALITY,
+  CAPABILITY_OPTIONS,
+  EXPERTISE_OPTIONS,
   type PersonalityConfig,
 } from "@ai-employees/shared";
 import {
@@ -32,61 +34,125 @@ import {
   Calendar,
   FileText,
   MessageSquare,
-  Chrome,
   Send,
   Smartphone,
   Gamepad2,
   ChevronDown,
+  Shield,
+  Grid3X3,
+  Hash,
+  MonitorSmartphone,
 } from "lucide-react";
 
 // ── Steps ──────────────────────────────────────
 
-type Step = "role" | "identity" | "personality" | "channels" | "skills" | "review";
-const STEPS: Step[] = ["role", "identity", "personality", "channels", "skills", "review"];
-const SKIPPABLE_STEPS: Step[] = ["channels", "skills"];
+type Step = "role" | "identity" | "personality" | "channels" | "tools" | "skills" | "review";
+const STEPS: Step[] = ["role", "identity", "personality", "channels", "tools", "skills", "review"];
+const SKIPPABLE_STEPS: Step[] = ["channels", "tools", "skills"];
 
 // ── Channel Options ────────────────────────────
 
 const CHANNEL_OPTIONS = [
   { id: "slack", label: "Slack", desc: "Team messaging & collaboration", Icon: MessageSquare },
   { id: "email", label: "Email", desc: "Dedicated email inbox", Icon: Mail },
-  { id: "browser", label: "Browser", desc: "Web browsing & research", Icon: Chrome },
   { id: "telegram", label: "Telegram", desc: "Telegram messaging", Icon: Send },
   { id: "whatsapp", label: "WhatsApp", desc: "WhatsApp Business", Icon: Smartphone },
   { id: "discord", label: "Discord", desc: "Discord server", Icon: Gamepad2 },
+  { id: "signal", label: "Signal", desc: "Private encrypted messaging", Icon: Shield },
+  { id: "teams", label: "Microsoft Teams", desc: "Teams channels & chats", Icon: MonitorSmartphone },
+  { id: "google-chat", label: "Google Chat", desc: "Google Workspace messaging", Icon: MessageSquare },
+  { id: "matrix", label: "Matrix", desc: "Decentralized chat (Element)", Icon: Hash },
 ];
 
-// ── Skill Options ──────────────────────────────
+// ── Capability icons ───────────────────────────
 
-const SKILL_OPTIONS = [
-  { id: "web-research", label: "Web Research", desc: "Search the web, read pages, gather intelligence", Icon: Globe },
-  { id: "email-outreach", label: "Email & Outreach", desc: "Send emails, manage inbox, write sequences", Icon: Mail },
-  { id: "writing", label: "Writing & Content", desc: "Blog posts, copy, social media, documents", Icon: PenLine },
-  { id: "code-engineering", label: "Code & Engineering", desc: "Write code, run scripts, use GitHub", Icon: Code },
-  { id: "data-analytics", label: "Data & Analytics", desc: "Analyze data, build reports, track metrics", Icon: BarChart3 },
-  { id: "social-media", label: "Social Media", desc: "Post, engage, manage social accounts", Icon: Share2 },
-  { id: "project-management", label: "Project Management", desc: "Track tasks, manage projects, coordinate", Icon: KanbanSquare },
-  { id: "customer-support", label: "Customer Support", desc: "Handle tickets, build knowledge bases", Icon: Headphones },
-  { id: "sales-crm", label: "Sales & CRM", desc: "Prospecting, outreach, pipeline management", Icon: Target },
-  { id: "design-media", label: "Design & Media", desc: "Create images, edit media, visual content", Icon: Palette },
-  { id: "scheduling", label: "Scheduling", desc: "Manage calendars, set reminders, automate", Icon: Calendar },
-  { id: "file-documents", label: "File & Documents", desc: "Read, write, organize files and PDFs", Icon: FileText },
-];
+const CAPABILITY_ICONS: Record<string, any> = {
+  "web-browsing": Globe,
+  "internet-search": Globe,
+  email: Mail,
+  files: FileText,
+  "code-execution": Code,
+  scheduling: Calendar,
+  memory: Sparkles,
+  images: Palette,
+  "phone-calls": Headphones,
+  pdf: FileText,
+};
 
-// ── Template → Skill Mapping ───────────────────
+// ── Expertise icons ────────────────────────────
 
-const TEMPLATE_SKILLS: Record<string, string[]> = {
+const EXPERTISE_ICONS: Record<string, any> = {
+  "web-research": Globe,
+  "email-outreach": Mail,
+  writing: PenLine,
+  "code-engineering": Code,
+  "social-media": Share2,
+  "data-analytics": BarChart3,
+  "project-management": KanbanSquare,
+  "customer-support": Headphones,
+  "sales-crm": Target,
+  "design-media": Palette,
+  "scheduling-ops": Calendar,
+  "file-documents": FileText,
+};
+
+// ── All capability IDs (for default-all-on) ────
+
+const ALL_CAPABILITY_IDS = CAPABILITY_OPTIONS.map((c) => c.id);
+
+// ── Template → Capability Mapping ──────────────
+
+const TEMPLATE_CAPABILITIES: Record<string, string[]> = {
+  marketer: ALL_CAPABILITY_IDS,
+  "seo-manager": ALL_CAPABILITY_IDS,
+  coo: ALL_CAPABILITY_IDS,
+  "customer-support": ALL_CAPABILITY_IDS,
+  "sales-rep": ALL_CAPABILITY_IDS,
+  "software-engineer": ALL_CAPABILITY_IDS,
+  "data-analyst": ALL_CAPABILITY_IDS,
+  "content-writer": ALL_CAPABILITY_IDS,
+  "executive-assistant": ALL_CAPABILITY_IDS,
+  researcher: ALL_CAPABILITY_IDS,
+};
+
+// ── Template → Expertise Mapping ───────────────
+
+const TEMPLATE_EXPERTISE: Record<string, string[]> = {
   marketer: ["web-research", "writing", "social-media", "data-analytics", "email-outreach"],
   "seo-manager": ["web-research", "writing", "data-analytics"],
-  coo: ["project-management", "data-analytics", "scheduling"],
+  coo: ["project-management", "data-analytics", "scheduling-ops"],
   "customer-support": ["customer-support", "writing", "email-outreach"],
   "sales-rep": ["sales-crm", "email-outreach", "web-research"],
   "software-engineer": ["code-engineering", "web-research", "file-documents"],
   "data-analyst": ["data-analytics", "code-engineering", "file-documents"],
   "content-writer": ["writing", "web-research", "social-media"],
-  "executive-assistant": ["scheduling", "email-outreach", "file-documents"],
+  "executive-assistant": ["scheduling-ops", "email-outreach", "file-documents"],
   researcher: ["web-research", "writing", "data-analytics", "file-documents"],
 };
+
+// ── Expand helpers ─────────────────────────────
+
+function expandCapabilities(capIds: string[]): string[] {
+  const tools = new Set<string>();
+  for (const id of capIds) {
+    const cap = CAPABILITY_OPTIONS.find((c) => c.id === id);
+    if (cap) {
+      for (const t of cap.toolsAllow) tools.add(t);
+    }
+  }
+  return Array.from(tools);
+}
+
+function expandExpertise(expertiseIds: string[]): string[] {
+  const skills = new Set<string>();
+  for (const id of expertiseIds) {
+    const exp = EXPERTISE_OPTIONS.find((e) => e.id === id);
+    if (exp) {
+      for (const s of exp.skills) skills.add(s);
+    }
+  }
+  return Array.from(skills);
+}
 
 // ── Styles ─────────────────────────────────────
 
@@ -136,6 +202,7 @@ export default function HireEmployeePage() {
     persona: "",
     goals: "",
     channels: [] as string[],
+    capabilities: [...ALL_CAPABILITY_IDS] as string[],
     skills: [] as string[],
     personality: { ...DEFAULT_PERSONALITY } as PersonalityConfig,
   });
@@ -176,7 +243,8 @@ export default function HireEmployeePage() {
       persona: t.persona,
       goals: t.goals,
       channels: [...t.suggestedChannels],
-      skills: TEMPLATE_SKILLS[id] || [],
+      capabilities: TEMPLATE_CAPABILITIES[id] || [...ALL_CAPABILITY_IDS],
+      skills: TEMPLATE_EXPERTISE[id] || [],
       personality: { ...t.defaultPersonality },
     });
     goTo(1);
@@ -190,6 +258,7 @@ export default function HireEmployeePage() {
       persona: "",
       goals: "",
       channels: [],
+      capabilities: [...ALL_CAPABILITY_IDS],
       skills: [],
       personality: { ...DEFAULT_PERSONALITY },
     });
@@ -202,6 +271,13 @@ export default function HireEmployeePage() {
     setForm((f) => ({
       ...f,
       channels: f.channels.includes(id) ? f.channels.filter((c) => c !== id) : [...f.channels, id],
+    }));
+  };
+
+  const toggleCapability = (id: string) => {
+    setForm((f) => ({
+      ...f,
+      capabilities: f.capabilities.includes(id) ? f.capabilities.filter((c) => c !== id) : [...f.capabilities, id],
     }));
   };
 
@@ -218,9 +294,11 @@ export default function HireEmployeePage() {
     let persona = form.persona;
     if (form.skills.length > 0) {
       const labels = form.skills
-        .map((id) => SKILL_OPTIONS.find((s) => s.id === id)?.label)
+        .map((id) => EXPERTISE_OPTIONS.find((s) => s.id === id)?.label)
         .filter(Boolean);
-      persona += `\n\n## Focus Areas\nYou should particularly excel at and prioritize: ${labels.join(", ")}. While you have access to all tools and capabilities, these are your primary areas of expertise and where you should invest the most effort.`;
+      if (labels.length > 0) {
+        persona += `\n\n## Focus Areas\nYou should particularly excel at and prioritize: ${labels.join(", ")}. While you have access to all tools and capabilities, these are your primary areas of expertise and where you should invest the most effort.`;
+      }
     }
     return persona;
   };
@@ -229,6 +307,9 @@ export default function HireEmployeePage() {
     setError("");
     setLoading(true);
     try {
+      const toolsAllow = expandCapabilities(form.capabilities);
+      const skillSlugs = expandExpertise(form.skills);
+
       const result = await api.hireEmployee({
         name: form.name,
         jobTitle: form.jobTitle,
@@ -236,6 +317,8 @@ export default function HireEmployeePage() {
         persona: buildPersona() || undefined,
         goals: form.goals || undefined,
         channels: form.channels,
+        toolsAllow,
+        skills: skillSlugs,
         personalityConfig: form.personality,
       });
       router.push(`/dashboard/employees/${result.employee.id}`);
@@ -296,7 +379,7 @@ export default function HireEmployeePage() {
         }
       }}
     >
-      <div style={{ fontSize: 20, lineHeight: 1, flexShrink: 0, marginTop: 1 }}>{icon}</div>
+      {icon && <div style={{ fontSize: 20, lineHeight: 1, flexShrink: 0, marginTop: 1 }}>{icon}</div>}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div
           style={{
@@ -508,10 +591,36 @@ export default function HireEmployeePage() {
     </div>
   );
 
+  // ── Review pills ───────────────────────────
+
+  const pillStyle = {
+    background: "var(--bg-secondary)",
+    border: "1px solid var(--border)",
+    padding: "4px 10px",
+    borderRadius: 100,
+    fontSize: 12,
+    fontWeight: 500,
+    color: "var(--text)",
+    display: "inline-flex" as const,
+    alignItems: "center" as const,
+    gap: 5,
+  };
+
   // ── Step renderers ─────────────────────────
 
   return (
-    <div style={{ maxWidth: 680, margin: "0 auto", minHeight: "70vh" }}>
+    <div
+      style={{
+        maxWidth: 720,
+        width: "100%",
+        margin: "0 auto",
+        minHeight: "calc(100vh - 48px)",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "center",
+        padding: "40px 0",
+      }}
+    >
       {/* ═══ Step 1: Role Selection ═══ */}
       {step === "role" && (
         <div key={animKey} className={animClass}>
@@ -793,7 +902,44 @@ export default function HireEmployeePage() {
         </div>
       )}
 
-      {/* ═══ Step 5: Skills ═══ */}
+      {/* ═══ Step 5: Tools / Capabilities ═══ */}
+      {step === "tools" && (
+        <div key={animKey} className={animClass}>
+          <h1 style={styles.heading}>What can they do?</h1>
+          <p style={styles.subtitle}>
+            Choose what {form.name || "your employee"} is able to do — all capabilities are enabled by default
+          </p>
+
+          <div
+            style={{
+              marginTop: 40,
+              display: "grid",
+              gridTemplateColumns: "repeat(2, 1fr)",
+              gap: 10,
+            }}
+          >
+            {CAPABILITY_OPTIONS.map((cap) => {
+              const selected = form.capabilities.includes(cap.id);
+              const Icon = CAPABILITY_ICONS[cap.id] || Sparkles;
+              return (
+                <div key={cap.id}>
+                  {renderSelectionCard({
+                    selected,
+                    onClick: () => toggleCapability(cap.id),
+                    icon: <Icon size={20} style={{ color: selected ? "var(--text)" : "var(--text-secondary)" }} />,
+                    label: cap.label,
+                    desc: cap.desc,
+                  })}
+                </div>
+              );
+            })}
+          </div>
+
+          {renderBottomNav({ showSkip: true })}
+        </div>
+      )}
+
+      {/* ═══ Step 6: Skills / Expertise ═══ */}
       {step === "skills" && (
         <div key={animKey} className={animClass}>
           <h1 style={styles.heading}>What should they be great at?</h1>
@@ -809,15 +955,16 @@ export default function HireEmployeePage() {
               gap: 10,
             }}
           >
-            {SKILL_OPTIONS.map((skill) => {
+            {EXPERTISE_OPTIONS.map((skill) => {
               const selected = form.skills.includes(skill.id);
+              const Icon = EXPERTISE_ICONS[skill.id] || Sparkles;
               return (
                 <button
                   key={skill.id}
                   onClick={() => toggleSkill(skill.id)}
                   style={{
                     padding: "16px 14px",
-                    background: selected ? "#ffffff" : "#ffffff",
+                    background: "#ffffff",
                     border: selected ? "1.5px solid var(--text)" : "1px solid var(--border)",
                     borderRadius: "var(--radius-xl)",
                     cursor: "pointer",
@@ -859,7 +1006,7 @@ export default function HireEmployeePage() {
                       <Check size={11} style={{ color: "#ffffff" }} />
                     </div>
                   )}
-                  <skill.Icon
+                  <Icon
                     size={20}
                     style={{ color: selected ? "var(--text)" : "var(--text-secondary)" }}
                   />
@@ -894,7 +1041,7 @@ export default function HireEmployeePage() {
         </div>
       )}
 
-      {/* ═══ Step 6: Review & Hire ═══ */}
+      {/* ═══ Step 7: Review & Hire ═══ */}
       {step === "review" && (
         <div key={animKey} className={animClass}>
           <h1 style={styles.heading}>Ready to hire {form.name}?</h1>
@@ -974,20 +1121,7 @@ export default function HireEmployeePage() {
                   PROACTIVITY_OPTIONS.find((o) => o.value === form.personality.proactivity)?.label,
                   COMMUNICATION_OPTIONS.find((o) => o.value === form.personality.communication)?.label,
                 ].map((label) => (
-                  <span
-                    key={label}
-                    style={{
-                      background: "var(--bg-secondary)",
-                      border: "1px solid var(--border)",
-                      padding: "4px 10px",
-                      borderRadius: 100,
-                      fontSize: 12,
-                      fontWeight: 500,
-                      color: "var(--text)",
-                    }}
-                  >
-                    {label}
-                  </span>
+                  <span key={label} style={pillStyle}>{label}</span>
                 ))}
               </div>
             </div>
@@ -1002,23 +1136,9 @@ export default function HireEmployeePage() {
                   form.channels.map((ch) => {
                     const channel = CHANNEL_OPTIONS.find((c) => c.id === ch);
                     return (
-                      <span
-                        key={ch}
-                        style={{
-                          background: "var(--bg-secondary)",
-                          border: "1px solid var(--border)",
-                          padding: "4px 10px",
-                          borderRadius: 100,
-                          fontSize: 12,
-                          fontWeight: 500,
-                          color: "var(--text)",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 5,
-                        }}
-                      >
+                      <span key={ch} style={pillStyle}>
                         {channel && <channel.Icon size={12} />}
-                        {channel?.label}
+                        {channel?.label || ch}
                       </span>
                     );
                   })
@@ -1030,7 +1150,30 @@ export default function HireEmployeePage() {
               </div>
             </div>
 
-            {/* Skills */}
+            {/* Capabilities */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>
+                Capabilities
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {form.capabilities.length === ALL_CAPABILITY_IDS.length ? (
+                  <span style={pillStyle}>Full access — all capabilities enabled</span>
+                ) : form.capabilities.length > 0 ? (
+                  form.capabilities.map((capId) => {
+                    const cap = CAPABILITY_OPTIONS.find((c) => c.id === capId);
+                    return (
+                      <span key={capId} style={pillStyle}>{cap?.label || capId}</span>
+                    );
+                  })
+                ) : (
+                  <span style={{ color: "var(--text-tertiary)", fontSize: 13 }}>
+                    No capabilities selected
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Focus Areas */}
             <div>
               <div style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>
                 Focus Areas
@@ -1038,25 +1181,12 @@ export default function HireEmployeePage() {
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                 {form.skills.length > 0 ? (
                   form.skills.map((sk) => {
-                    const skill = SKILL_OPTIONS.find((s) => s.id === sk);
+                    const skill = EXPERTISE_OPTIONS.find((s) => s.id === sk);
+                    const Icon = EXPERTISE_ICONS[sk];
                     return (
-                      <span
-                        key={sk}
-                        style={{
-                          background: "var(--bg-secondary)",
-                          border: "1px solid var(--border)",
-                          padding: "4px 10px",
-                          borderRadius: 100,
-                          fontSize: 12,
-                          fontWeight: 500,
-                          color: "var(--text)",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 5,
-                        }}
-                      >
-                        {skill && <skill.Icon size={12} />}
-                        {skill?.label}
+                      <span key={sk} style={pillStyle}>
+                        {Icon && <Icon size={12} />}
+                        {skill?.label || sk}
                       </span>
                     );
                   })
@@ -1161,7 +1291,7 @@ export default function HireEmployeePage() {
               {[
                 "Spin up a dedicated, isolated workstation",
                 "Install role persona, goals, and skills",
-                "Connect channels (Slack, email, browser, etc.)",
+                "Connect channels (Slack, email, messaging, etc.)",
                 `${form.name} starts working immediately — 24/7`,
               ].map((text, i) => (
                 <div

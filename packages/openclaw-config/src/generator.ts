@@ -92,38 +92,12 @@ export function generateOpenClawConfig(
             name: employee.name,
             emoji: employee.emoji || "🤖",
           },
-          // Enable all tool groups — these are the actual OpenClaw tool APIs.
-          // Skills (SKILL.md files at ~/.openclaw/skills/) are automatically available
-          // and don't need to be listed here — they teach the agent to use core tools.
+          // Tool access — uses employee-specific selection if provided,
+          // otherwise enables everything (backward compatible).
+          // Skills (SKILL.md files at ~/.openclaw/skills/) are automatically
+          // available and don't need to be listed here.
           tools: {
-            allow: [
-              // Tool groups (each group enables a set of related core tools)
-              "group:fs",          // read, write, edit, glob, grep
-              "group:runtime",     // exec, process
-              "group:web",         // browser, web_search, web_fetch
-              "group:sessions",    // sessions_list, sessions_create, etc.
-              "group:memory",      // memory_search, memory_get, memory_store
-              "group:automation",  // cron, nodes, agents_list
-              "group:messaging",   // message, gateway
-              // Individual tools (in case group doesn't cover all)
-              "browser",
-              "image",
-              "canvas",
-              "web_search",
-              "web_fetch",
-              "exec",
-              "read",
-              "write",
-              "edit",
-              "process",
-              "message",
-              "cron",
-              "nodes",
-              "memory_search",
-              "memory_get",
-              "agents_list",
-              "gateway",
-            ],
+            allow: buildToolAllow(employee.toolsConfig),
           },
         },
       ],
@@ -598,6 +572,42 @@ function slugify(name: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
+}
+
+// All tools enabled — the default when no toolsConfig.allow is specified
+const ALL_TOOLS_ALLOW = [
+  "group:fs", "group:runtime", "group:web", "group:sessions",
+  "group:memory", "group:automation", "group:messaging",
+  "browser", "image", "canvas", "web_search", "web_fetch",
+  "exec", "read", "write", "edit", "process", "message",
+  "cron", "nodes", "memory_search", "memory_get", "agents_list", "gateway",
+];
+
+// Map group names to their constituent individual tools
+const GROUP_TOOLS: Record<string, string[]> = {
+  "group:fs": ["read", "write", "edit"],
+  "group:runtime": ["exec", "process"],
+  "group:web": ["browser", "web_search", "web_fetch"],
+  "group:sessions": [],
+  "group:memory": ["memory_search", "memory_get"],
+  "group:automation": ["cron", "nodes", "agents_list"],
+  "group:messaging": ["message", "gateway"],
+};
+
+/** Build the tools.allow array from employee's toolsConfig */
+function buildToolAllow(toolsConfig: Record<string, unknown>): string[] {
+  const cfg = toolsConfig as { allow?: string[] };
+  if (!cfg?.allow?.length) return ALL_TOOLS_ALLOW;
+
+  // Expand groups to include their individual tools
+  const expanded = new Set(cfg.allow);
+  for (const item of cfg.allow) {
+    const groupTools = GROUP_TOOLS[item];
+    if (groupTools) {
+      for (const tool of groupTools) expanded.add(tool);
+    }
+  }
+  return Array.from(expanded);
 }
 
 /** Bundled OpenClaw plugins verified to exist in ghcr.io/openclaw/openclaw:latest */

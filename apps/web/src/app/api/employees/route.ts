@@ -79,6 +79,8 @@ export async function POST(request: NextRequest) {
         channels: input.channels || [],
         channelCredentials,
         modelConfig: input.modelConfig,
+        toolsAllow: input.toolsAllow || undefined,
+        skills: input.skills || undefined,
       });
       return NextResponse.json(result, { status: 201 });
     } catch (err: any) {
@@ -156,6 +158,7 @@ export async function POST(request: NextRequest) {
           goals,
           personalityConfig: input.personalityConfig || { autonomy: "high", proactivity: "proactive", communication: "concise" },
           modelConfig: input.modelConfig || { primary: "anthropic/claude-opus-4-6" },
+          toolsConfig: input.toolsAllow ? { allow: input.toolsAllow } : {},
           gatewayToken,
           status: "provisioning",
           containerName: `ai-emp-${company.slug}-${slugify(input.name)}-${crypto.randomBytes(3).toString("hex")}`,
@@ -226,6 +229,7 @@ export async function POST(request: NextRequest) {
       goals,
       personalityConfig: input.personalityConfig || { autonomy: "high", proactivity: "proactive", communication: "concise" },
       modelConfig: input.modelConfig || { primary: "anthropic/claude-opus-4-6" },
+      toolsConfig: input.toolsAllow ? { allow: input.toolsAllow } : {},
       gatewayToken,
       status: "active",
       containerName: `ai-emp-${company.slug}-${slugify(input.name)}-${crypto.randomBytes(3).toString("hex")}`,
