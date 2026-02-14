@@ -6,8 +6,6 @@ import {
   createEmployeeSchema,
   updateEmployeeSchema,
   getJobTemplate,
-  PLAN_LIMITS,
-  type PlanTier,
   getModelForTier,
   type EmployeeTier,
 } from "@ai-employees/shared";
@@ -60,27 +58,11 @@ export async function employeeRoutes(fastify: FastifyInstance) {
       const { companyId } = request.user;
       const input = createEmployeeSchema.parse(request.body);
 
-      // Check company employee limit
       const company = await db.query.companies.findFirst({
         where: eq(companies.id, companyId),
       });
       if (!company) {
         return reply.status(404).send({ error: "Company not found" });
-      }
-
-      const planLimits = PLAN_LIMITS[company.plan as PlanTier] || PLAN_LIMITS.starter;
-      const currentCount = await db.query.employees.findMany({
-        where: and(
-          eq(employees.companyId, companyId),
-          // Don't count terminated employees
-        ),
-      });
-      const activeCount = currentCount.filter((e) => e.status !== "terminated").length;
-
-      if (activeCount >= planLimits.maxEmployees) {
-        return reply.status(403).send({
-          error: `Employee limit reached (${planLimits.maxEmployees} for ${company.plan} plan)`,
-        });
       }
 
       // If using a template, merge template defaults

@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     company: company
-      ? { name: company.name, plan: company.plan, maxEmployees: company.maxEmployees }
+      ? { name: company.name, plan: company.plan }
       : null,
     employees: { total: allEmployees.length, ...statusCounts },
   });

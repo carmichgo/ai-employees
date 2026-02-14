@@ -310,7 +310,6 @@ function SettingsContent() {
             { label: "Name", value: company.name },
             { label: "Slug", value: company.slug },
             { label: "Plan", value: company.plan, capitalize: true },
-            { label: "Max Employees", value: company.maxEmployees },
           ].map((item) => (
             <div key={item.label} style={kvRow}>
               <span style={kvLabel}>{item.label}</span>

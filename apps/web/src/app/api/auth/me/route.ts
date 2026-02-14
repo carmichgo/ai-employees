@@ -41,7 +41,6 @@ export async function GET(request: NextRequest) {
           name: company.name,
           slug: company.slug,
           plan: company.plan,
-          maxEmployees: company.maxEmployees,
         }
       : null,
   });

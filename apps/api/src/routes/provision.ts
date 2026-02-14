@@ -8,7 +8,7 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { eq, and } from "drizzle-orm";
 import { db, employees, companies } from "@ai-employees/db";
-import { getJobTemplate, PLAN_LIMITS, type PlanTier, getModelForTier, type EmployeeTier } from "@ai-employees/shared";
+import { getJobTemplate, getModelForTier, type EmployeeTier } from "@ai-employees/shared";
 import { regenerateChannelConfig, type ChannelInput } from "@ai-employees/openclaw-config";
 import { getProvisionQueue } from "../queues.js";
 
@@ -57,19 +57,6 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     });
     if (!company) {
       return reply.status(404).send({ error: "Company not found" });
-    }
-
-    // Check limits
-    const planLimits = PLAN_LIMITS[company.plan as PlanTier] || PLAN_LIMITS.starter;
-    const current = await db.query.employees.findMany({
-      where: eq(employees.companyId, body.companyId),
-    });
-    const activeCount = current.filter((e) => e.status !== "terminated").length;
-
-    if (activeCount >= planLimits.maxEmployees) {
-      return reply.status(403).send({
-        error: `Employee limit reached (${planLimits.maxEmployees} for ${company.plan} plan)`,
-      });
     }
 
     // Merge template

@@ -147,7 +147,6 @@ export async function authRoutes(fastify: FastifyInstance) {
               name: company.name,
               slug: company.slug,
               plan: company.plan,
-              maxEmployees: company.maxEmployees,
             }
           : null,
       });

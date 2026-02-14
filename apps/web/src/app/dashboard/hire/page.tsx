@@ -368,7 +368,9 @@ export default function HireEmployeePage() {
       style={{
         padding: "16px 18px",
         background: "#ffffff",
-        border: selected ? "1.5px solid var(--text)" : "1px solid var(--border)",
+        border: "1px solid",
+        borderColor: selected ? "var(--text)" : "var(--border)",
+        boxShadow: selected ? "0 0 0 1px var(--text)" : "none",
         borderRadius: "var(--radius-xl)",
         cursor: "pointer",
         textAlign: "left",
@@ -458,7 +460,9 @@ export default function HireEmployeePage() {
               style={{
                 padding: "12px 12px",
                 background: selected ? "#ffffff" : "var(--bg-secondary)",
-                border: selected ? "1.5px solid var(--text)" : "1px solid var(--border)",
+                border: "1px solid",
+                borderColor: selected ? "var(--text)" : "var(--border)",
+                boxShadow: selected ? "0 0 0 1px var(--text)" : "none",
                 borderRadius: "var(--radius-xl)",
                 cursor: "pointer",
                 textAlign: "left",
@@ -863,7 +867,9 @@ export default function HireEmployeePage() {
                   style={{
                     padding: "24px 24px",
                     background: selected ? "#ffffff" : "var(--bg-secondary)",
-                    border: selected ? "1.5px solid var(--text)" : "1px solid var(--border)",
+                    border: "1px solid",
+                    borderColor: selected ? "var(--text)" : "var(--border)",
+                    boxShadow: selected ? "0 0 0 1px var(--text)" : "none",
                     borderRadius: "var(--radius-2xl)",
                     cursor: "pointer",
                     textAlign: "left",
@@ -1006,7 +1012,9 @@ export default function HireEmployeePage() {
                     style={{
                       padding: "20px 22px",
                       background: selected ? "#ffffff" : "var(--bg-secondary)",
-                      border: selected ? "1.5px solid var(--text)" : "1px solid var(--border)",
+                      border: "1px solid",
+                      borderColor: selected ? "var(--text)" : "var(--border)",
+                      boxShadow: selected ? "0 0 0 1px var(--text)" : "none",
                       borderRadius: "var(--radius-xl)",
                       cursor: "pointer",
                       textAlign: "left",
@@ -1195,6 +1203,7 @@ export default function HireEmployeePage() {
               marginTop: 40,
               display: "grid",
               gridTemplateColumns: "repeat(4, 1fr)",
+              gridAutoRows: "1fr",
               gap: 10,
             }}
           >
@@ -1208,7 +1217,9 @@ export default function HireEmployeePage() {
                   style={{
                     padding: "16px 14px",
                     background: "#ffffff",
-                    border: selected ? "1.5px solid var(--text)" : "1px solid var(--border)",
+                    border: "1px solid",
+                    borderColor: selected ? "var(--text)" : "var(--border)",
+                    boxShadow: selected ? "0 0 0 1px var(--text)" : "none",
                     borderRadius: "var(--radius-xl)",
                     cursor: "pointer",
                     textAlign: "left",

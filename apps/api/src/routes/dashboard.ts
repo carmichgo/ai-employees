@@ -39,7 +39,6 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
           ? {
               name: company.name,
               plan: company.plan,
-              maxEmployees: company.maxEmployees,
             }
           : null,
         employees: {

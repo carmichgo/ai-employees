@@ -1,10 +1,5 @@
 import type { EmployeeTier } from "./types/employee.js";
 
-export const PLAN_LIMITS = {
-  starter: { maxEmployees: 50, maxChannelsPerEmployee: 10 },
-  professional: { maxEmployees: 50, maxChannelsPerEmployee: 10 },
-  enterprise: { maxEmployees: 100, maxChannelsPerEmployee: 25 },
-} as const;
 
 // ── Employee Tier Configuration ──────────────────────
 // Per-employee pricing model: tier determines model, resources, credits, and pricing.
