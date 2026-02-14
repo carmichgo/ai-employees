@@ -17,6 +17,8 @@ export type ChannelType =
 
 export type PlanTier = "starter" | "professional" | "enterprise";
 
+export type EmployeeTier = "junior" | "senior" | "expert";
+
 export interface ModelConfig {
   primary: string;
   fallbacks?: string[];

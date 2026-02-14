@@ -8,7 +8,7 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { eq, and } from "drizzle-orm";
 import { db, employees, companies } from "@ai-employees/db";
-import { getJobTemplate, PLAN_LIMITS, type PlanTier } from "@ai-employees/shared";
+import { getJobTemplate, PLAN_LIMITS, type PlanTier, getModelForTier, type EmployeeTier } from "@ai-employees/shared";
 import { regenerateChannelConfig, type ChannelInput } from "@ai-employees/openclaw-config";
 import { getProvisionQueue } from "../queues.js";
 
@@ -39,6 +39,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       companyId: string;
       name: string;
       jobTitle: string;
+      tier?: string;
       templateId?: string;
       persona?: string;
       goals?: string;
@@ -93,6 +94,10 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       communication: "concise",
     };
 
+    // Determine model from tier
+    const tier = (body.tier || "junior") as EmployeeTier;
+    const tierModel = getModelForTier(tier);
+
     // Create employee record with status=provisioning
     const [employee] = await db
       .insert(employees)
@@ -101,11 +106,12 @@ export async function provisionRoutes(fastify: FastifyInstance) {
         name: body.name,
         jobTitle: body.jobTitle,
         templateId: body.templateId,
+        tier,
         emoji,
         persona,
         goals,
         personalityConfig,
-        modelConfig: body.modelConfig || { primary: "anthropic/claude-opus-4-6" },
+        modelConfig: body.modelConfig || { primary: tierModel },
         toolsConfig: body.toolsAllow ? { allow: body.toolsAllow } : {},
         gatewayToken,
         status: "provisioning",

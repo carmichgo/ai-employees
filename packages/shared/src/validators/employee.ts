@@ -10,13 +10,14 @@ export const personalityConfigSchema = z.object({
 export const createEmployeeSchema = z.object({
   name: z.string().min(1).max(100),
   jobTitle: z.string().min(1).max(255),
+  tier: z.enum(["junior", "senior", "expert"]).default("junior"),
   templateId: z.string().optional(),
   persona: z.string().max(5000).optional(),
   goals: z.string().max(2000).optional(),
   personalityConfig: personalityConfigSchema.optional(),
   modelConfig: z
     .object({
-      primary: z.string().default("anthropic/claude-opus-4-6"),
+      primary: z.string(),
       fallbacks: z.array(z.string()).optional(),
     })
     .optional(),

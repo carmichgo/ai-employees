@@ -11,6 +11,8 @@ import {
   getJobTemplate,
   PLAN_LIMITS,
   type PlanTier,
+  getModelForTier,
+  type EmployeeTier,
 } from "@ai-employees/shared";
 
 async function authenticate(request: NextRequest) {
@@ -72,6 +74,7 @@ export async function POST(request: NextRequest) {
         companyId: session.companyId,
         name: input.name,
         jobTitle: input.jobTitle,
+        tier: input.tier || "junior",
         templateId: input.templateId || undefined,
         persona: input.persona || undefined,
         goals: input.goals || undefined,
@@ -152,6 +155,9 @@ export async function POST(request: NextRequest) {
 
       const gatewayToken = crypto.randomBytes(32).toString("hex");
 
+      const tier = (input.tier || "junior") as EmployeeTier;
+      const tierModel = getModelForTier(tier);
+
       const [employee] = await db
         .insert(employees)
         .values({
@@ -159,11 +165,12 @@ export async function POST(request: NextRequest) {
           name: input.name,
           jobTitle: input.jobTitle,
           templateId: input.templateId,
+          tier,
           emoji,
           persona,
           goals,
           personalityConfig: input.personalityConfig || { autonomy: "high", proactivity: "proactive", communication: "concise" },
-          modelConfig: input.modelConfig || { primary: "anthropic/claude-opus-4-6" },
+          modelConfig: input.modelConfig || { primary: tierModel },
           toolsConfig: input.toolsAllow ? { allow: input.toolsAllow } : {},
           gatewayToken,
           status: "provisioning",
@@ -227,6 +234,8 @@ export async function POST(request: NextRequest) {
   }
 
   const gatewayToken = crypto.randomBytes(32).toString("hex");
+  const demoTier = (input.tier || "junior") as EmployeeTier;
+  const demoTierModel = getModelForTier(demoTier);
 
   const [employee] = await db
     .insert(employees)
@@ -235,11 +244,12 @@ export async function POST(request: NextRequest) {
       name: input.name,
       jobTitle: input.jobTitle,
       templateId: input.templateId,
+      tier: demoTier,
       emoji,
       persona,
       goals,
       personalityConfig: input.personalityConfig || { autonomy: "high", proactivity: "proactive", communication: "concise" },
-      modelConfig: input.modelConfig || { primary: "anthropic/claude-opus-4-6" },
+      modelConfig: input.modelConfig || { primary: demoTierModel },
       toolsConfig: input.toolsAllow ? { allow: input.toolsAllow } : {},
       gatewayToken,
       status: "active",

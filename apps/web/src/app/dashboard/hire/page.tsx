@@ -14,7 +14,10 @@ import {
   DEFAULT_PERSONALITY,
   CAPABILITY_OPTIONS,
   EXPERTISE_OPTIONS,
+  EMPLOYEE_TIERS,
+  EMPLOYEE_TIER_OPTIONS,
   type PersonalityConfig,
+  type EmployeeTier,
 } from "@ai-employees/shared";
 import {
   Check,
@@ -44,12 +47,15 @@ import {
   Hash,
   MonitorSmartphone,
   Wrench,
+  Zap,
+  Crown,
+  Rocket,
 } from "lucide-react";
 
 // ── Steps ──────────────────────────────────────
 
-type Step = "role" | "identity" | "personality" | "boss-tech" | "channels" | "tools" | "skills" | "review";
-const STEPS: Step[] = ["role", "identity", "personality", "boss-tech", "channels", "tools", "skills", "review"];
+type Step = "role" | "identity" | "tier" | "personality" | "boss-tech" | "channels" | "tools" | "skills" | "review";
+const STEPS: Step[] = ["role", "identity", "tier", "personality", "boss-tech", "channels", "tools", "skills", "review"];
 const SKIPPABLE_STEPS: Step[] = ["channels", "tools", "skills"];
 
 // ── Channel Options ────────────────────────────
@@ -201,6 +207,7 @@ export default function HireEmployeePage() {
   const [form, setForm] = useState({
     name: "",
     jobTitle: "",
+    tier: "senior" as EmployeeTier,
     persona: "",
     goals: "",
     channels: [] as string[],
@@ -242,6 +249,7 @@ export default function HireEmployeePage() {
     setForm({
       name: "",
       jobTitle: t.title,
+      tier: "senior" as EmployeeTier,
       persona: t.persona,
       goals: t.goals,
       channels: [...t.suggestedChannels],
@@ -257,6 +265,7 @@ export default function HireEmployeePage() {
     setForm({
       name: "",
       jobTitle: "",
+      tier: "senior" as EmployeeTier,
       persona: "",
       goals: "",
       channels: [],
@@ -315,6 +324,7 @@ export default function HireEmployeePage() {
       const result = await api.hireEmployee({
         name: form.name,
         jobTitle: form.jobTitle,
+        tier: form.tier,
         templateId: selectedTemplate || undefined,
         persona: buildPersona() || undefined,
         goals: form.goals || undefined,
@@ -833,7 +843,109 @@ export default function HireEmployeePage() {
         </div>
       )}
 
-      {/* ═══ Step 3: Personality ═══ */}
+      {/* ═══ Step 3: Employee Tier ═══ */}
+      {step === "tier" && (
+        <div key={animKey} className={animClass}>
+          <h1 style={styles.heading}>Choose their experience level</h1>
+          <p style={styles.subtitle}>
+            This determines {form.name || "their"} AI model, speed, and monthly cost
+          </p>
+
+          <div style={{ marginTop: 40, display: "flex", flexDirection: "column", gap: 12 }}>
+            {EMPLOYEE_TIER_OPTIONS.map((tierId) => {
+              const config = EMPLOYEE_TIERS[tierId];
+              const selected = form.tier === tierId;
+              const TierIcon = tierId === "junior" ? Zap : tierId === "senior" ? Rocket : Crown;
+              return (
+                <button
+                  key={tierId}
+                  onClick={() => setForm({ ...form, tier: tierId })}
+                  style={{
+                    padding: "24px 24px",
+                    background: selected ? "#ffffff" : "var(--bg-secondary)",
+                    border: selected ? "1.5px solid var(--text)" : "1px solid var(--border)",
+                    borderRadius: "var(--radius-2xl)",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    transition: "all 0.15s ease",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 20,
+                    position: "relative",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!selected) {
+                      (e.currentTarget as HTMLElement).style.borderColor = "var(--border-hover)";
+                      (e.currentTarget as HTMLElement).style.boxShadow = "var(--shadow-sm)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!selected) {
+                      (e.currentTarget as HTMLElement).style.borderColor = "var(--border)";
+                      (e.currentTarget as HTMLElement).style.boxShadow = "none";
+                    }
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 48,
+                      height: 48,
+                      borderRadius: 14,
+                      background: selected ? "var(--text)" : "var(--bg-secondary)",
+                      border: selected ? "none" : "1px solid var(--border)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    <TierIcon size={22} style={{ color: selected ? "#ffffff" : "var(--text-secondary)" }} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 4 }}>
+                      <div style={{ fontSize: 17, fontWeight: 700, color: "var(--text)", letterSpacing: "-0.02em" }}>
+                        {config.label}
+                      </div>
+                      <div style={{ fontSize: 17, fontWeight: 700, color: "var(--text)" }}>
+                        ${config.priceMonthly}<span style={{ fontSize: 13, fontWeight: 400, color: "var(--text-secondary)" }}>/mo</span>
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                      {config.subtitle}
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 4 }}>
+                      {config.creditsIncluded} task credits/mo &middot; ${config.overagePerCredit.toFixed(2)}/credit overage
+                    </div>
+                  </div>
+                  {selected && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: 14,
+                        right: 14,
+                        width: 22,
+                        height: 22,
+                        borderRadius: "50%",
+                        background: "var(--text)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Check size={13} style={{ color: "#ffffff" }} />
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {renderBottomNav({})}
+        </div>
+      )}
+
+      {/* ═══ Step 4: Personality ═══ */}
       {step === "personality" && (
         <div key={animKey} className={animClass}>
           <h1 style={styles.heading}>How should they work?</h1>
@@ -1238,6 +1350,24 @@ export default function HireEmployeePage() {
             </div>
 
             <div className="divider" style={{ marginBottom: 20 }} />
+
+            {/* Tier & Pricing */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>
+                Employee Tier
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={pillStyle}>
+                  {EMPLOYEE_TIERS[form.tier].label}
+                </span>
+                <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>
+                  ${EMPLOYEE_TIERS[form.tier].priceMonthly}/mo
+                </span>
+                <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
+                  &middot; {EMPLOYEE_TIERS[form.tier].creditsIncluded} credits included
+                </span>
+              </div>
+            </div>
 
             {/* Personality */}
             <div style={{ marginBottom: 20 }}>

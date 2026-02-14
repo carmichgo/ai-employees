@@ -91,6 +91,7 @@ class ApiClient {
   async hireEmployee(data: {
     name: string;
     jobTitle: string;
+    tier?: string;
     templateId?: string;
     persona?: string;
     goals?: string;

@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import { execSync, spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { db, employees, companies } from "@ai-employees/db";
-import { CONTAINER_RESOURCES, type PlanTier } from "@ai-employees/shared";
+import { getResourcesForTier, type EmployeeTier } from "@ai-employees/shared";
 import {
   generateOpenClawConfig,
   generateSoulMd,
@@ -102,9 +102,9 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     const config = generateOpenClawConfig(employeeInput, employee.gatewayToken!);
     const soulMd = generateSoulMd(employeeInput);
 
-    // Determine resource limits based on company plan
-    const plan = (company.plan as PlanTier) || "starter";
-    const resources = CONTAINER_RESOURCES[plan] || CONTAINER_RESOURCES.starter;
+    // Determine resource limits based on employee tier
+    const tier = (employee.tier as EmployeeTier) || "junior";
+    const resources = getResourcesForTier(tier);
 
     // Write OpenClaw config + soul.md + skills to a host directory that gets bind-mounted
     const configDir = `/opt/ai-employees/openclaw-configs/${employeeId}`;

@@ -1,9 +1,71 @@
+import type { EmployeeTier } from "./types/employee.js";
+
 export const PLAN_LIMITS = {
-  starter: { maxEmployees: 3, maxChannelsPerEmployee: 3 },
-  professional: { maxEmployees: 15, maxChannelsPerEmployee: 10 },
+  starter: { maxEmployees: 50, maxChannelsPerEmployee: 10 },
+  professional: { maxEmployees: 50, maxChannelsPerEmployee: 10 },
   enterprise: { maxEmployees: 100, maxChannelsPerEmployee: 25 },
 } as const;
 
+// ── Employee Tier Configuration ──────────────────────
+// Per-employee pricing model: tier determines model, resources, credits, and pricing.
+
+export interface EmployeeTierConfig {
+  id: EmployeeTier;
+  label: string;
+  subtitle: string;
+  model: string;
+  priceMonthly: number;
+  creditsIncluded: number;
+  overagePerCredit: number;
+  resources: { memory: string; cpus: string };
+}
+
+export const EMPLOYEE_TIERS: Record<EmployeeTier, EmployeeTierConfig> = {
+  junior: {
+    id: "junior",
+    label: "Junior AI Employee",
+    subtitle: "Haiku — Fast & affordable",
+    model: "anthropic/claude-haiku-4-5-20251001",
+    priceMonthly: 99,
+    creditsIncluded: 25,
+    overagePerCredit: 0.25,
+    resources: { memory: "2g", cpus: "1.0" },
+  },
+  senior: {
+    id: "senior",
+    label: "Senior AI Employee",
+    subtitle: "Sonnet — Balanced power",
+    model: "anthropic/claude-sonnet-4-5-20250929",
+    priceMonthly: 299,
+    creditsIncluded: 100,
+    overagePerCredit: 0.50,
+    resources: { memory: "4g", cpus: "2.0" },
+  },
+  expert: {
+    id: "expert",
+    label: "Expert AI Employee",
+    subtitle: "Opus — Maximum capability",
+    model: "anthropic/claude-opus-4-6",
+    priceMonthly: 799,
+    creditsIncluded: 300,
+    overagePerCredit: 0.75,
+    resources: { memory: "4g", cpus: "2.0" },
+  },
+} as const;
+
+export const EMPLOYEE_TIER_OPTIONS: EmployeeTier[] = ["junior", "senior", "expert"];
+
+/** Get the model string for a given employee tier */
+export function getModelForTier(tier: EmployeeTier): string {
+  return EMPLOYEE_TIERS[tier].model;
+}
+
+/** Get container resources for a given employee tier */
+export function getResourcesForTier(tier: EmployeeTier): { memory: string; cpus: string } {
+  return EMPLOYEE_TIERS[tier].resources;
+}
+
+// Legacy — kept for backward compatibility with existing company plan checks
 export const CONTAINER_RESOURCES = {
   starter: { memory: "2g", cpus: "1.0" },
   professional: { memory: "4g", cpus: "2.0" },

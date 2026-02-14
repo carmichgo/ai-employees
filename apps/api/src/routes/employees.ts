@@ -8,6 +8,8 @@ import {
   getJobTemplate,
   PLAN_LIMITS,
   type PlanTier,
+  getModelForTier,
+  type EmployeeTier,
 } from "@ai-employees/shared";
 import { getProvisionQueue } from "../queues.js";
 
@@ -98,6 +100,10 @@ export async function employeeRoutes(fastify: FastifyInstance) {
       // Generate gateway token for this employee's OpenClaw instance
       const gatewayToken = crypto.randomBytes(32).toString("hex");
 
+      // Determine model from tier
+      const tier = (input.tier || "junior") as EmployeeTier;
+      const tierModel = getModelForTier(tier);
+
       // Create employee record
       const [employee] = await db
         .insert(employees)
@@ -106,12 +112,11 @@ export async function employeeRoutes(fastify: FastifyInstance) {
           name: input.name,
           jobTitle: input.jobTitle,
           templateId: input.templateId,
+          tier,
           emoji,
           persona,
           goals,
-          modelConfig: input.modelConfig || {
-            primary: "anthropic/claude-opus-4-6",
-          },
+          modelConfig: input.modelConfig || { primary: tierModel },
           gatewayToken,
           status: "provisioning",
           containerName: `ai-emp-${company.slug}-${slugify(input.name)}-${crypto.randomBytes(3).toString("hex")}`,

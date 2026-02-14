@@ -12,6 +12,10 @@ export const employees = pgTable("employees", {
   avatar: varchar("avatar", { length: 500 }),
   emoji: varchar("emoji", { length: 10 }).default("🤖"),
 
+  // Tier — determines model, pricing, and container resources
+  tier: varchar("tier", { length: 20 }).notNull().default("junior"),
+  // junior | senior | expert
+
   // Status & lifecycle
   status: varchar("status", { length: 20 }).notNull().default("provisioning"),
   // provisioning | onboarding | active | paused | terminated | error
