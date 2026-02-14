@@ -180,22 +180,32 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
 
     // Get container info for host/port
     const info = await container.inspect();
+    const containerIp = info.NetworkSettings.Networks?.[OPENCLAW_NETWORK]?.IPAddress || null;
 
-    // Update DB with container details + email
+    // Update DB with container details + email (still provisioning until gateway ready)
     await db
       .update(employees)
       .set({
         containerId: info.Id,
-        containerHost: info.NetworkSettings.Networks?.[OPENCLAW_NETWORK]?.IPAddress || null,
+        containerHost: containerIp,
         containerPort: 18789,
         emailAddress,
-        status: "active",
         updatedAt: new Date(),
       })
       .where(eq(employees.id, employeeId));
 
+    // Wait for the OpenClaw gateway to be ready before marking active
+    if (containerIp) {
+      await waitForGateway(containerIp, 18789, 60_000);
+    }
+
+    await db
+      .update(employees)
+      .set({ status: "active", updatedAt: new Date() })
+      .where(eq(employees.id, employeeId));
+
     console.log(
-      `[provision] Employee ${employee.name} (${employeeId}) is now active at ${info.NetworkSettings.Networks?.[OPENCLAW_NETWORK]?.IPAddress}:18789 — email: ${emailAddress}`,
+      `[provision] Employee ${employee.name} (${employeeId}) is now active at ${containerIp}:18789 — email: ${emailAddress}`,
     );
 
     // Create Slack channel for the employee if Slack is in their channels
@@ -239,6 +249,16 @@ export async function startEmployee(employeeId: string): Promise<void> {
 
   const container = docker.getContainer(employee.containerId);
   await container.start();
+
+  // Get possibly-changed IP after start
+  const info = await container.inspect();
+  const network = process.env.OPENCLAW_NETWORK || OPENCLAW_NETWORK;
+  const ip = info.NetworkSettings.Networks?.[network]?.IPAddress || employee.containerHost;
+
+  if (ip) {
+    await db.update(employees).set({ containerHost: ip, updatedAt: new Date() }).where(eq(employees.id, employeeId));
+    await waitForGateway(ip, 18789, 30_000);
+  }
 
   await db
     .update(employees)
@@ -339,6 +359,29 @@ export async function cleanupOrphanedContainers(): Promise<void> {
   if (removed > 0) {
     console.log(`[cleanup] Startup cleanup: removed ${removed} orphaned containers`);
   }
+}
+
+/** Poll the gateway until it responds or timeout is reached */
+async function waitForGateway(host: string, port: number, timeoutMs: number): Promise<void> {
+  const start = Date.now();
+  const interval = 2000;
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const res = await fetch(`http://${host}:${port}/v1/models`, {
+        signal: AbortSignal.timeout(3000),
+      });
+      if (res.ok) {
+        console.log(`[provision] Gateway ready at ${host}:${port} (${Date.now() - start}ms)`);
+        return;
+      }
+    } catch {
+      // Not ready yet
+    }
+    await new Promise((r) => setTimeout(r, interval));
+  }
+  // Timed out — mark active anyway so the user isn't stuck in provisioning forever.
+  // The chat proxy will retry with IP refresh if needed.
+  console.log(`[provision] Gateway health check timed out after ${timeoutMs}ms, marking active anyway`);
 }
 
 function parseMemory(mem: string): number {
@@ -453,7 +496,7 @@ CREDEOF
     console.log(`[cli-tools] Finished for ${containerName} (exit ${code})`);
 
     // After docker restart, the container gets a new IP address.
-    // Update the DB so the chat proxy uses the correct IP.
+    // Update the DB so the chat proxy uses the correct IP, and wait for gateway.
     if (code === 0) {
       try {
         const container = docker.getContainer(containerName);
@@ -465,6 +508,8 @@ CREDEOF
             .set({ containerHost: newIp, updatedAt: new Date() })
             .where(eq(employees.id, employeeId));
           console.log(`[cli-tools] Updated container IP for ${containerName}: ${newIp}`);
+          // Wait for gateway to be ready after restart
+          await waitForGateway(newIp, 18789, 30_000);
         }
       } catch (err) {
         console.error(`[cli-tools] Failed to update container IP after restart:`, err);
