@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
   });
 }
 
-// POST /api/companies/droplet — manually provision a droplet
+// POST /api/companies/droplet — manually provision a dedicated droplet
 export async function POST(request: NextRequest) {
   const session = await authenticate(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -72,10 +72,28 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Only dedicated plan companies can provision their own droplet
+  const [company] = await db
+    .select()
+    .from(companies)
+    .where(eq(companies.id, session.companyId))
+    .limit(1);
+
+  if (!company) {
+    return NextResponse.json({ error: "Company not found" }, { status: 404 });
+  }
+
+  if (company.plan !== "dedicated") {
+    return NextResponse.json(
+      { error: "Dedicated infrastructure requires the Dedicated plan ($100/mo). Upgrade in Settings to get your own isolated server." },
+      { status: 403 },
+    );
+  }
+
   try {
     const result = await createCompanyDroplet(session.companyId);
     return NextResponse.json({
-      message: "Droplet is being provisioned. This usually takes 2-3 minutes.",
+      message: "Your dedicated server is being provisioned. This usually takes 2-3 minutes.",
       dropletId: result.dropletId,
     });
   } catch (err: any) {

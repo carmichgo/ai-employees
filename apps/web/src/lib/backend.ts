@@ -1,9 +1,8 @@
 /**
- * Per-company backend client — routes provisioning requests to the
- * company's dedicated DigitalOcean droplet.
+ * Backend client — routes provisioning requests to the appropriate backend.
  *
- * Each company has its own droplet (IP + interservice secret stored in DB).
- * Falls back to demo mode if the company has no active droplet.
+ * Default: All companies use the shared infrastructure backend.
+ * Dedicated plan ($100/mo): Company gets its own isolated DigitalOcean droplet.
  */
 
 import { eq } from "drizzle-orm";
@@ -15,7 +14,22 @@ interface CompanyBackendConfig {
   secret: string;
 }
 
-/** Look up a company's droplet backend from the DB */
+const SHARED_BACKEND_URL = process.env.SHARED_BACKEND_URL;
+const SHARED_BACKEND_SECRET = process.env.SHARED_BACKEND_SECRET;
+
+/** Check if shared infrastructure is configured */
+export function isSharedBackendEnabled(): boolean {
+  return !!(SHARED_BACKEND_URL && SHARED_BACKEND_SECRET);
+}
+
+/**
+ * Resolve which backend a company should use.
+ *
+ * Priority:
+ * 1. Dedicated droplet (plan === "dedicated" and droplet is active)
+ * 2. Shared backend (SHARED_BACKEND_URL configured)
+ * 3. null (demo mode)
+ */
 export async function getCompanyBackend(
   companyId: string,
 ): Promise<CompanyBackendConfig | null> {
@@ -25,19 +39,30 @@ export async function getCompanyBackend(
     .where(eq(companies.id, companyId))
     .limit(1);
 
+  if (!company) return null;
+
+  // Dedicated plan: use company's own droplet if active
   if (
-    !company ||
-    company.dropletStatus !== "active" ||
-    !company.dropletIp ||
-    !company.interserviceSecret
+    company.plan === "dedicated" &&
+    company.dropletStatus === "active" &&
+    company.dropletIp &&
+    company.interserviceSecret
   ) {
-    return null;
+    return {
+      url: `http://${company.dropletIp}:3001`,
+      secret: company.interserviceSecret,
+    };
   }
 
-  return {
-    url: `http://${company.dropletIp}:3001`,
-    secret: company.interserviceSecret,
-  };
+  // Shared backend: all other companies
+  if (SHARED_BACKEND_URL && SHARED_BACKEND_SECRET) {
+    return {
+      url: SHARED_BACKEND_URL,
+      secret: SHARED_BACKEND_SECRET,
+    };
+  }
+
+  return null;
 }
 
 /** Check if a company has an active droplet backend */

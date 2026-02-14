@@ -5,7 +5,6 @@ import { db } from "@/lib/db";
 import { employees, companies, channelConnections } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
 import { getCompanyBackend, createBackendClient } from "@/lib/backend";
-import { createCompanyDroplet, isDropletProvisioningEnabled } from "@/lib/digitalocean";
 import {
   createEmployeeSchema,
   getJobTemplate,
@@ -69,13 +68,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Company not found" }, { status: 404 });
   }
 
-  // Check if company has an active droplet backend
+  // Resolve backend (shared infrastructure or dedicated droplet)
   const backendConfig = await getCompanyBackend(session.companyId);
 
   if (backendConfig) {
-    // Droplet is active — delegate provisioning to it
+    // Backend available — delegate provisioning
     try {
-      // Pull channel credentials from company settings for connected integrations
       const channelCredentials = await getChannelCredentials(session.companyId, input.channels || []);
 
       const backend = createBackendClient(backendConfig);
@@ -106,82 +104,7 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // No active droplet — check if we should auto-provision one
-  if (isDropletProvisioningEnabled()) {
-    if (company.dropletStatus === "provisioning") {
-      return NextResponse.json(
-        {
-          error: "Your infrastructure is still being set up. This usually takes 2-3 minutes. Please try again shortly.",
-          dropletStatus: "provisioning",
-        },
-        { status: 503 },
-      );
-    }
-
-    // Auto-provision a droplet for this company
-    try {
-      await createCompanyDroplet(session.companyId);
-
-      // Create employee record with "provisioning" status — it'll be processed
-      // once the droplet is ready (the dashboard will poll)
-      let persona = input.persona;
-      let goals = input.goals;
-      let emoji = "🤖";
-
-      if (input.templateId) {
-        const template = getJobTemplate(input.templateId);
-        if (template) {
-          persona = persona || template.persona;
-          goals = goals || template.goals;
-          emoji = template.emoji;
-        }
-      }
-
-      const gatewayToken = crypto.randomBytes(32).toString("hex");
-
-      const tier = (input.tier || "junior") as EmployeeTier;
-      const tierModel = getModelForTier(tier);
-
-      const [employee] = await db
-        .insert(employees)
-        .values({
-          companyId: session.companyId,
-          name: input.name,
-          jobTitle: input.jobTitle,
-          templateId: input.templateId,
-          tier,
-          emoji,
-          persona,
-          goals,
-          personalityConfig: input.personalityConfig || { autonomy: "high", proactivity: "proactive", communication: "concise" },
-          modelConfig: input.modelConfig || { primary: tierModel },
-          toolsConfig: input.toolsAllow ? { allow: input.toolsAllow } : {},
-          gatewayToken,
-          status: "provisioning",
-          containerName: `ai-emp-${company.slug}-${slugify(input.name)}-${crypto.randomBytes(3).toString("hex")}`,
-        })
-        .returning();
-
-      // Create channel connection rows for tracking
-      if (input.channels?.length) {
-        await createChannelConnectionRows(employee.id, input.channels);
-      }
-
-      return NextResponse.json(
-        {
-          employee: sanitize(employee),
-          message: `${input.name} is being hired! Setting up dedicated infrastructure — this takes 2-3 minutes.`,
-          dropletStatus: "provisioning",
-        },
-        { status: 201 },
-      );
-    } catch (err: any) {
-      return NextResponse.json({ error: err.message }, { status: 500 });
-    }
-  }
-
-  // Demo mode fallback — no real provisioning
-
+  // No backend configured — demo mode fallback
   let persona = input.persona;
   let goals = input.goals;
   let emoji = "🤖";
@@ -196,8 +119,8 @@ export async function POST(request: NextRequest) {
   }
 
   const gatewayToken = crypto.randomBytes(32).toString("hex");
-  const demoTier = (input.tier || "junior") as EmployeeTier;
-  const demoTierModel = getModelForTier(demoTier);
+  const tier = (input.tier || "junior") as EmployeeTier;
+  const tierModel = getModelForTier(tier);
 
   const [employee] = await db
     .insert(employees)
@@ -206,12 +129,12 @@ export async function POST(request: NextRequest) {
       name: input.name,
       jobTitle: input.jobTitle,
       templateId: input.templateId,
-      tier: demoTier,
+      tier,
       emoji,
       persona,
       goals,
       personalityConfig: input.personalityConfig || { autonomy: "high", proactivity: "proactive", communication: "concise" },
-      modelConfig: input.modelConfig || { primary: demoTierModel },
+      modelConfig: input.modelConfig || { primary: tierModel },
       toolsConfig: input.toolsAllow ? { allow: input.toolsAllow } : {},
       gatewayToken,
       status: "active",
@@ -246,14 +169,13 @@ async function createChannelConnectionRows(employeeId: string, channels: string[
       employeeId,
       channelType: ch,
       name: CHANNEL_NAMES[ch] || ch,
-      status: ch === "slack" ? "connected" : "pending", // Slack is auto-connected via proxy
+      status: ch === "slack" ? "connected" : "pending",
     })),
   );
 }
 
 /**
  * Pull channel credentials from company settings for selected channels.
- * Only returns credentials for integrations that are actually connected.
  */
 async function getChannelCredentials(
   companyId: string,
@@ -273,11 +195,8 @@ async function getChannelCredentials(
   const integrations = (settings.integrations as Record<string, unknown>) || {};
   const creds: Record<string, Record<string, unknown>> = {};
 
-  // Slack: handled by the centralized Slack proxy on the droplet.
+  // Slack: handled by the centralized Slack proxy on the backend.
   // We don't pass Slack credentials to individual OpenClaw containers.
-  // The proxy reads credentials from the DB and env vars directly.
-  // We still include "slack" in the channels list so the worker knows
-  // to create a dedicated Slack channel for the employee.
 
   return creds;
 }

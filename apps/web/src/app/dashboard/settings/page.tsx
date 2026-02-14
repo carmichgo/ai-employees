@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
-import { Building2, User, Server, RefreshCw, Trash2, Link2, Unlink, CheckCircle2, ExternalLink } from "lucide-react";
+import { Building2, User, Server, RefreshCw, Trash2, Link2, Unlink, CheckCircle2, ExternalLink, Shield, Zap } from "lucide-react";
 
 const DROPLET_STATUS_LABELS: Record<string, { label: string; color: string }> = {
   none: { label: "Not provisioned", color: "var(--text-tertiary)" },
@@ -144,7 +144,6 @@ function SettingsContent() {
   }, []);
 
   const handleConnectSlack = () => {
-    // Navigate to Slack install endpoint — browser sends cookie automatically
     window.location.href = api.getSlackInstallUrl();
   };
 
@@ -183,6 +182,7 @@ function SettingsContent() {
     );
   }
 
+  const isDedicated = company.plan === "dedicated";
   const dropletStatusInfo = DROPLET_STATUS_LABELS[droplet?.status || "none"] || DROPLET_STATUS_LABELS.none;
 
   /* ---- shared style objects ---- */
@@ -309,16 +309,10 @@ function SettingsContent() {
           {[
             { label: "Name", value: company.name },
             { label: "Slug", value: company.slug },
-            { label: "Plan", value: company.plan, capitalize: true },
           ].map((item) => (
             <div key={item.label} style={kvRow}>
               <span style={kvLabel}>{item.label}</span>
-              <span style={{
-                ...kvValue,
-                textTransform: item.capitalize ? "capitalize" : undefined,
-              }}>
-                {item.value}
-              </span>
+              <span style={kvValue}>{item.value}</span>
             </div>
           ))}
         </div>
@@ -330,158 +324,234 @@ function SettingsContent() {
           <Server size={16} style={{ color: "var(--text-tertiary)" }} />
           <h3 style={sectionTitle}>Infrastructure</h3>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          <div style={kvRow}>
-            <span style={kvLabel}>Status</span>
-            <span style={{
-              fontSize: 12,
-              fontWeight: 600,
-              color: dropletStatusInfo.color,
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-            }}>
-              {(droplet?.status === "provisioning" || droplet?.status === "booting") && (
-                <span style={statusDot("#d97706", true)} />
-              )}
-              {droplet?.status === "active" && (
-                <span style={statusDot("#16a34a")} />
-              )}
-              {dropletStatusInfo.label}
-            </span>
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {/* Plan toggle */}
+          <div style={{ display: "flex", gap: 10 }}>
+            {/* Shared option */}
+            <div
+              style={{
+                flex: 1,
+                padding: "14px 16px",
+                borderRadius: "var(--radius-md)",
+                border: `2px solid ${!isDedicated ? "var(--text)" : "var(--border)"}`,
+                background: !isDedicated ? "var(--bg-secondary)" : "var(--bg)",
+                cursor: "default",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                <Zap size={14} style={{ color: !isDedicated ? "var(--text)" : "var(--text-tertiary)" }} />
+                <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>Shared</span>
+                {!isDedicated && (
+                  <span style={{
+                    fontSize: 10,
+                    fontWeight: 600,
+                    color: "var(--bg)",
+                    background: "var(--text)",
+                    padding: "1px 6px",
+                    borderRadius: 10,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.03em",
+                  }}>Current</span>
+                )}
+              </div>
+              <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.4 }}>
+                Free — share resources with other companies. Junior: 1 CPU / 2 GB. Senior+: 2 CPU / 4 GB.
+              </div>
+            </div>
+
+            {/* Dedicated option */}
+            <div
+              style={{
+                flex: 1,
+                padding: "14px 16px",
+                borderRadius: "var(--radius-md)",
+                border: `2px solid ${isDedicated ? "var(--text)" : "var(--border)"}`,
+                background: isDedicated ? "var(--bg-secondary)" : "var(--bg)",
+                cursor: "default",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                <Shield size={14} style={{ color: isDedicated ? "var(--text)" : "var(--text-tertiary)" }} />
+                <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>Dedicated</span>
+                {isDedicated && (
+                  <span style={{
+                    fontSize: 10,
+                    fontWeight: 600,
+                    color: "var(--bg)",
+                    background: "var(--text)",
+                    padding: "1px 6px",
+                    borderRadius: 10,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.03em",
+                  }}>Current</span>
+                )}
+              </div>
+              <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.4 }}>
+                $100/mo — your own isolated server. Full resource control, no noisy neighbors.
+              </div>
+            </div>
           </div>
 
-          {droplet?.status === "active" && droplet?.phase && (
-            <div style={kvRow}>
-              <span style={kvLabel}>Services</span>
-              <span style={{
-                fontSize: 12,
-                fontWeight: 600,
-                color: droplet.phase === "ready" ? "#16a34a" : droplet.phase === "failed" ? "#dc2626" : "#d97706",
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-              }}>
-                {droplet.phase === "provisioning" && (
-                  <span style={statusDot("#d97706", true)} />
+          {/* Dedicated droplet management (only visible on dedicated plan) */}
+          {isDedicated && (
+            <>
+              <div style={{ height: 1, background: "var(--border)" }} />
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                <div style={kvRow}>
+                  <span style={kvLabel}>Server Status</span>
+                  <span style={{
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: dropletStatusInfo.color,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}>
+                    {(droplet?.status === "provisioning" || droplet?.status === "booting") && (
+                      <span style={statusDot("#d97706", true)} />
+                    )}
+                    {droplet?.status === "active" && (
+                      <span style={statusDot("#16a34a")} />
+                    )}
+                    {dropletStatusInfo.label}
+                  </span>
+                </div>
+
+                {droplet?.status === "active" && droplet?.phase && (
+                  <div style={kvRow}>
+                    <span style={kvLabel}>Services</span>
+                    <span style={{
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: droplet.phase === "ready" ? "#16a34a" : droplet.phase === "failed" ? "#dc2626" : "#d97706",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                    }}>
+                      {droplet.phase === "provisioning" && <span style={statusDot("#d97706", true)} />}
+                      {droplet.phase === "ready" && <span style={statusDot("#16a34a")} />}
+                      {droplet.phase === "provisioning" ? "Building..." : droplet.phase === "ready" ? "Ready" : droplet.phase === "failed" ? "Build Failed" : droplet.phase}
+                    </span>
+                  </div>
                 )}
-                {droplet.phase === "ready" && (
-                  <span style={statusDot("#16a34a")} />
+
+                {droplet?.ip && (
+                  <div style={kvRow}>
+                    <span style={kvLabel}>IP Address</span>
+                    <span style={{
+                      ...kvValue,
+                      fontFamily: "'SF Mono', 'Fira Code', 'Fira Mono', 'Roboto Mono', monospace",
+                      fontSize: 12,
+                      color: "var(--text-secondary)",
+                      background: "var(--bg-secondary)",
+                      padding: "2px 8px",
+                      borderRadius: "var(--radius-sm)",
+                    }}>
+                      {droplet.ip}
+                    </span>
+                  </div>
                 )}
-                {droplet.phase === "provisioning" ? "Building..." : droplet.phase === "ready" ? "Ready" : droplet.phase === "failed" ? "Build Failed" : droplet.phase}
-              </span>
-            </div>
+
+                {droplet?.region && droplet?.status !== "none" && (
+                  <div style={kvRow}>
+                    <span style={kvLabel}>Region</span>
+                    <span style={kvValue}>{droplet.region}</span>
+                  </div>
+                )}
+
+                <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                  {(!droplet || droplet.status === "none" || droplet.status === "destroyed") && (
+                    <button
+                      onClick={handleProvision}
+                      disabled={dropletLoading}
+                      style={{
+                        ...btnPrimary,
+                        ...(dropletLoading ? { opacity: 0.5, cursor: "not-allowed" } : {}),
+                      }}
+                    >
+                      Provision Dedicated Server
+                    </button>
+                  )}
+                  {(droplet?.status === "provisioning" || droplet?.status === "booting") && (
+                    <button onClick={loadDroplet} style={btnSecondary}>
+                      <RefreshCw size={12} /> Refresh
+                    </button>
+                  )}
+                  {(droplet?.status === "active" || droplet?.status === "booting" || droplet?.status === "provisioning" || droplet?.status === "error") && (
+                    <button
+                      onClick={handleDestroy}
+                      disabled={dropletLoading}
+                      style={{
+                        ...btnDanger,
+                        ...(dropletLoading ? { opacity: 0.5, cursor: "not-allowed" } : {}),
+                      }}
+                    >
+                      <Trash2 size={12} /> Destroy
+                    </button>
+                  )}
+                  {droplet?.status === "active" && (
+                    <button
+                      onClick={async () => {
+                        setLogsLoading(true);
+                        try {
+                          const data = await api.getDropletLogs();
+                          setBuildLogs(data.logs);
+                        } catch {
+                          setBuildLogs("Failed to fetch logs");
+                        } finally {
+                          setLogsLoading(false);
+                        }
+                      }}
+                      disabled={logsLoading}
+                      style={{
+                        ...btnSecondary,
+                        ...(logsLoading ? { opacity: 0.5, cursor: "not-allowed" } : {}),
+                      }}
+                    >
+                      {logsLoading ? "Loading..." : "View Build Logs"}
+                    </button>
+                  )}
+                </div>
+
+                {buildLogs && (
+                  <div style={{
+                    marginTop: 8,
+                    padding: 14,
+                    backgroundColor: "var(--bg-secondary)",
+                    borderRadius: "var(--radius-md)",
+                    border: "1px solid var(--border)",
+                    maxHeight: 300,
+                    overflow: "auto",
+                  }}>
+                    <pre style={{
+                      fontSize: 11,
+                      whiteSpace: "pre-wrap",
+                      wordBreak: "break-all",
+                      margin: 0,
+                      fontFamily: "'SF Mono', 'Fira Code', 'Fira Mono', 'Roboto Mono', monospace",
+                      color: "var(--text-secondary)",
+                      lineHeight: 1.6,
+                    }}>
+                      {buildLogs}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            </>
           )}
 
-          {droplet?.ip && (
-            <div style={kvRow}>
-              <span style={kvLabel}>IP Address</span>
-              <span style={{
-                ...kvValue,
-                fontFamily: "'SF Mono', 'Fira Code', 'Fira Mono', 'Roboto Mono', monospace",
-                fontSize: 12,
-                color: "var(--text-secondary)",
-                background: "var(--bg-secondary)",
-                padding: "2px 8px",
-                borderRadius: "var(--radius-sm)",
-              }}>
-                {droplet.ip}
-              </span>
-            </div>
-          )}
-
-          {droplet?.region && droplet?.status !== "none" && (
-            <div style={kvRow}>
-              <span style={kvLabel}>Region</span>
-              <span style={kvValue}>{droplet.region}</span>
-            </div>
-          )}
-
-          {droplet?.size && droplet?.status !== "none" && (
-            <div style={kvRow}>
-              <span style={kvLabel}>Size</span>
-              <span style={kvValue}>{droplet.size}</span>
-            </div>
-          )}
-
-          <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-            {(!droplet || droplet.status === "none" || droplet.status === "destroyed") && (
-              <button
-                onClick={handleProvision}
-                disabled={dropletLoading}
-                style={{
-                  ...btnPrimary,
-                  ...(dropletLoading ? { opacity: 0.5, cursor: "not-allowed" } : {}),
-                }}
-              >
-                Provision Infrastructure
-              </button>
-            )}
-            {(droplet?.status === "provisioning" || droplet?.status === "booting") && (
-              <button
-                onClick={loadDroplet}
-                style={btnSecondary}
-              >
-                <RefreshCw size={12} /> Refresh
-              </button>
-            )}
-            {(droplet?.status === "active" || droplet?.status === "booting" || droplet?.status === "provisioning" || droplet?.status === "error") && (
-              <button
-                onClick={handleDestroy}
-                disabled={dropletLoading}
-                style={{
-                  ...btnDanger,
-                  ...(dropletLoading ? { opacity: 0.5, cursor: "not-allowed" } : {}),
-                }}
-              >
-                <Trash2 size={12} /> Destroy
-              </button>
-            )}
-            {droplet?.status === "active" && (
-              <button
-                onClick={async () => {
-                  setLogsLoading(true);
-                  try {
-                    const data = await api.getDropletLogs();
-                    setBuildLogs(data.logs);
-                  } catch {
-                    setBuildLogs("Failed to fetch logs");
-                  } finally {
-                    setLogsLoading(false);
-                  }
-                }}
-                disabled={logsLoading}
-                style={{
-                  ...btnSecondary,
-                  ...(logsLoading ? { opacity: 0.5, cursor: "not-allowed" } : {}),
-                }}
-              >
-                {logsLoading ? "Loading..." : "View Build Logs"}
-              </button>
-            )}
-          </div>
-
-          {buildLogs && (
+          {/* Shared plan info */}
+          {!isDedicated && (
             <div style={{
-              marginTop: 8,
-              padding: 14,
-              backgroundColor: "var(--bg-secondary)",
+              padding: "12px 16px",
               borderRadius: "var(--radius-md)",
+              background: "var(--bg-secondary)",
               border: "1px solid var(--border)",
-              maxHeight: 300,
-              overflow: "auto",
             }}>
-              <pre style={{
-                fontSize: 11,
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-all",
-                margin: 0,
-                fontFamily: "'SF Mono', 'Fira Code', 'Fira Mono', 'Roboto Mono', monospace",
-                color: "var(--text-secondary)",
-                lineHeight: 1.6,
-              }}>
-                {buildLogs}
-              </pre>
+              <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                Your employees run on shared infrastructure. Each employee gets dedicated resources based on their tier
+                (Junior: 1 CPU / 2 GB, Senior & Expert: 2 CPU / 4 GB). Upgrade to Dedicated for full isolation.
+              </div>
             </div>
           )}
         </div>

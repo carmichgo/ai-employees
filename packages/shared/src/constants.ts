@@ -67,6 +67,37 @@ export const CONTAINER_RESOURCES = {
   enterprise: { memory: "8g", cpus: "4.0" },
 } as const;
 
+// ── Company Plan Configuration ───────────────────────
+// Plans determine infrastructure type and pricing.
+
+export interface CompanyPlanConfig {
+  id: string;
+  label: string;
+  subtitle: string;
+  priceMonthly: number;
+  infrastructure: "shared" | "dedicated";
+  maxEmployees: number;
+}
+
+export const COMPANY_PLANS: Record<string, CompanyPlanConfig> = {
+  starter: {
+    id: "starter",
+    label: "Starter",
+    subtitle: "Shared infrastructure",
+    priceMonthly: 0,
+    infrastructure: "shared",
+    maxEmployees: 50,
+  },
+  dedicated: {
+    id: "dedicated",
+    label: "Dedicated",
+    subtitle: "Your own isolated server",
+    priceMonthly: 100,
+    infrastructure: "dedicated",
+    maxEmployees: 200,
+  },
+} as const;
+
 export const EMPLOYEE_STATUSES = [
   "provisioning",
   "onboarding",
