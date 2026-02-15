@@ -536,7 +536,7 @@ export async function pollEmployeeDropletStatus(employeeId: string): Promise<{
       if (employee.dropletStatus === "error") {
         await db
           .update(employees)
-          .set({ dropletStatus: "active", updatedAt: new Date() })
+          .set({ dropletStatus: "active", status: "active", updatedAt: new Date() })
           .where(eq(employees.id, employeeId));
       }
       return { status: "active", ip: employee.dropletIp, phase: apiCheck.phase };
@@ -563,6 +563,7 @@ export async function pollEmployeeDropletStatus(employeeId: string): Promise<{
           .set({
             dropletIp: ip,
             dropletStatus: "active",
+            status: "active",
             updatedAt: new Date(),
           })
           .where(eq(employees.id, employeeId));

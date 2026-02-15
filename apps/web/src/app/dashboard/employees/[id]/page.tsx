@@ -197,6 +197,13 @@ export default function EmployeeDetailPage() {
   const [phoneNotice, setPhoneNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [copiedWebhook, setCopiedWebhook] = useState(false);
 
+  // Droplet / infrastructure state
+  const [dropletStatus, setDropletStatus] = useState<{ status: string; ip: string | null; phase: string | null } | null>(null);
+  const [provisioningEnabled, setProvisioningEnabled] = useState(false);
+  const [provisioningLoading, setProvisioningLoading] = useState(false);
+  const [infraNotice, setInfraNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const dropletPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const employeeId = params.id as string;
 
   useEffect(() => {
@@ -220,7 +227,38 @@ export default function EmployeeDetailPage() {
     api.listTriggers(employeeId).then((res) => setTriggersList(res.triggers || [])).catch(() => {});
     api.listCredentials(employeeId).then((res) => setCredentialsList(res.credentials || [])).catch(() => {});
     api.listChannels(employeeId).then((res) => setChannelsList(res.channels || [])).catch(() => {});
+
+    // Fetch droplet status
+    api.getEmployeeDropletStatus(employeeId).then((res) => {
+      setDropletStatus(res.droplet);
+      setProvisioningEnabled(res.provisioningEnabled);
+    }).catch(() => {});
   }, [employeeId]);
+
+  // Poll droplet status while provisioning
+  useEffect(() => {
+    const shouldPoll = employee?.status === "provisioning" || dropletStatus?.status === "provisioning" || dropletStatus?.status === "booting";
+    if (!shouldPoll) {
+      if (dropletPollRef.current) { clearInterval(dropletPollRef.current); dropletPollRef.current = null; }
+      return;
+    }
+    if (dropletPollRef.current) return; // already polling
+
+    dropletPollRef.current = setInterval(async () => {
+      try {
+        const res = await api.getEmployeeDropletStatus(employeeId);
+        setDropletStatus(res.droplet);
+        if (res.droplet.status === "active") {
+          // Refresh employee data to get updated status
+          const empRes = await api.getEmployee(employeeId);
+          setEmployee(empRes.employee);
+          if (dropletPollRef.current) { clearInterval(dropletPollRef.current); dropletPollRef.current = null; }
+        }
+      } catch { /* ignore transient errors */ }
+    }, 8000);
+
+    return () => { if (dropletPollRef.current) { clearInterval(dropletPollRef.current); dropletPollRef.current = null; } };
+  }, [employee?.status, dropletStatus?.status, employeeId]);
 
   // ── Employee actions ──
   const handlePause = async () => {
@@ -536,6 +574,24 @@ export default function EmployeeDetailPage() {
     }
   };
 
+  // ── Droplet provisioning ──
+  const handleProvisionDroplet = async () => {
+    setProvisioningLoading(true);
+    setInfraNotice(null);
+    try {
+      const res = await api.provisionEmployeeDroplet(employeeId);
+      setInfraNotice({ type: "success", message: res.message });
+      setDropletStatus({ status: "provisioning", ip: null, phase: null });
+      // Refresh employee to show provisioning status
+      const empRes = await api.getEmployee(employeeId);
+      setEmployee(empRes.employee);
+    } catch (err: any) {
+      setInfraNotice({ type: "error", message: err.message });
+    } finally {
+      setProvisioningLoading(false);
+    }
+  };
+
   const copyWebhookUrl = (token: string) => {
     navigator.clipboard.writeText(`${window.location.origin}/api/webhooks/${token}`);
     setCopiedToken(token);
@@ -618,6 +674,76 @@ export default function EmployeeDetailPage() {
         </div>
       )}
 
+      {/* Infrastructure status */}
+      {employee.status !== "terminated" && employee.status !== "provisioning" && (
+        <div className="card" style={{ padding: 20, marginBottom: 16, background: "#ffffff", border: "1px solid var(--border)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <Server size={16} style={{ color: dropletStatus?.status === "active" ? "var(--green)" : "var(--text-tertiary)" }} />
+              <div>
+                <p className="label" style={{ margin: 0 }}>Infrastructure</p>
+                <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>
+                  {dropletStatus?.status === "active" && dropletStatus.ip
+                    ? <>Dedicated server &middot; <span style={{ fontFamily: "monospace" }}>{dropletStatus.ip}</span>{dropletStatus.phase && <> &middot; Phase: {dropletStatus.phase}</>}</>
+                    : dropletStatus?.status === "provisioning" || dropletStatus?.status === "booting"
+                      ? "Dedicated server is being set up..."
+                      : dropletStatus?.status === "error"
+                        ? "Server encountered an error"
+                        : "No dedicated server — running in demo mode"
+                  }
+                </div>
+              </div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              {(dropletStatus?.status === "provisioning" || dropletStatus?.status === "booting") && (
+                <Loader2 size={16} style={{ color: "var(--blue)", animation: "spin 2s linear infinite" }} />
+              )}
+              {(!dropletStatus || dropletStatus.status === "none" || dropletStatus.status === "destroyed") && provisioningEnabled && (
+                <button
+                  className="btn-primary btn-sm"
+                  onClick={handleProvisionDroplet}
+                  disabled={provisioningLoading}
+                  style={{ gap: 6 }}
+                >
+                  {provisioningLoading ? <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> : <Zap size={14} />}
+                  Provision Server
+                </button>
+              )}
+              {(!dropletStatus || dropletStatus.status === "none" || dropletStatus.status === "destroyed") && !provisioningEnabled && (
+                <span style={{ fontSize: 11, color: "var(--text-tertiary)", background: "var(--bg-secondary)", padding: "4px 10px", borderRadius: 10 }}>
+                  DO_API_TOKEN not configured
+                </span>
+              )}
+              {dropletStatus?.status === "active" && (
+                <span style={{ fontSize: 11, padding: "4px 10px", borderRadius: 10, background: "rgba(22, 163, 74, 0.08)", color: "var(--green)", fontWeight: 500 }}>
+                  Running
+                </span>
+              )}
+              {dropletStatus?.status === "error" && provisioningEnabled && (
+                <button
+                  className="btn-secondary btn-sm"
+                  onClick={handleProvisionDroplet}
+                  disabled={provisioningLoading}
+                  style={{ gap: 6 }}
+                >
+                  {provisioningLoading ? <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> : <Zap size={14} />}
+                  Retry
+                </button>
+              )}
+            </div>
+          </div>
+          {infraNotice && (
+            <div style={{
+              padding: "8px 12px", borderRadius: "var(--radius-sm)", marginTop: 12, fontSize: 12,
+              background: infraNotice.type === "success" ? "rgba(22, 163, 74, 0.06)" : "rgba(220, 38, 38, 0.06)",
+              color: infraNotice.type === "success" ? "var(--green)" : "var(--red)",
+            }}>
+              {infraNotice.message}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Details grid */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
         <div className="card" style={{ padding: 20, background: "#ffffff", border: "1px solid var(--border)" }}>
@@ -640,7 +766,7 @@ export default function EmployeeDetailPage() {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, fontSize: 13 }}>
           {[
             { icon: Server, label: "Container", value: employee.containerName || "\u2014" },
-            { icon: Server, label: "Host", value: employee.containerHost ? `${employee.containerHost}:${employee.containerPort}` : "\u2014" },
+            { icon: Globe, label: "Droplet IP", value: dropletStatus?.ip || employee.dropletIp || "No droplet" },
             { icon: Cpu, label: "Model", value: (employee.modelConfig as any)?.primary || "claude-opus-4-6" },
             { icon: Clock, label: "Last Health", value: employee.lastHealthAt ? new Date(employee.lastHealthAt).toLocaleString() : "\u2014" },
             { icon: Calendar, label: "Created", value: new Date(employee.createdAt).toLocaleDateString() },

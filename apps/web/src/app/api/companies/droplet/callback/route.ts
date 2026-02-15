@@ -37,12 +37,13 @@ export async function POST(request: NextRequest) {
     `[droplet-callback] employee=${employee.name} step=${body.step} status=${body.status}${body.error ? ` error=${body.error}` : ""}`,
   );
 
-  // If the step reports the API is ready, mark droplet as active
+  // If the step reports the API is ready, mark droplet and employee as active
   if (body.step === "ready" && body.status === "ok") {
     await db
       .update(employees)
       .set({
         dropletStatus: "active",
+        status: "active",
         updatedAt: new Date(),
       })
       .where(eq(employees.id, employee.id));

@@ -311,6 +311,21 @@ class ApiClient {
     );
   }
 
+  // Per-employee droplet management
+  async getEmployeeDropletStatus(employeeId: string) {
+    return this.request<{
+      droplet: { status: string; ip: string | null; region: string | null; size: string | null; phase: string | null };
+      provisioningEnabled: boolean;
+    }>(`/api/employees/${employeeId}/droplet`);
+  }
+
+  async provisionEmployeeDroplet(employeeId: string) {
+    return this.request<{ message: string; dropletId: string }>(
+      `/api/employees/${employeeId}/droplet`,
+      { method: "POST" },
+    );
+  }
+
   // Integrations
   async getIntegrations() {
     return this.request<{
