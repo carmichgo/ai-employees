@@ -1,8 +1,12 @@
 name: Deploy to Droplets
 
-# Triggers on push to main (excluding web-only and doc changes) or manual dispatch.
-# Deploys to all configured droplets without destroying them — employee containers
-# are never touched. Only the api + worker services are rebuilt and restarted.
+# Droplets auto-update every 2 minutes via systemd timer (pull-based).
+# This workflow is optional — it triggers IMMEDIATE deploys via the API
+# webhook if you don't want to wait for the next poll cycle.
+#
+# If DROPLET_URLS is not configured, this workflow is a no-op (that's fine,
+# droplets will still pick up changes within 2 minutes).
+
 on:
   push:
     branches: [main]
@@ -18,80 +22,34 @@ on:
 
 jobs:
   deploy:
-    name: Deploy to DigitalOcean Droplets
+    name: Trigger immediate deploy
     runs-on: ubuntu-latest
-    strategy:
-      # Deploy to droplets one at a time so we can catch failures early
-      max-parallel: 1
-      matrix:
-        # Each droplet is defined by its SSH host. Add more entries to scale.
-        # Configure DROPLET_IPS as a JSON array in repo secrets:
-        # e.g. ["164.90.xxx.xxx", "164.90.yyy.yyy"]
-        droplet: ${{ fromJson(secrets.DROPLET_IPS || '[]') }}
-    steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ matrix.droplet }}
-          username: root
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          script_stop: true
-          command_timeout: 10m
-          script: |
-            BRANCH="${{ inputs.branch || 'main' }}"
-            APP_DIR="/opt/ai-employees/app"
-
-            echo "=== Deploying $BRANCH to $(hostname) ==="
-
-            if [ -f "$APP_DIR/infrastructure/deploy.sh" ]; then
-              bash "$APP_DIR/infrastructure/deploy.sh" "$BRANCH"
-            else
-              # First deploy — clone and run
-              git clone --branch "$BRANCH" --depth 1 \
-                https://github.com/carmichgo/ai-employees.git "$APP_DIR" 2>/dev/null || \
-                (cd "$APP_DIR" && git fetch origin "$BRANCH" && git reset --hard "origin/$BRANCH")
-              bash "$APP_DIR/infrastructure/deploy.sh" "$BRANCH"
-            fi
-
-      - name: Verify health
-        run: |
-          DROPLET="${{ matrix.droplet }}"
-          for i in $(seq 1 12); do
-            if curl -sf --connect-timeout 5 "http://$DROPLET:3001/health" > /dev/null 2>&1; then
-              echo "Droplet $DROPLET is healthy!"
-              exit 0
-            fi
-            echo "Waiting for $DROPLET to become healthy... ($((i * 5))s)"
-            sleep 5
-          done
-          echo "::warning::Droplet $DROPLET health check timed out (may still be starting)"
-
-  # Alternative: webhook-based deploy for droplets behind firewalls/NAT
-  deploy-webhook:
-    name: Deploy via API Webhook
-    runs-on: ubuntu-latest
-    # Only runs if DROPLET_URLS is configured (skip if using SSH method above)
-    if: ${{ secrets.DROPLET_URLS != '' }}
+    # Only runs if webhook URLs are configured
+    if: ${{ vars.DROPLET_URLS != '' || secrets.DROPLET_URLS != '' }}
     steps:
       - name: Trigger rolling deploy on each droplet
         env:
-          DROPLET_URLS: ${{ secrets.DROPLET_URLS }}
+          # Comma-separated list of droplet API URLs
+          # e.g. "https://api.droplet1.example.com,https://api.droplet2.example.com"
+          DROPLET_URLS: ${{ secrets.DROPLET_URLS || vars.DROPLET_URLS }}
           INTERSERVICE_SECRET: ${{ secrets.INTERSERVICE_SECRET }}
           DEPLOY_BRANCH: ${{ inputs.branch || 'main' }}
         run: |
           IFS=',' read -ra URLS <<< "$DROPLET_URLS"
           FAILED=0
+          TOTAL=${#URLS[@]}
+
+          echo "Deploying to $TOTAL droplet(s)..."
 
           for URL in "${URLS[@]}"; do
             URL=$(echo "$URL" | xargs)
-            echo "--- Deploying to $URL ---"
+            echo "--- Triggering deploy on $URL ---"
 
-            # Trigger deploy
             RESPONSE=$(curl -sf -X POST "$URL/deploy" \
               -H "Content-Type: application/json" \
               -H "X-Interservice-Secret: $INTERSERVICE_SECRET" \
               -d "{\"branch\": \"$DEPLOY_BRANCH\"}" 2>&1) || {
-              echo "::warning::Failed to trigger deploy on $URL: $RESPONSE"
+              echo "::warning::Failed to trigger deploy on $URL (droplet will still auto-update within 2 min)"
               FAILED=$((FAILED + 1))
               continue
             }
@@ -109,9 +67,7 @@ jobs:
                 if [ "$SUCCESS" = "true" ]; then
                   echo "Deploy to $URL succeeded!"
                 else
-                  echo "::error::Deploy to $URL failed!"
-                  echo "$STATUS" | jq -r '.lines[-5:][]' 2>/dev/null || true
-                  FAILED=$((FAILED + 1))
+                  echo "::warning::Deploy to $URL may have failed (check /deploy-status)"
                 fi
                 break
               fi
@@ -120,9 +76,8 @@ jobs:
             done
           done
 
+          echo ""
+          echo "Triggered $((TOTAL - FAILED))/$TOTAL droplets immediately."
           if [ $FAILED -gt 0 ]; then
-            echo "::error::$FAILED droplet(s) failed to deploy"
-            exit 1
+            echo "::notice::$FAILED droplet(s) couldn't be reached but will auto-update within 2 minutes."
           fi
-
-          echo "All droplets deployed successfully!"
