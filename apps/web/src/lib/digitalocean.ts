@@ -2,7 +2,7 @@
  * DigitalOcean API client — provisions per-employee droplets.
  *
  * Each employee gets their own droplet, sized by tier:
- *   junior  → s-1vcpu-2gb
+ *   junior  → s-2vcpu-4gb
  *   senior  → s-2vcpu-4gb
  *   expert  → s-4vcpu-8gb
  *
@@ -15,7 +15,7 @@ import { db } from "@/lib/db";
 import { employees, companies } from "@/lib/schema";
 import { createBackendClient } from "@/lib/backend";
 
-const DO_API_TOKEN = process.env.DO_API_TOKEN;
+const DO_API_TOKEN = (process.env.DO_API_TOKEN || "").trim();
 const DO_API = "https://api.digitalocean.com/v2";
 
 // The GitHub repo URL for cloning on the droplet
@@ -55,9 +55,12 @@ async function doFetch(path: string, options: RequestInit = {}): Promise<Respons
   return res;
 }
 
-/** Droplet size mapping based on employee tier */
+/** Droplet size mapping based on employee tier.
+ *  Minimum is s-2vcpu-4gb — building the monorepo (pnpm install + turbo build)
+ *  needs at least 4GB RAM. The old per-company architecture used s-2vcpu-4gb as
+ *  its smallest size and worked reliably; s-1vcpu-2gb OOMs during the build. */
 const TIER_DROPLET_SIZES: Record<string, string> = {
-  junior: "s-1vcpu-2gb",
+  junior: "s-2vcpu-4gb",
   senior: "s-2vcpu-4gb",
   expert: "s-4vcpu-8gb",
 };
@@ -177,6 +180,16 @@ echo "PHASE1_READY" > /opt/ai-employees/status
 # ============================================================
 
 report "phase2-system-update" "started"
+
+# Create 2GB swap — prevents OOM during pnpm install + turbo build
+if [ ! -f /swapfile ]; then
+  fallocate -l 2G /swapfile
+  chmod 600 /swapfile
+  mkswap /swapfile
+  swapon /swapfile
+  echo "/swapfile swap swap defaults 0 0" >> /etc/fstab
+  echo "Swap enabled (2GB)"
+fi
 
 # Update system and install basics
 apt-get update -qq || true
@@ -466,7 +479,7 @@ export async function createEmployeeDroplet(employeeId: string): Promise<{
     companySlug: company.slug,
     databaseUrl,
     interserviceSecret,
-    platformUrl: process.env.NEXT_PUBLIC_APP_URL || "https://ai-employees-ten.vercel.app",
+    platformUrl: (process.env.NEXT_PUBLIC_APP_URL || "https://ai-employees-ten.vercel.app").trim(),
     repoUrl: REPO_URL,
     repoBranch: REPO_BRANCH,
     anthropicApiKey,
