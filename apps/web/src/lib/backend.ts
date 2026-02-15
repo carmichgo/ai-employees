@@ -130,6 +130,13 @@ export function createBackendClient(config: EmployeeBackendConfig) {
       return res.json();
     },
 
+    async provisionContainer(employeeId: string) {
+      const res = await backendFetch(config, `/internal/employees/${employeeId}/provision-container`, {
+        method: "POST",
+      });
+      return res.json() as Promise<{ message: string; status: string }>;
+    },
+
     async getWhatsAppQR(employeeId: string) {
       const res = await backendFetch(config, `/internal/employees/${employeeId}/channels/whatsapp/qr`);
       return res.json() as Promise<{ status: string; qr: string | null; message?: string }>;

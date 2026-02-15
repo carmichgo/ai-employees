@@ -7,7 +7,7 @@ import crypto from "node:crypto";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { eq, and } from "drizzle-orm";
-import { db, employees, companies } from "@ai-employees/db";
+import { db, employees, companies, channelConnections } from "@ai-employees/db";
 import { getJobTemplate, getModelForTier, type EmployeeTier } from "@ai-employees/shared";
 import { regenerateChannelConfig, type ChannelInput } from "@ai-employees/openclaw-config";
 import { getProvisionQueue } from "../queues.js";
@@ -151,6 +151,38 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       employee: sanitize(employee),
       message: `${body.name} is being onboarded! Their workstation is spinning up.`,
     });
+  });
+
+  // POST /internal/employees/:id/provision-container
+  // Queues OpenClaw container creation for an existing employee.
+  // Called by the web app once the droplet reports phase "ready".
+  fastify.post<{ Params: { id: string } }>("/internal/employees/:id/provision-container", async (request, reply) => {
+    const { id } = request.params;
+
+    const employee = await db.query.employees.findFirst({
+      where: eq(employees.id, id),
+    });
+    if (!employee) return reply.status(404).send({ error: "Employee not found" });
+
+    // Don't re-provision if already active with a container
+    if (employee.containerId && employee.status === "active") {
+      return { message: "Container already provisioned", status: employee.status };
+    }
+
+    // Get channel connections for this employee
+    const connections = await db.query.channelConnections.findMany({
+      where: eq(channelConnections.employeeId, id),
+    });
+    const channels = connections.map((c) => c.channelType);
+
+    const queue = getProvisionQueue();
+    await queue.add("provision-employee", {
+      employeeId: id,
+      companyId: employee.companyId,
+      channels,
+    });
+
+    return { message: "Container provisioning queued", status: "provisioning" };
   });
 
   // POST /internal/employees/:id/pause
@@ -379,7 +411,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // POST /internal/employees/:id/chat — proxy chat to container or call Anthropic directly
+  // POST /internal/employees/:id/chat — proxy chat to OpenClaw container
   fastify.post<{ Params: { id: string } }>("/internal/employees/:id/chat", async (request, reply) => {
     const { id } = request.params;
     const body = request.body as {
@@ -463,55 +495,10 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       }
     }
 
-    // No container — call Anthropic directly
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      return reply.status(500).send({ error: "ANTHROPIC_API_KEY not configured" });
-    }
-
-    const systemPrompt = buildSystemPrompt(employee);
-    const modelConfig = employee.modelConfig as { primary: string };
-    const modelId = toAnthropicModelId(modelConfig.primary);
-
-    try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-        },
-        body: JSON.stringify({
-          model: modelId,
-          max_tokens: 4096,
-          system: systemPrompt,
-          messages: body.messages.map((m) => ({
-            role: m.role === "assistant" ? "assistant" : "user",
-            content: m.content,
-          })),
-        }),
-      });
-
-      if (!res.ok) {
-        const err = await res.text();
-        fastify.log.error(`Anthropic API error: ${err}`);
-        return reply.status(502).send({ error: `LLM error: ${res.status}` });
-      }
-
-      const data = await res.json() as {
-        content?: Array<{ type: string; text?: string }>;
-        usage?: { input_tokens?: number; output_tokens?: number };
-      };
-
-      return {
-        reply: data.content?.find((c) => c.type === "text")?.text || "No response",
-        mode: "live",
-        usage: data.usage,
-      };
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      return reply.status(502).send({ error: `Anthropic API error: ${message}` });
-    }
+    // No container available — cannot chat
+    return reply.status(503).send({
+      error: "OpenClaw container is not running for this employee. Container provisioning may still be in progress.",
+    });
   });
 }
 
@@ -534,8 +521,4 @@ function buildSystemPrompt(employee: { name: string; jobTitle: string; persona: 
 }
 
 /** Convert model config string to Anthropic model ID */
-function toAnthropicModelId(model: string): string {
-  // Strip provider prefix if present (e.g. "anthropic/claude-opus-4-6" → "claude-opus-4-6")
-  const stripped = model.includes("/") ? model.split("/").slice(1).join("/") : model;
-  return stripped || "claude-opus-4-6";
-}
+

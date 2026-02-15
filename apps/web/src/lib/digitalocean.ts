@@ -13,6 +13,7 @@ import crypto from "node:crypto";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { employees, companies } from "@/lib/schema";
+import { getEmployeeBackend, createBackendClient } from "@/lib/backend";
 
 const DO_API_TOKEN = process.env.DO_API_TOKEN;
 const DO_API = "https://api.digitalocean.com/v2";
@@ -534,6 +535,25 @@ export async function pollEmployeeDropletStatus(employeeId: string): Promise<{
     const apiCheck = await checkDropletApi(employee.dropletIp);
     if (apiCheck.ok) {
       const isReady = apiCheck.phase === "ready";
+      if (isReady && !employee.containerId) {
+        // Droplet ready but container not provisioned yet — trigger it
+        if (employee.dropletStatus === "error") {
+          await db
+            .update(employees)
+            .set({ dropletStatus: "active", updatedAt: new Date() })
+            .where(eq(employees.id, employeeId));
+        }
+        try {
+          const backendConfig = await getEmployeeBackend(employeeId);
+          if (backendConfig) {
+            const backend = createBackendClient(backendConfig);
+            await backend.provisionContainer(employeeId);
+          }
+        } catch {
+          // Will retry on next poll
+        }
+        return { status: "provisioning", ip: employee.dropletIp, phase: "container-provisioning" };
+      }
       if (employee.dropletStatus === "error" && isReady) {
         await db
           .update(employees)
@@ -559,7 +579,38 @@ export async function pollEmployeeDropletStatus(employeeId: string): Promise<{
       const apiCheck = await checkDropletApi(ip);
 
       if (apiCheck.ok && apiCheck.phase === "ready") {
-        // API is up and fully ready (OpenClaw containers running)
+        // Droplet API is up. Check if container still needs provisioning.
+        const emp = await db.select().from(employees).where(eq(employees.id, employeeId)).limit(1);
+        const hasContainer = emp[0]?.containerId;
+
+        if (!hasContainer) {
+          // Droplet ready but no OpenClaw container yet — trigger provisioning
+          await db
+            .update(employees)
+            .set({
+              dropletIp: ip,
+              dropletStatus: "active",
+              // Keep status as "provisioning" until the worker creates the container
+              updatedAt: new Date(),
+            })
+            .where(eq(employees.id, employeeId));
+
+          // Tell the droplet to create the OpenClaw container
+          try {
+            const backendConfig = await getEmployeeBackend(employeeId);
+            if (backendConfig) {
+              const backend = createBackendClient(backendConfig);
+              await backend.provisionContainer(employeeId);
+              console.log(`[droplet-poll] Triggered container provisioning for ${employeeId}`);
+            }
+          } catch (err: any) {
+            console.error(`[droplet-poll] Failed to trigger container provisioning: ${err.message}`);
+          }
+
+          return { status: "provisioning", ip, phase: "container-provisioning" };
+        }
+
+        // Container exists — employee is fully active
         await db
           .update(employees)
           .set({
