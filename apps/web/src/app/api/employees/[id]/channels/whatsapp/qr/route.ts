@@ -42,6 +42,14 @@ export async function GET(
     return NextResponse.json({ error: "Employee not found" }, { status: 404 });
   }
 
+  // Check if employee's infrastructure is ready before trying container commands
+  if (employee.status === "provisioning" || employee.dropletStatus !== "active") {
+    return NextResponse.json(
+      { error: "Employee's server is still being set up. Please wait until provisioning is complete before linking WhatsApp." },
+      { status: 503 },
+    );
+  }
+
   const backendConfig = await getEmployeeBackend(id);
   if (!backendConfig) {
     return NextResponse.json(

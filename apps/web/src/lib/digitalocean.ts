@@ -533,13 +533,14 @@ export async function pollEmployeeDropletStatus(employeeId: string): Promise<{
   if ((employee.dropletStatus === "active" || employee.dropletStatus === "error") && employee.dropletIp) {
     const apiCheck = await checkDropletApi(employee.dropletIp);
     if (apiCheck.ok) {
-      if (employee.dropletStatus === "error") {
+      const isReady = apiCheck.phase === "ready";
+      if (employee.dropletStatus === "error" && isReady) {
         await db
           .update(employees)
           .set({ dropletStatus: "active", status: "active", updatedAt: new Date() })
           .where(eq(employees.id, employeeId));
       }
-      return { status: "active", ip: employee.dropletIp, phase: apiCheck.phase };
+      return { status: isReady ? "active" : "booting", ip: employee.dropletIp, phase: apiCheck.phase };
     }
     return { status: employee.dropletStatus, ip: employee.dropletIp, phase: null };
   }
@@ -557,7 +558,8 @@ export async function pollEmployeeDropletStatus(employeeId: string): Promise<{
     if (droplet.status === "active" && ip) {
       const apiCheck = await checkDropletApi(ip);
 
-      if (apiCheck.ok) {
+      if (apiCheck.ok && apiCheck.phase === "ready") {
+        // API is up and fully ready (OpenClaw containers running)
         await db
           .update(employees)
           .set({
@@ -571,13 +573,13 @@ export async function pollEmployeeDropletStatus(employeeId: string): Promise<{
         return { status: "active", ip, phase: apiCheck.phase };
       }
 
-      // Droplet is running but API isn't ready yet
+      // Droplet is running but not fully ready yet
       await db
         .update(employees)
         .set({ dropletIp: ip, updatedAt: new Date() })
         .where(eq(employees.id, employeeId));
 
-      return { status: "booting", ip, phase: null };
+      return { status: "booting", ip, phase: apiCheck.ok ? apiCheck.phase : null };
     }
 
     return { status: "provisioning", ip, phase: null };

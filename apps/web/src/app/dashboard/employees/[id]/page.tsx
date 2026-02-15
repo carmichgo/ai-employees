@@ -108,10 +108,10 @@ const CHANNEL_META: Record<string, {
     helpText: "Phone calling is configured in the Phone Number section below.",
   },
   "voice-chat": {
-    label: "Web Voice Chat",
+    label: "Web Voice Call",
     icon: Headphones,
     fields: [],
-    helpText: "Voice chat is automatically enabled in the dashboard. Open the chat page and use the mic button to talk.",
+    helpText: "Voice calling through the dashboard — speak and your employee responds with voice in real time.",
   },
 };
 
