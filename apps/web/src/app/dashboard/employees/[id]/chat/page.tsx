@@ -48,6 +48,16 @@ export default function EmployeeChatPage() {
       const empRes = await api.getEmployee(employeeId);
       setEmployee(empRes.employee);
 
+      // Check if voice-chat channel is enabled — auto-enable voice if so
+      try {
+        const channelsRes = await api.listChannels(employeeId);
+        if (channelsRes.channels.some((ch) => ch.channelType === "voice-chat")) {
+          setAutoSpeak(true);
+        }
+      } catch {
+        // Channels endpoint may not be available — voice stays manual
+      }
+
       // Load conversation history from DB
       try {
         const historyRes = await api.getChatHistory(employeeId);

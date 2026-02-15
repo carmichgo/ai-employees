@@ -203,6 +203,11 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
       createSlackChannel(employeeId);
     }
 
+    // Provision a Twilio phone number if phone channel is selected
+    if (data.channels.includes("phone")) {
+      provisionTwilioNumber(employeeId);
+    }
+
     // Install CLI tools in background (doesn't block provisioning)
     installCliTools(employee.containerName!, employeeId);
   } catch (error) {
@@ -293,6 +298,9 @@ export async function teardownEmployee(employeeId: string): Promise<void> {
 
   // Archive Slack channel (fire-and-forget)
   archiveSlackChannel(employeeId);
+
+  // Release Twilio phone number (fire-and-forget)
+  releaseTwilioNumber(employee);
 
   console.log(`[teardown] Employee ${employee.name} (${employeeId}) fully terminated`);
 }
@@ -530,6 +538,116 @@ function archiveSlackChannel(employeeId: string): void {
   })
     .then(() => console.log(`[teardown] Slack channel archive requested for ${employeeId}`))
     .catch((err: Error) => console.log(`[teardown] Slack channel archive failed: ${err.message}`));
+}
+
+// ── Twilio Phone Number Provisioning ──────────────────────────────────
+
+const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID || "";
+const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
+const PLATFORM_URL = process.env.PLATFORM_URL || "";
+
+/** Twilio REST API helper — uses Basic Auth */
+async function twilioApi(method: string, path: string, body?: Record<string, string>): Promise<any> {
+  const url = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}${path}`;
+  const auth = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString("base64");
+
+  const res = await fetch(url, {
+    method,
+    headers: {
+      Authorization: `Basic ${auth}`,
+      ...(body ? { "Content-Type": "application/x-www-form-urlencoded" } : {}),
+    },
+    body: body ? new URLSearchParams(body).toString() : undefined,
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Twilio API ${method} ${path} failed (${res.status}): ${text}`);
+  }
+
+  return res.json();
+}
+
+/**
+ * Provision a Twilio phone number for an employee.
+ * Searches for an available US local number, buys it, and sets the voice webhook.
+ * Runs fire-and-forget after the employee container is already active.
+ */
+function provisionTwilioNumber(employeeId: string): void {
+  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) {
+    console.log(`[provision] Skipping Twilio phone provisioning — TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN not set`);
+    return;
+  }
+
+  const voiceUrl = PLATFORM_URL
+    ? `${PLATFORM_URL}/api/twilio/voice`
+    : "https://example.com/api/twilio/voice";
+
+  (async () => {
+    try {
+      // 1. Search for available US local numbers
+      const search = await twilioApi("GET", "/AvailablePhoneNumbers/US/Local.json?PageSize=1&VoiceEnabled=true");
+      const numbers = search.available_phone_numbers;
+      if (!numbers || numbers.length === 0) {
+        console.error(`[provision] No available Twilio phone numbers found`);
+        return;
+      }
+
+      const availableNumber = numbers[0].phone_number;
+      console.log(`[provision] Found available Twilio number: ${availableNumber}`);
+
+      // 2. Buy the number with the voice webhook configured
+      const purchased = await twilioApi("POST", "/IncomingPhoneNumbers.json", {
+        PhoneNumber: availableNumber,
+        VoiceUrl: voiceUrl,
+        VoiceMethod: "POST",
+        FriendlyName: `AI Employee ${employeeId.slice(0, 8)}`,
+      });
+
+      const phoneSid = purchased.sid;
+      const phoneNumber = purchased.phone_number;
+      console.log(`[provision] Purchased Twilio number ${phoneNumber} (SID: ${phoneSid}) for employee ${employeeId}`);
+
+      // 3. Store the number on the employee record
+      const emp = await db.query.employees.findFirst({
+        where: eq(employees.id, employeeId),
+      });
+      if (!emp) return;
+
+      const currentAccounts = (emp.provisionedAccounts as Record<string, unknown>) || {};
+      await db
+        .update(employees)
+        .set({
+          phoneNumber,
+          provisionedAccounts: {
+            ...currentAccounts,
+            phone: { sid: phoneSid, number: phoneNumber },
+          },
+          updatedAt: new Date(),
+        })
+        .where(eq(employees.id, employeeId));
+
+      console.log(`[provision] Twilio phone ${phoneNumber} assigned to employee ${employeeId}`);
+    } catch (err) {
+      console.error(`[provision] Twilio phone provisioning failed for ${employeeId}:`, err);
+    }
+  })();
+}
+
+/**
+ * Release a Twilio phone number when an employee is terminated.
+ * Reads the phone SID from provisionedAccounts.phone.sid and deletes it.
+ */
+function releaseTwilioNumber(employee: Record<string, unknown>): void {
+  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) return;
+
+  const accounts = (employee.provisionedAccounts as Record<string, any>) || {};
+  const phoneSid = accounts?.phone?.sid;
+  if (!phoneSid) return;
+
+  twilioApi("DELETE", `/IncomingPhoneNumbers/${phoneSid}.json`)
+    .then(() => console.log(`[teardown] Released Twilio number (SID: ${phoneSid})`))
+    .catch((err: Error) => console.log(`[teardown] Failed to release Twilio number: ${err.message}`));
 }
 
 /** Webmail URLs by provider for browser-based email access */

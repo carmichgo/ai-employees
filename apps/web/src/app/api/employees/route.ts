@@ -161,6 +161,7 @@ async function createChannelConnectionRows(employeeId: string, channels: string[
     slack: "Slack", email: "Email", telegram: "Telegram",
     whatsapp: "WhatsApp", discord: "Discord", signal: "Signal",
     teams: "Microsoft Teams", "google-chat": "Google Chat", matrix: "Matrix",
+    "voice-chat": "Web Voice Chat", phone: "Phone (Twilio)",
   };
   await db.insert(channelConnections).values(
     channels.map((ch) => ({

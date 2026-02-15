@@ -7,7 +7,7 @@ import {
   ArrowLeft, Pause, Play, Trash2, Loader2, Server, Mail, Cpu, Clock, Calendar,
   MessageCircle, Save, X, Eye, EyeOff, ChevronDown, Upload, FileText, Zap,
   Webhook, Timer, Plus, ToggleLeft, ToggleRight, Copy, Check, KeyRound, Globe, Edit3,
-  MessageSquare, Send, Smartphone, Gamepad2, Shield, MonitorSmartphone, Hash, Radio, Phone,
+  MessageSquare, Send, Smartphone, Gamepad2, Shield, MonitorSmartphone, Hash, Radio, Phone, Headphones,
 } from "lucide-react";
 import Link from "next/link";
 import { QRCodeSVG } from "qrcode.react";
@@ -106,6 +106,12 @@ const CHANNEL_META: Record<string, {
     icon: Phone,
     fields: [],
     helpText: "Phone calling is configured in the Phone Number section below.",
+  },
+  "voice-chat": {
+    label: "Web Voice Chat",
+    icon: Headphones,
+    fields: [],
+    helpText: "Voice chat is automatically enabled in the dashboard. Open the chat page and use the mic button to talk.",
   },
 };
 

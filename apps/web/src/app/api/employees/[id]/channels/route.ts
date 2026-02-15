@@ -108,6 +108,7 @@ export async function POST(
     slack: "Slack", email: "Email", telegram: "Telegram",
     whatsapp: "WhatsApp", discord: "Discord", signal: "Signal",
     teams: "Microsoft Teams", "google-chat": "Google Chat", matrix: "Matrix",
+    "voice-chat": "Web Voice Chat", phone: "Phone (Twilio)",
   };
 
   if (existing.length > 0) {

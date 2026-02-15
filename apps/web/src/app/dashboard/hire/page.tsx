@@ -63,6 +63,8 @@ const SKIPPABLE_STEPS: Step[] = ["channels", "tools", "skills"];
 const CHANNEL_OPTIONS = [
   { id: "slack", label: "Slack", desc: "Team messaging & collaboration", Icon: MessageSquare },
   { id: "email", label: "Email", desc: "Dedicated email inbox", Icon: Mail },
+  { id: "voice-chat", label: "Web Voice Chat", desc: "Voice conversations in the dashboard", Icon: Headphones },
+  { id: "phone", label: "Phone Number", desc: "Auto-provision a Twilio phone number", Icon: Smartphone },
   { id: "telegram", label: "Telegram", desc: "Telegram messaging", Icon: Send },
   { id: "whatsapp", label: "WhatsApp", desc: "WhatsApp Business", Icon: Smartphone },
   { id: "discord", label: "Discord", desc: "Discord server", Icon: Gamepad2 },
