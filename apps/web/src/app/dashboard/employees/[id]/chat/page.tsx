@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { api } from "@/lib/api";
-import { ArrowLeft, Send, Loader2, Bot, User, Download, FileText, FileSpreadsheet, FileCode, File } from "lucide-react";
+import { ArrowLeft, Send, Loader2, Bot, User, Download, FileText, FileSpreadsheet, FileCode, File, Mic, MicOff, Volume2, VolumeX } from "lucide-react";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -27,6 +27,19 @@ export default function EmployeeChatPage() {
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Voice state
+  const [listening, setListening] = useState(false);
+  const [autoSpeak, setAutoSpeak] = useState(false);
+  const recognitionRef = useRef<any>(null);
+  const [hasSpeechSupport, setHasSpeechSupport] = useState(false);
+
+  useEffect(() => {
+    setHasSpeechSupport(
+      typeof window !== "undefined" &&
+      !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition),
+    );
+  }, []);
 
   const loadChat = useCallback(async () => {
     setLoading(true);
@@ -89,6 +102,61 @@ export default function EmployeeChatPage() {
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
+  // ── Voice: Speech Recognition (STT) ──
+  const startListening = useCallback(() => {
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) return;
+
+    const recognition = new SR();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+
+    recognition.onresult = (event: any) => {
+      const transcript = Array.from(event.results)
+        .map((r: any) => r[0].transcript)
+        .join("");
+      setInput(transcript);
+      if (inputRef.current) {
+        inputRef.current.style.height = "auto";
+        inputRef.current.style.height = Math.min(inputRef.current.scrollHeight, 150) + "px";
+      }
+    };
+
+    recognition.onend = () => setListening(false);
+    recognition.onerror = () => setListening(false);
+
+    recognitionRef.current = recognition;
+    recognition.start();
+    setListening(true);
+  }, []);
+
+  const stopListening = useCallback(() => {
+    recognitionRef.current?.stop();
+    setListening(false);
+  }, []);
+
+  // ── Voice: Speech Synthesis (TTS) ──
+  const speak = useCallback((text: string) => {
+    if (typeof window === "undefined" || !window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    // Strip markdown for cleaner speech
+    const clean = text
+      .replace(/```[\s\S]*?```/g, " code block ")
+      .replace(/`[^`]+`/g, (m) => m.slice(1, -1))
+      .replace(/!\[[^\]]*\]\([^)]+\)/g, " image ")
+      .replace(/\[[^\]]*\]\([^)]+\)/g, (m) => m.replace(/\[([^\]]*)\]\([^)]+\)/, "$1"))
+      .replace(/[#*_~>]/g, "")
+      .replace(/\n{2,}/g, ". ")
+      .replace(/\n/g, " ")
+      .trim();
+    if (!clean) return;
+    const utterance = new SpeechSynthesisUtterance(clean);
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+    window.speechSynthesis.speak(utterance);
+  }, []);
+
   const handleSend = async () => {
     const text = input.trim();
     if (!text || sending) return;
@@ -126,6 +194,7 @@ export default function EmployeeChatPage() {
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
+      if (autoSpeak) speak(res.reply);
     } catch (err: any) {
       const errorMessage: Message = {
         id: `error-${Date.now()}`,
@@ -265,9 +334,35 @@ export default function EmployeeChatPage() {
           <div style={{ fontWeight: 600, fontSize: 14, color: "var(--text, #0a0a0a)" }}>{employee.name}</div>
           <div style={{ fontSize: 12, color: "var(--text-tertiary, #a3a3a3)" }}>{employee.jobTitle}</div>
         </div>
-        <div className={`status-badge status-${employee.status}`}>
-          <span className="status-dot" />
-          <span style={{ textTransform: "capitalize" }}>{employee.status}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {/* Auto-speak toggle */}
+          <button
+            onClick={() => {
+              const next = !autoSpeak;
+              setAutoSpeak(next);
+              if (!next && typeof window !== "undefined") window.speechSynthesis?.cancel();
+            }}
+            title={autoSpeak ? "Mute voice responses" : "Read responses aloud"}
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: "var(--radius-md, 8px)",
+              border: "1px solid var(--border, #e5e5e5)",
+              background: autoSpeak ? "rgba(37, 99, 235, 0.08)" : "var(--bg, #ffffff)",
+              color: autoSpeak ? "var(--blue, #2563eb)" : "var(--text-tertiary, #a3a3a3)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              transition: "all 0.15s",
+            }}
+          >
+            {autoSpeak ? <Volume2 size={14} /> : <VolumeX size={14} />}
+          </button>
+          <div className={`status-badge status-${employee.status}`}>
+            <span className="status-dot" />
+            <span style={{ textTransform: "capitalize" }}>{employee.status}</span>
+          </div>
         </div>
       </div>
 
@@ -433,6 +528,34 @@ export default function EmployeeChatPage() {
               maxHeight: 150,
             }}
           />
+          {/* Mic button — Web Speech API */}
+          {hasSpeechSupport && (
+            <button
+              onClick={listening ? stopListening : startListening}
+              disabled={sending || employee.status !== "active"}
+              title={listening ? "Stop listening" : "Voice input"}
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: "var(--radius-lg, 10px)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                border: "none",
+                cursor: "pointer",
+                background: listening
+                  ? "rgba(239, 68, 68, 0.1)"
+                  : "var(--bg-secondary, #f5f5f5)",
+                color: listening ? "#ef4444" : "var(--text-tertiary, #a3a3a3)",
+                transition: "all 0.2s",
+                flexShrink: 0,
+                animation: listening ? "pulse-mic 1.5s ease-in-out infinite" : "none",
+              }}
+            >
+              {listening ? <MicOff size={16} /> : <Mic size={16} />}
+            </button>
+          )}
+          {/* Send button */}
           <button
             onClick={handleSend}
             disabled={!input.trim() || sending || employee.status !== "active"}
@@ -474,6 +597,10 @@ export default function EmployeeChatPage() {
         @keyframes bounce {
           0%, 80%, 100% { transform: translateY(0) }
           40% { transform: translateY(-6px) }
+        }
+        @keyframes pulse-mic {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.3); }
+          50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
         }
 
         /* Markdown styles for chat messages */

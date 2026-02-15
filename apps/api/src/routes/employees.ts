@@ -142,6 +142,7 @@ export async function employeeRoutes(fastify: FastifyInstance) {
       if (input.persona !== undefined) updateData.persona = input.persona;
       if (input.goals !== undefined) updateData.goals = input.goals;
       if (input.modelConfig) updateData.modelConfig = input.modelConfig;
+      if (input.phoneNumber !== undefined) updateData.phoneNumber = input.phoneNumber || null;
 
       const [updated] = await db
         .update(employees)

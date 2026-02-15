@@ -51,6 +51,7 @@ export const employees = pgTable("employees", {
 
   // Provisioned accounts
   emailAddress: varchar("email_address", { length: 255 }),
+  phoneNumber: varchar("phone_number", { length: 20 }),
   provisionedAccounts: jsonb("provisioned_accounts").notNull().default({}),
   // { slack: { botToken: "...", teamId: "..." }, telegram: { token: "..." }, ... }
 

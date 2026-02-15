@@ -7,7 +7,7 @@ import {
   ArrowLeft, Pause, Play, Trash2, Loader2, Server, Mail, Cpu, Clock, Calendar,
   MessageCircle, Save, X, Eye, EyeOff, ChevronDown, Upload, FileText, Zap,
   Webhook, Timer, Plus, ToggleLeft, ToggleRight, Copy, Check, KeyRound, Globe, Edit3,
-  MessageSquare, Send, Smartphone, Gamepad2, Shield, MonitorSmartphone, Hash, Radio,
+  MessageSquare, Send, Smartphone, Gamepad2, Shield, MonitorSmartphone, Hash, Radio, Phone,
 } from "lucide-react";
 import Link from "next/link";
 import { QRCodeSVG } from "qrcode.react";
@@ -101,6 +101,12 @@ const CHANNEL_META: Record<string, {
     fields: [],
     helpText: "Email is configured in the Email Account section below.",
   },
+  phone: {
+    label: "Phone (Twilio)",
+    icon: Phone,
+    fields: [],
+    helpText: "Phone calling is configured in the Phone Number section below.",
+  },
 };
 
 const TRIGGER_PRESETS = [
@@ -178,11 +184,19 @@ export default function EmployeeDetailPage() {
   const [credSaving, setCredSaving] = useState(false);
   const [credNotice, setCredNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
+  // Phone number (Twilio) state
+  const [phoneEditing, setPhoneEditing] = useState(false);
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [phoneSaving, setPhoneSaving] = useState(false);
+  const [phoneNotice, setPhoneNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [copiedWebhook, setCopiedWebhook] = useState(false);
+
   const employeeId = params.id as string;
 
   useEffect(() => {
     api.getEmployee(employeeId).then((res) => {
       setEmployee(res.employee);
+      if (res.employee.phoneNumber) setPhoneNumber(res.employee.phoneNumber);
       setLoading(false);
     });
     api.getEmployeeEmail(employeeId).then((res) => {
@@ -429,6 +443,43 @@ export default function EmployeeDetailPage() {
   };
   // Cleanup polling on unmount
   useEffect(() => () => stopWaPolling(), []);
+
+  // ── Phone number handlers ──
+  const handleSavePhone = async () => {
+    setPhoneSaving(true);
+    setPhoneNotice(null);
+    try {
+      const res = await api.updateEmployee(employeeId, { phoneNumber: phoneNumber.trim() || "" });
+      setEmployee(res.employee);
+      setPhoneEditing(false);
+      setPhoneNotice({ type: "success", message: phoneNumber.trim() ? "Phone number saved" : "Phone number removed" });
+    } catch (err: any) {
+      setPhoneNotice({ type: "error", message: err.message });
+    } finally {
+      setPhoneSaving(false);
+    }
+  };
+  const handleRemovePhone = async () => {
+    if (!confirm("Remove the phone number? Incoming calls will no longer reach this employee.")) return;
+    setPhoneSaving(true);
+    try {
+      const res = await api.updateEmployee(employeeId, { phoneNumber: "" });
+      setEmployee(res.employee);
+      setPhoneNumber("");
+      setPhoneEditing(false);
+      setPhoneNotice({ type: "success", message: "Phone number removed" });
+    } catch (err: any) {
+      setPhoneNotice({ type: "error", message: err.message });
+    } finally {
+      setPhoneSaving(false);
+    }
+  };
+  const copyTwilioWebhook = () => {
+    const url = typeof window !== "undefined" ? `${window.location.origin}/api/twilio/voice` : "/api/twilio/voice";
+    navigator.clipboard.writeText(url);
+    setCopiedWebhook(true);
+    setTimeout(() => setCopiedWebhook(false), 2000);
+  };
 
   // ── Credential handlers ──
   const resetCredForm = () => {
@@ -1321,6 +1372,99 @@ export default function EmployeeDetailPage() {
               </button>
               {emailConfig && (
                 <button className="btn-danger btn-sm" onClick={handleRemoveEmail} style={{ fontSize: 12, marginLeft: "auto" }}>Remove</button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ════════════════════════════════════════════════════════════ */}
+      {/* PHONE NUMBER (TWILIO) */}
+      {/* ════════════════════════════════════════════════════════════ */}
+      <div className="card" style={{ padding: 20, marginTop: 16, background: "#ffffff", border: "1px solid var(--border)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Phone size={14} style={{ color: "var(--text-tertiary)" }} />
+            <p className="label" style={{ margin: 0 }}>Phone Number (Twilio)</p>
+          </div>
+          {!phoneEditing && (
+            <button className="btn-secondary btn-sm" onClick={() => setPhoneEditing(true)} style={{ fontSize: 12 }}>
+              {employee.phoneNumber ? "Edit" : "Set Up"}
+            </button>
+          )}
+        </div>
+
+        {phoneNotice && (
+          <div style={{
+            padding: "8px 12px", borderRadius: "var(--radius-sm)", marginBottom: 12, fontSize: 12,
+            background: phoneNotice.type === "success" ? "rgba(22, 163, 74, 0.06)" : "rgba(220, 38, 38, 0.06)",
+            color: phoneNotice.type === "success" ? "var(--green)" : "var(--red)",
+          }}>
+            {phoneNotice.message}
+          </div>
+        )}
+
+        {!phoneEditing && !employee.phoneNumber && (
+          <div style={{ fontSize: 13, color: "var(--text-tertiary)", lineHeight: 1.6 }}>
+            No phone number assigned. Buy a phone number on Twilio, assign it here, and callers will be connected to {employee.name} via voice.
+          </div>
+        )}
+
+        {!phoneEditing && employee.phoneNumber && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 13 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid var(--border)" }}>
+              <span style={{ color: "var(--text-tertiary)" }}>Number</span>
+              <span style={{ fontFamily: "monospace", fontSize: 12, color: "var(--text)" }}>{employee.phoneNumber}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0" }}>
+              <span style={{ color: "var(--text-tertiary)" }}>Webhook URL</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <code style={{ fontSize: 10, background: "var(--bg-secondary)", padding: "3px 6px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border)", color: "var(--text-secondary)", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {typeof window !== "undefined" ? `${window.location.origin}/api/twilio/voice` : "/api/twilio/voice"}
+                </code>
+                <button
+                  onClick={copyTwilioWebhook}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: copiedWebhook ? "var(--green)" : "var(--text-tertiary)", padding: 2, flexShrink: 0 }}
+                  title="Copy webhook URL"
+                >
+                  {copiedWebhook ? <Check size={13} /> : <Copy size={13} />}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {phoneEditing && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div>
+              <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Twilio Phone Number</label>
+              <input
+                type="tel"
+                placeholder="+1 (555) 123-4567"
+                value={phoneNumber}
+                onChange={(e) => setPhoneNumber(e.target.value)}
+                className="input"
+                style={{ width: "100%", fontSize: 13, fontFamily: "monospace" }}
+              />
+            </div>
+            <div style={{ fontSize: 11, color: "var(--text-secondary)", padding: "8px 10px", background: "var(--bg-secondary)", borderRadius: "var(--radius-sm)", border: "1px solid var(--border)", lineHeight: 1.5 }}>
+              <strong>Setup instructions:</strong><br />
+              1. Buy a phone number on <a href="https://console.twilio.com/us1/develop/phone-numbers/manage/incoming" target="_blank" rel="noopener noreferrer" style={{ color: "var(--blue)" }}>Twilio Console</a><br />
+              2. Enter the number above in E.164 format (e.g., +15551234567)<br />
+              3. In Twilio, set the &quot;A call comes in&quot; webhook to:<br />
+              <code style={{ fontSize: 10, background: "#ffffff", padding: "2px 4px", borderRadius: 3 }}>
+                {typeof window !== "undefined" ? `${window.location.origin}/api/twilio/voice` : "https://your-domain.com/api/twilio/voice"}
+              </code>
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+              <button className="btn-primary btn-sm" onClick={handleSavePhone} disabled={phoneSaving || !phoneNumber.trim()} style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
+                <Save size={12} /> {phoneSaving ? "Saving..." : "Save"}
+              </button>
+              <button className="btn-secondary btn-sm" onClick={() => { setPhoneEditing(false); setPhoneNotice(null); }} style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
+                <X size={12} /> Cancel
+              </button>
+              {employee.phoneNumber && (
+                <button className="btn-danger btn-sm" onClick={handleRemovePhone} style={{ fontSize: 12, marginLeft: "auto" }}>Remove</button>
               )}
             </div>
           </div>
