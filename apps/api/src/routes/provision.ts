@@ -165,9 +165,17 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     });
     if (!employee) return reply.status(404).send({ error: "Employee not found" });
 
-    // Don't re-provision if already has a container
-    if (employee.containerId) {
+    // Don't re-provision if already has a working container
+    if (employee.containerId && employee.status !== "error") {
       return { message: "Container already provisioned", status: employee.status };
+    }
+
+    // If re-provisioning after error, reset status so the worker can start fresh
+    if (employee.status === "error") {
+      await db
+        .update(employees)
+        .set({ status: "provisioning", errorMessage: null, containerId: null, updatedAt: new Date() })
+        .where(eq(employees.id, id));
     }
 
     // Get channel connections for this employee
@@ -177,13 +185,17 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     const channels = connections.map((c) => c.channelType);
 
     const queue = getProvisionQueue();
-    // Use jobId to prevent duplicate provision jobs for the same employee
+    // Use jobId to prevent duplicate provision jobs for the same employee.
+    // removeOnFail/removeOnComplete allow future retries if a previous job failed —
+    // without this, a failed job with the same ID would permanently block re-provisioning.
     await queue.add("provision-employee", {
       employeeId: id,
       companyId: employee.companyId,
       channels,
     }, {
       jobId: `provision-${id}`,
+      removeOnFail: { count: 0 },
+      removeOnComplete: { count: 0 },
     });
 
     return { message: "Container provisioning queued", status: "provisioning" };

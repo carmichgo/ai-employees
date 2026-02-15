@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, and, not } from "drizzle-orm";
 import crypto from "node:crypto";
 import { execSync, spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -352,22 +352,25 @@ export async function cleanupOrphanedContainers(): Promise<void> {
 
   if (containers.length === 0) return;
 
-  // Get active employee IDs from DB
-  const activeEmployees = await db.query.employees.findMany({
-    where: eq(employees.status, "active"),
+  // Get employees that should keep their containers (active or still booting up)
+  const liveEmployees = await db.query.employees.findMany({
+    where: and(
+      not(eq(employees.status, "terminated")),
+      not(eq(employees.status, "error")),
+    ),
     columns: { id: true, containerName: true },
   });
-  const activeIds = new Set(activeEmployees.map((e) => e.id));
-  const activeNames = new Set(activeEmployees.map((e) => e.containerName).filter(Boolean));
+  const liveIds = new Set(liveEmployees.map((e) => e.id));
+  const liveNames = new Set(liveEmployees.map((e) => e.containerName).filter(Boolean));
 
   let removed = 0;
   for (const info of containers) {
     const empId = info.Labels?.["ai-employees.employee-id"];
     const name = info.Names?.[0]?.replace(/^\//, "");
 
-    // Keep if employee is active
-    if (empId && activeIds.has(empId)) continue;
-    if (name && activeNames.has(name)) continue;
+    // Keep if employee is alive (active, onboarding, provisioning, paused)
+    if (empId && liveIds.has(empId)) continue;
+    if (name && liveNames.has(name)) continue;
 
     // Remove orphaned container
     try {

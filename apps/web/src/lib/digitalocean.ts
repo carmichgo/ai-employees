@@ -673,9 +673,13 @@ async function handleDropletReady(
   const secret = employee.interserviceSecret as string;
 
   if (hasContainer) {
-    // Container was previously provisioned
     if (employee.status === "active") {
       return { status: "active", ip, phase: "ready" };
+    }
+
+    // Onboarding = container started, waiting for health check to promote to active
+    if (employee.status === "onboarding") {
+      return { status: "onboarding", ip, phase: "container-starting" };
     }
 
     if (employee.status === "provisioning" || employee.status === "paused") {
@@ -690,11 +694,23 @@ async function handleDropletReady(
       return { status: "provisioning", ip, phase: "container-starting" };
     }
 
+    // Error with existing container — try re-provisioning
+    if (employee.status === "error") {
+      try {
+        const backend = createBackendClient({ url: `http://${ip}:3001`, secret });
+        await backend.provisionContainer(employeeId);
+        console.log(`[droplet-poll] Triggered re-provisioning for ${employeeId} (error recovery)`);
+      } catch (err: any) {
+        console.error(`[droplet-poll] Failed to re-provision container: ${err.message}`);
+      }
+      return { status: "provisioning", ip, phase: "container-provisioning" };
+    }
+
     // Other status — return as-is
     return { status: employee.status as string, ip, phase: "ready" };
   }
 
-  // No container — need to provision one
+  // No container — need to provision one (or re-provision after error)
   try {
     const backend = createBackendClient({ url: `http://${ip}:3001`, secret });
     await backend.provisionContainer(employeeId);
