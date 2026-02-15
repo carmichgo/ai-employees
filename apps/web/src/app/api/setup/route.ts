@@ -44,9 +44,9 @@ export async function GET(request: NextRequest) {
       FROM shared_infrastructure WHERE key = 'default'
     `;
     const empStatus = await sql`
-      SELECT id, name, status, container_name, container_host, container_port
+      SELECT id, name, status, container_name, container_host, container_port, created_at
       FROM employees WHERE company_id = ${row.company_id}
-      ORDER BY created_at DESC LIMIT 5
+      ORDER BY created_at DESC LIMIT 10
     `;
 
     return NextResponse.json({
