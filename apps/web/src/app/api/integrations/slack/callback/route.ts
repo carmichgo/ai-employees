@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { companies } from "@/lib/schema";
+import { companies, employees } from "@/lib/schema";
 
 const SLACK_CLIENT_ID = (process.env.SLACK_CLIENT_ID || "").trim();
 const SLACK_CLIENT_SECRET = (process.env.SLACK_CLIENT_SECRET || "").trim();
@@ -124,16 +124,23 @@ export async function GET(request: NextRequest) {
       `[slack-oauth] Connected workspace "${tokenData.team?.name}" (${tokenData.team?.id}) for company ${stateData.companyId}`,
     );
 
-    // Tell the droplet's Slack proxy to restart with the new credentials.
-    // Fire-and-forget — don't block the redirect if the droplet is unreachable.
-    if (company.dropletIp && company.dropletStatus === "active") {
-      fetch(`http://${company.dropletIp}:3001/slack-proxy/restart`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: AbortSignal.timeout(10000),
-      })
-        .then(() => console.log("[slack-oauth] Droplet Slack proxy restart triggered"))
-        .catch((err: unknown) => console.error("[slack-oauth] Failed to restart droplet Slack proxy:", err));
+    // Tell each active employee's droplet to restart its Slack proxy.
+    // Fire-and-forget — don't block the redirect if droplets are unreachable.
+    const activeEmployees = await db
+      .select()
+      .from(employees)
+      .where(eq(employees.companyId, stateData.companyId));
+
+    for (const emp of activeEmployees) {
+      if (emp.dropletIp && emp.dropletStatus === "active") {
+        fetch(`http://${emp.dropletIp}:3001/slack-proxy/restart`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: AbortSignal.timeout(10000),
+        })
+          .then(() => console.log(`[slack-oauth] Slack proxy restart triggered for ${emp.name}`))
+          .catch((err: unknown) => console.error(`[slack-oauth] Failed to restart Slack proxy for ${emp.name}:`, err));
+      }
     }
 
     return NextResponse.redirect(

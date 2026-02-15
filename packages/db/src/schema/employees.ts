@@ -20,6 +20,14 @@ export const employees = pgTable("employees", {
   status: varchar("status", { length: 20 }).notNull().default("provisioning"),
   // provisioning | onboarding | active | paused | terminated | error
 
+  // Per-employee DigitalOcean droplet
+  dropletId: varchar("droplet_id", { length: 50 }),
+  dropletIp: varchar("droplet_ip", { length: 45 }),
+  dropletRegion: varchar("droplet_region", { length: 20 }).default("nyc3"),
+  dropletSize: varchar("droplet_size", { length: 50 }),
+  dropletStatus: varchar("droplet_status", { length: 20 }).default("none"),
+  interserviceSecret: varchar("interservice_secret", { length: 255 }),
+
   // OpenClaw container
   containerId: varchar("container_id", { length: 100 }),
   containerName: varchar("container_name", { length: 255 }),

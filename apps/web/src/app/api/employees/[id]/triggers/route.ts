@@ -9,7 +9,7 @@ import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { employees } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
-import { getCompanyBackend } from "@/lib/backend";
+import { getEmployeeBackend } from "@/lib/backend";
 
 async function authenticate(request: NextRequest) {
   const token =
@@ -40,7 +40,7 @@ export async function POST(
     return NextResponse.json({ error: "Employee not found" }, { status: 404 });
   }
 
-  const backend = await getCompanyBackend(session.companyId);
+  const backend = await getEmployeeBackend(id);
   if (!backend) {
     return NextResponse.json({ error: "Company backend not available" }, { status: 503 });
   }
@@ -86,7 +86,7 @@ export async function GET(
     return NextResponse.json({ error: "Employee not found" }, { status: 404 });
   }
 
-  const backend = await getCompanyBackend(session.companyId);
+  const backend = await getEmployeeBackend(id);
   if (!backend) {
     return NextResponse.json({ triggers: [] });
   }
@@ -133,7 +133,7 @@ export async function PATCH(
     return NextResponse.json({ error: "Employee not found" }, { status: 404 });
   }
 
-  const backend = await getCompanyBackend(session.companyId);
+  const backend = await getEmployeeBackend(id);
   if (!backend) {
     return NextResponse.json({ error: "Company backend not available" }, { status: 503 });
   }
@@ -182,7 +182,7 @@ export async function DELETE(
     return NextResponse.json({ error: "Employee not found" }, { status: 404 });
   }
 
-  const backend = await getCompanyBackend(session.companyId);
+  const backend = await getEmployeeBackend(id);
   if (!backend) {
     return NextResponse.json({ error: "Company backend not available" }, { status: 503 });
   }

@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { companies } from "@/lib/schema";
+import { employees } from "@/lib/schema";
 
 /**
  * POST /api/companies/droplet/callback
  * Called by the cloud-init script on the droplet to report progress.
  * Auth: uses the interservice secret as a bearer token.
+ * Matches by employee's interservice secret (one droplet per employee).
  */
 export async function POST(request: NextRequest) {
   const auth = request.headers.get("authorization")?.replace("Bearer ", "");
@@ -21,42 +22,41 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
   }
 
-  // Find company by interservice secret
-  const [company] = await db
+  // Find employee by interservice secret
+  const [employee] = await db
     .select()
-    .from(companies)
-    .where(eq(companies.interserviceSecret, auth))
+    .from(employees)
+    .where(eq(employees.interserviceSecret, auth))
     .limit(1);
 
-  if (!company) {
+  if (!employee) {
     return NextResponse.json({ error: "Invalid secret" }, { status: 403 });
   }
 
   console.log(
-    `[droplet-callback] company=${company.slug} step=${body.step} status=${body.status}${body.error ? ` error=${body.error}` : ""}`,
+    `[droplet-callback] employee=${employee.name} step=${body.step} status=${body.status}${body.error ? ` error=${body.error}` : ""}`,
   );
 
-  // If the step reports the API is ready, mark as active
+  // If the step reports the API is ready, mark droplet as active
   if (body.step === "ready" && body.status === "ok") {
     await db
-      .update(companies)
+      .update(employees)
       .set({
         dropletStatus: "active",
         updatedAt: new Date(),
       })
-      .where(eq(companies.id, company.id));
+      .where(eq(employees.id, employee.id));
   }
 
   // Only set error status if the droplet isn't already active
-  // Once active (placeholder running), Phase 2 errors are non-fatal
-  if (body.status === "error" && company.dropletStatus !== "active") {
+  if (body.status === "error" && employee.dropletStatus !== "active") {
     await db
-      .update(companies)
+      .update(employees)
       .set({
         dropletStatus: "error",
         updatedAt: new Date(),
       })
-      .where(eq(companies.id, company.id));
+      .where(eq(employees.id, employee.id));
   }
 
   return NextResponse.json({ ok: true });

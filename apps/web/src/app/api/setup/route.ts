@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
   try {
     // Find company and first user
     const rows = await sql`
-      SELECT u.id as user_id, u.email, u.role, c.id as company_id, c.slug, c.droplet_id, c.droplet_status
+      SELECT u.id as user_id, u.email, u.role, c.id as company_id, c.slug
       FROM users u JOIN companies c ON u.company_id = c.id
       WHERE (${ slug || '' } = '' OR c.slug = ${ slug || '' })
       ORDER BY u.created_at ASC LIMIT 1
@@ -34,17 +34,12 @@ export async function GET(request: NextRequest) {
 
     // Full company details for debugging
     const companyDetails = await sql`
-      SELECT id, name, slug, plan, droplet_id, droplet_ip, droplet_status,
-             interservice_secret IS NOT NULL as has_secret
+      SELECT id, name, slug, plan
       FROM companies WHERE id = ${row.company_id}
     `;
-    const sharedInfra = await sql`
-      SELECT key, droplet_id, droplet_ip, droplet_status,
-             interservice_secret IS NOT NULL as has_secret
-      FROM shared_infrastructure WHERE key = 'default'
-    `;
     const empStatus = await sql`
-      SELECT id, name, status, container_name, container_host, container_port, created_at
+      SELECT id, name, tier, status, droplet_id, droplet_ip, droplet_status, droplet_size,
+             container_name, container_host, container_port, created_at
       FROM employees WHERE company_id = ${row.company_id}
       ORDER BY created_at DESC LIMIT 10
     `;
@@ -53,7 +48,6 @@ export async function GET(request: NextRequest) {
       token,
       user: { id: row.user_id, email: row.email, role: row.role },
       company: companyDetails[0] || null,
-      sharedInfra: sharedInfra[0] || null,
       employees: empStatus,
     });
   } catch (error: any) {
@@ -272,6 +266,14 @@ export async function POST(request: NextRequest) {
 
     // Add tier column to employees
     await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS tier VARCHAR(20) NOT NULL DEFAULT 'junior'`;
+
+    // Per-employee droplet columns (one droplet per employee)
+    await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS droplet_id VARCHAR(50)`;
+    await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS droplet_ip VARCHAR(45)`;
+    await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS droplet_region VARCHAR(20) DEFAULT 'nyc3'`;
+    await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS droplet_size VARCHAR(50)`;
+    await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS droplet_status VARCHAR(20) DEFAULT 'none'`;
+    await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS interservice_secret VARCHAR(255)`;
 
     return NextResponse.json({ success: true, message: "All tables created" });
   } catch (error: any) {

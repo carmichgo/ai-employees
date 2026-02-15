@@ -1,13 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { companies, sharedInfrastructure } from "@/lib/schema";
+import { employees } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
 import {
-  pollDropletStatus,
-  pollSharedDropletStatus,
-  destroyCompanyDroplet,
-  createCompanyDroplet,
+  pollEmployeeDropletStatus,
   isDropletProvisioningEnabled,
 } from "@/lib/digitalocean";
 
@@ -19,139 +16,35 @@ async function authenticate(request: NextRequest) {
   return verifyToken(token);
 }
 
-// GET /api/companies/droplet — get droplet status
+// GET /api/companies/droplet — get droplet status for all employees
+// Now returns per-employee droplet info since each employee has their own droplet
 export async function GET(request: NextRequest) {
   const session = await authenticate(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const [company] = await db
+  const employeeList = await db
     .select()
-    .from(companies)
-    .where(eq(companies.id, session.companyId))
-    .limit(1);
+    .from(employees)
+    .where(eq(employees.companyId, session.companyId));
 
-  if (!company) {
-    return NextResponse.json({ error: "Company not found" }, { status: 404 });
-  }
-
-  // Dedicated plan: show company's own droplet
-  if (company.plan === "dedicated") {
-    if (company.dropletStatus === "provisioning" || company.dropletStatus === "booting" || company.dropletStatus === "active" || company.dropletStatus === "error") {
-      const result = await pollDropletStatus(session.companyId);
-      return NextResponse.json({
-        droplet: {
-          id: company.dropletId,
-          ip: result.ip || company.dropletIp,
-          region: company.dropletRegion,
-          size: company.dropletSize,
+  const droplets = await Promise.all(
+    employeeList
+      .filter((e) => e.dropletId && e.status !== "terminated")
+      .map(async (e) => {
+        const result = await pollEmployeeDropletStatus(e.id);
+        return {
+          employeeId: e.id,
+          employeeName: e.name,
+          tier: e.tier,
+          id: e.dropletId,
+          ip: result.ip || e.dropletIp,
+          region: e.dropletRegion,
+          size: e.dropletSize,
           status: result.status,
           phase: result.phase,
-        },
-      });
-    }
+        };
+      }),
+  );
 
-    return NextResponse.json({
-      droplet: {
-        id: company.dropletId,
-        ip: company.dropletIp,
-        region: company.dropletRegion,
-        size: company.dropletSize,
-        status: company.dropletStatus || "none",
-        phase: null,
-      },
-    });
-  }
-
-  // Non-dedicated: show shared droplet status
-  const [shared] = await db
-    .select()
-    .from(sharedInfrastructure)
-    .where(eq(sharedInfrastructure.key, "default"))
-    .limit(1);
-
-  if (shared && (shared.dropletStatus === "provisioning" || shared.dropletStatus === "booting" || shared.dropletStatus === "active" || shared.dropletStatus === "error")) {
-    const result = await pollSharedDropletStatus();
-    return NextResponse.json({
-      droplet: {
-        ip: result.ip || shared.dropletIp,
-        region: shared.dropletRegion,
-        size: shared.dropletSize,
-        status: result.status,
-        phase: result.phase,
-        shared: true,
-      },
-    });
-  }
-
-  return NextResponse.json({
-    droplet: {
-      status: shared?.dropletStatus || "none",
-      phase: null,
-      shared: true,
-    },
-  });
-}
-
-// POST /api/companies/droplet — manually provision a dedicated droplet
-export async function POST(request: NextRequest) {
-  const session = await authenticate(request);
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  if (!isDropletProvisioningEnabled()) {
-    return NextResponse.json(
-      { error: "Droplet provisioning is not enabled (DO_API_TOKEN not set)" },
-      { status: 400 },
-    );
-  }
-
-  // Only dedicated plan companies can provision their own droplet
-  const [company] = await db
-    .select()
-    .from(companies)
-    .where(eq(companies.id, session.companyId))
-    .limit(1);
-
-  if (!company) {
-    return NextResponse.json({ error: "Company not found" }, { status: 404 });
-  }
-
-  if (company.plan !== "dedicated") {
-    return NextResponse.json(
-      { error: "Dedicated infrastructure requires the Dedicated plan ($100/mo). Upgrade in Settings to get your own isolated server." },
-      { status: 403 },
-    );
-  }
-
-  try {
-    const result = await createCompanyDroplet(session.companyId);
-    return NextResponse.json({
-      message: "Your dedicated server is being provisioned. This usually takes 2-3 minutes.",
-      dropletId: result.dropletId,
-    });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
-  }
-}
-
-// DELETE /api/companies/droplet — destroy the droplet
-export async function DELETE(request: NextRequest) {
-  const session = await authenticate(request);
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const [company] = await db
-    .select()
-    .from(companies)
-    .where(eq(companies.id, session.companyId))
-    .limit(1);
-
-  if (!company || !company.dropletId) {
-    return NextResponse.json({ error: "No droplet to destroy" }, { status: 404 });
-  }
-
-  try {
-    await destroyCompanyDroplet(session.companyId);
-    return NextResponse.json({ message: "Droplet destroyed successfully" });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
-  }
+  return NextResponse.json({ droplets });
 }

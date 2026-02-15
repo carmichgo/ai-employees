@@ -13,7 +13,7 @@ import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { employees } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
-import { getCompanyBackend, createBackendClient } from "@/lib/backend";
+import { getEmployeeBackend, createBackendClient } from "@/lib/backend";
 
 async function authenticate(request: NextRequest) {
   const token =
@@ -42,7 +42,7 @@ export async function GET(
     return NextResponse.json({ error: "Employee not found" }, { status: 404 });
   }
 
-  const backendConfig = await getCompanyBackend(session.companyId);
+  const backendConfig = await getEmployeeBackend(id);
   if (!backendConfig) {
     return NextResponse.json(
       { error: "No backend available. Ensure infrastructure is provisioned." },

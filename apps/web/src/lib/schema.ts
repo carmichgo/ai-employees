@@ -11,21 +11,6 @@ import {
   unique,
 } from "drizzle-orm/pg-core";
 
-// ── Shared Infrastructure ────────────────────────────
-// Single shared droplet used by all non-dedicated companies.
-// Only one row should exist (key = "default").
-export const sharedInfrastructure = pgTable("shared_infrastructure", {
-  key: varchar("key", { length: 50 }).primaryKey().default("default"),
-  dropletId: varchar("droplet_id", { length: 50 }),
-  dropletIp: varchar("droplet_ip", { length: 45 }),
-  dropletRegion: varchar("droplet_region", { length: 20 }).default("nyc3"),
-  dropletSize: varchar("droplet_size", { length: 50 }).default("s-4vcpu-8gb"),
-  dropletStatus: varchar("droplet_status", { length: 20 }).default("none"),
-  interserviceSecret: varchar("interservice_secret", { length: 255 }),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
-
 // ── Companies ──────────────────────────────────────────
 export const companies = pgTable("companies", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -35,13 +20,6 @@ export const companies = pgTable("companies", {
   maxEmployees: integer("max_employees").notNull().default(50),
   status: varchar("status", { length: 20 }).notNull().default("active"),
   settings: jsonb("settings").notNull().default({}),
-  // Per-company DigitalOcean droplet
-  dropletId: varchar("droplet_id", { length: 50 }),
-  dropletIp: varchar("droplet_ip", { length: 45 }),
-  dropletRegion: varchar("droplet_region", { length: 20 }).default("nyc3"),
-  dropletSize: varchar("droplet_size", { length: 50 }).default("s-2vcpu-4gb"),
-  dropletStatus: varchar("droplet_status", { length: 20 }).default("none"),
-  interserviceSecret: varchar("interservice_secret", { length: 255 }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -72,6 +50,14 @@ export const employees = pgTable("employees", {
   emoji: varchar("emoji", { length: 10 }).default("🤖"),
   tier: varchar("tier", { length: 20 }).notNull().default("junior"),
   status: varchar("status", { length: 20 }).notNull().default("provisioning"),
+  // Per-employee DigitalOcean droplet
+  dropletId: varchar("droplet_id", { length: 50 }),
+  dropletIp: varchar("droplet_ip", { length: 45 }),
+  dropletRegion: varchar("droplet_region", { length: 20 }).default("nyc3"),
+  dropletSize: varchar("droplet_size", { length: 50 }),
+  dropletStatus: varchar("droplet_status", { length: 20 }).default("none"),
+  interserviceSecret: varchar("interservice_secret", { length: 255 }),
+  // OpenClaw container
   containerId: varchar("container_id", { length: 100 }),
   containerName: varchar("container_name", { length: 255 }),
   containerHost: varchar("container_host", { length: 255 }),

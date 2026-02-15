@@ -4,7 +4,8 @@ import { db } from "@/lib/db";
 import { employees } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
 import { updateEmployeeSchema } from "@ai-employees/shared";
-import { getCompanyBackend, createBackendClient } from "@/lib/backend";
+import { getEmployeeBackend, createBackendClient } from "@/lib/backend";
+import { destroyEmployeeDroplet } from "@/lib/digitalocean";
 
 async function authenticate(request: NextRequest) {
   const token =
@@ -15,7 +16,7 @@ async function authenticate(request: NextRequest) {
 }
 
 function sanitize(emp: Record<string, unknown>) {
-  const { gatewayToken, ...safe } = emp as { gatewayToken?: string } & Record<
+  const { gatewayToken, interserviceSecret, ...safe } = emp as { gatewayToken?: string; interserviceSecret?: string } & Record<
     string,
     unknown
   >;
@@ -102,7 +103,7 @@ export async function DELETE(
   }
 
   // Try backend teardown if droplet is active (best-effort — don't block on failure)
-  const backendConfig = await getCompanyBackend(session.companyId);
+  const backendConfig = await getEmployeeBackend(id);
   if (backendConfig) {
     try {
       const backend = createBackendClient(backendConfig);
@@ -110,6 +111,13 @@ export async function DELETE(
     } catch {
       // Backend teardown failed — still mark as terminated in DB
     }
+  }
+
+  // Destroy the employee's droplet
+  try {
+    await destroyEmployeeDroplet(id);
+  } catch {
+    // Droplet destruction failed — still mark as terminated
   }
 
   // Always mark as terminated in the DB
