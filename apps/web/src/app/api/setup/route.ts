@@ -275,6 +275,9 @@ export async function POST(request: NextRequest) {
     await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS droplet_status VARCHAR(20) DEFAULT 'none'`;
     await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS interservice_secret VARCHAR(255)`;
 
+    // Phone number column
+    await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS phone_number VARCHAR(20)`;
+
     return NextResponse.json({ success: true, message: "All tables created" });
   } catch (error: any) {
     console.error("Setup error:", error);
