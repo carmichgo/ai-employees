@@ -1,5 +1,5 @@
 /**
- * Chat API — proxies messages to/from an employee's OpenClaw container.
+ * Chat API — proxies messages to/from an employee's Blitzer container.
  *
  * POST /api/employees/[id]/chat — send a message, get a response
  * GET  /api/employees/[id]/chat — get conversation history
@@ -122,7 +122,7 @@ export async function POST(
     return NextResponse.json({ reply, mode: "demo" });
   }
 
-  // Route to OpenClaw container via the employee's droplet
+  // Route to Blitzer container via the employee's droplet
   try {
     const messages = [
       ...(conversationHistory || []),

@@ -1,5 +1,5 @@
 /**
- * Captcha Solving Skill — generates SKILL.md content for the OpenClaw container.
+ * Captcha Solving Skill — generates SKILL.md content for the Blitzer container.
  *
  * Supports two providers:
  *   1. 2captcha — CLI binary (solve-captcha) that calls 2captcha.com human-powered API

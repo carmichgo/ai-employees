@@ -1,11 +1,11 @@
 /**
  * Slack Proxy — one Socket Mode connection per company droplet.
  *
- * Instead of each OpenClaw container connecting to Slack independently
+ * Instead of each Blitzer container connecting to Slack independently
  * (which causes event round-robin and identical bot identities), this proxy:
  *
  *  1. Maintains a single Socket Mode connection to the company's Slack workspace
- *  2. Routes incoming messages to the correct employee's OpenClaw container
+ *  2. Routes incoming messages to the correct employee's Blitzer container
  *  3. Posts responses back with per-employee identity (name + emoji) via chat:write.customize
  *  4. Creates dedicated Slack channels for each employee on demand
  *

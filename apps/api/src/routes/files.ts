@@ -156,7 +156,7 @@ export async function fileRoutes(fastify: FastifyInstance) {
         return reply.status(400).send({ error: "Invalid path" });
       }
 
-      // Serve from the entire OpenClaw config dir (covers workspace, workspace-main, media, etc.)
+      // Serve from the entire Blitzer config dir (covers workspace, workspace-main, media, etc.)
       const baseDir = path.join(CONFIG_BASE, id);
       const fullPath = path.join(baseDir, normalized);
 

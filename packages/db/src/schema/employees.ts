@@ -28,7 +28,7 @@ export const employees = pgTable("employees", {
   dropletStatus: varchar("droplet_status", { length: 20 }).default("none"),
   interserviceSecret: varchar("interservice_secret", { length: 255 }),
 
-  // OpenClaw container
+  // Blitzer container
   containerId: varchar("container_id", { length: 100 }),
   containerName: varchar("container_name", { length: 255 }),
   containerHost: varchar("container_host", { length: 255 }),

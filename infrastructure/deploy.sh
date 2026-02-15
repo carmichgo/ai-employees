@@ -3,7 +3,7 @@
 # Rolling Deployment Script for AI Employees Droplets
 #
 # Rebuilds and restarts ONLY the api and worker containers via Docker Compose.
-# Employee (OpenClaw) containers, Redis, and Traefik are NOT touched.
+# Employee (Blitzer) containers, Redis, and Traefik are NOT touched.
 #
 # Usage:
 #   ./infrastructure/deploy.sh              # Deploy from current branch

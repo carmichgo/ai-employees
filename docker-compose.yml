@@ -15,7 +15,7 @@ services:
     networks:
       - internal
 
-  # Traefik reverse proxy — routes webhooks to individual OpenClaw containers + SSL
+  # Traefik reverse proxy — routes webhooks to individual Blitzer containers + SSL
   traefik:
     image: traefik:v3.3
     restart: unless-stopped

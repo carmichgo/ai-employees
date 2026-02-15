@@ -79,7 +79,7 @@ export async function employeeRoutes(fastify: FastifyInstance) {
         }
       }
 
-      // Generate gateway token for this employee's OpenClaw instance
+      // Generate gateway token for this employee's Blitzer instance
       const gatewayToken = crypto.randomBytes(32).toString("hex");
 
       // Determine model from tier

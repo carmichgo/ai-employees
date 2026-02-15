@@ -135,7 +135,7 @@ export default function LandingPage() {
               borderRadius: "50%",
               background: "var(--green)",
             }} />
-            Powered by OpenClaw
+            Powered by Blitzer
           </div>
 
           <h1

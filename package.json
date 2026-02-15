@@ -1,7 +1,7 @@
 {
   "name": "ai-employees",
   "private": true,
-  "description": "AI Employee Platform — Hire AI employees powered by OpenClaw",
+  "description": "AI Employee Platform — Hire AI employees powered by Blitzer",
   "scripts": {
     "dev": "turbo dev",
     "build": "turbo build",

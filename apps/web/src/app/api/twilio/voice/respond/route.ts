@@ -4,7 +4,7 @@
  *
  * Flow:
  *   1. Caller speaks → Twilio transcribes → POSTs here with SpeechResult
- *   2. We forward the text to the employee's OpenClaw container via chat API
+ *   2. We forward the text to the employee's Blitzer container via chat API
  *   3. We respond with TwiML <Say> containing the AI's reply
  *   4. We <Gather> again for the next turn of conversation
  */

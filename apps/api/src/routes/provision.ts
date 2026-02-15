@@ -1,6 +1,6 @@
 /**
  * Internal provisioning routes — called by the Vercel frontend via inter-service auth.
- * These routes trigger actual OpenClaw container lifecycle operations.
+ * These routes trigger actual Blitzer container lifecycle operations.
  */
 import type { FastifyInstance } from "fastify";
 import crypto from "node:crypto";
@@ -137,7 +137,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       })
       .returning();
 
-    // Queue actual OpenClaw container provisioning
+    // Queue actual Blitzer container provisioning
     const queue = getProvisionQueue();
     await queue.add("provision-employee", {
       employeeId: employee.id,
@@ -154,7 +154,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
   });
 
   // POST /internal/employees/:id/provision-container
-  // Queues OpenClaw container creation for an existing employee.
+  // Queues Blitzer container creation for an existing employee.
   // Called by the web app once the droplet reports phase "ready".
   fastify.post<{ Params: { id: string } }>("/internal/employees/:id/provision-container", async (request, reply) => {
     const { id } = request.params;
@@ -262,7 +262,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     return { employee: sanitize(employee) };
   });
 
-  // POST /internal/employees/:id/channels/connect — update OpenClaw config with channel credentials
+  // POST /internal/employees/:id/channels/connect — update Blitzer config with channel credentials
   fastify.post<{ Params: { id: string } }>("/internal/employees/:id/channels/connect", async (request, reply) => {
     const { id } = request.params;
     const body = request.body as {
@@ -318,7 +318,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
   });
 
   // GET /internal/employees/:id/channels/whatsapp/qr — get WhatsApp QR code for pairing
-  // Runs `openclaw channels login` inside the container and captures the QR string,
+  // Runs the WhatsApp login inside the container and captures the QR string,
   // then generates a QR code PNG and returns it as base64.
   fastify.get<{ Params: { id: string } }>("/internal/employees/:id/channels/whatsapp/qr", async (request, reply) => {
     const { id } = request.params;
@@ -334,7 +334,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     const containerTarget = resolveContainer(employee);
     if (!containerTarget) {
       return reply.status(503).send({
-        error: "Employee's OpenClaw container is not running. Chat works via direct API, but WhatsApp linking requires a running container. Check that the worker service has provisioned the container.",
+        error: "Employee's Blitzer container is not running. WhatsApp linking requires a running container. Check that the worker service has provisioned the container.",
       });
     }
 
@@ -403,7 +403,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       }
       if (message.includes("No such container")) {
         return reply.status(503).send({
-          error: "Employee's OpenClaw container is not available. It may have been removed or not yet provisioned. Check the worker service.",
+          error: "Employee's Blitzer container is not available. It may have been removed or not yet provisioned. Check the worker service.",
         });
       }
       fastify.log.error(`WhatsApp QR failed for ${id}: ${message}`);
@@ -411,7 +411,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // POST /internal/employees/:id/chat — proxy chat to OpenClaw container
+  // POST /internal/employees/:id/chat — proxy chat to Blitzer container
   fastify.post<{ Params: { id: string } }>("/internal/employees/:id/chat", async (request, reply) => {
     const { id } = request.params;
     const body = request.body as {
@@ -426,7 +426,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       return reply.status(400).send({ error: `Employee is ${employee.status}` });
     }
 
-    // If container is available, route through it (OpenClaw)
+    // If container is available, route through it (Blitzer)
     if (employee.containerHost && employee.containerPort) {
       let containerHost = employee.containerHost;
       const containerPort = employee.containerPort;
@@ -455,7 +455,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
 
         if (!res.ok) {
           const err = await res.text();
-          return reply.status(res.status).send({ error: `OpenClaw error: ${err}` });
+          return reply.status(res.status).send({ error: `Blitzer error: ${err}` });
         }
         const data = await res.json() as { choices?: { message?: { content?: string } }[]; usage?: unknown };
         return { reply: data.choices?.[0]?.message?.content || "No response", mode: "live", usage: data.usage };
@@ -480,7 +480,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
               const retryRes = await sendToContainer(newIp);
               if (!retryRes.ok) {
                 const retryErr = await retryRes.text();
-                return reply.status(retryRes.status).send({ error: `OpenClaw error: ${retryErr}` });
+                return reply.status(retryRes.status).send({ error: `Blitzer error: ${retryErr}` });
               }
               const data = await retryRes.json() as { choices?: { message?: { content?: string } }[]; usage?: unknown };
               return { reply: data.choices?.[0]?.message?.content || "No response", mode: "live", usage: data.usage };
@@ -497,7 +497,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
 
     // No container available — cannot chat
     return reply.status(503).send({
-      error: "OpenClaw container is not running for this employee. Container provisioning may still be in progress.",
+      error: "Blitzer container is not running for this employee. Container provisioning may still be in progress.",
     });
   });
 }

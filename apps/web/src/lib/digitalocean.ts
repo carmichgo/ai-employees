@@ -205,15 +205,15 @@ curl -fsSL https://get.docker.com | sh || {
 systemctl enable docker
 systemctl start docker
 
-# Pull OpenClaw image
-echo "Pulling OpenClaw image..."
+# Pull Blitzer image
+echo "Pulling Blitzer image..."
 docker pull ghcr.io/openclaw/openclaw:latest || {
-  report "phase2-docker" "error" "openclaw image pull failed"
+  report "phase2-docker" "error" "blitzer image pull failed"
   echo "PHASE2_FAILED_DOCKER_PULL" > /opt/ai-employees/status
   exit 0
 }
 
-# Create config directory for employee OpenClaw instances
+# Create config directory for employee Blitzer instances
 mkdir -p /opt/ai-employees/openclaw-configs
 
 report "phase2-download" "started"
@@ -584,7 +584,7 @@ export async function pollEmployeeDropletStatus(employeeId: string): Promise<{
         const hasContainer = emp[0]?.containerId;
 
         if (!hasContainer) {
-          // Droplet ready but no OpenClaw container yet — trigger provisioning
+          // Droplet ready but no Blitzer container yet — trigger provisioning
           await db
             .update(employees)
             .set({
@@ -595,7 +595,7 @@ export async function pollEmployeeDropletStatus(employeeId: string): Promise<{
             })
             .where(eq(employees.id, employeeId));
 
-          // Tell the droplet to create the OpenClaw container
+          // Tell the droplet to create the Blitzer container
           try {
             const backendConfig = await getEmployeeBackend(employeeId);
             if (backendConfig) {

@@ -1,7 +1,7 @@
 /**
- * Generates an OpenClaw configuration (openclaw.json) for a single AI employee.
+ * Generates a Blitzer configuration (openclaw.json) for a single AI employee.
  *
- * Each employee is a fully autonomous OpenClaw agent with:
+ * Each employee is a fully autonomous Blitzer agent with:
  *   - Full tool access: browser, web search, file I/O, shell, scheduling
  *   - HTTP chat completions API for dashboard chat
  *   - Persistent workspace and memory
@@ -35,10 +35,10 @@ export interface ChannelInput {
   config: Record<string, unknown>;
 }
 
-// OpenClaw config type — loosely typed to allow any valid OpenClaw config
+// Blitzer config type — loosely typed to allow any valid Blitzer config
 export type OpenClawConfig = Record<string, unknown>;
 
-/** Generate a complete OpenClaw configuration for an AI employee */
+/** Generate a complete Blitzer configuration for an AI employee */
 export function generateOpenClawConfig(
   employee: EmployeeInput,
   gatewayToken: string,
@@ -60,7 +60,7 @@ export function generateOpenClawConfig(
       },
     },
 
-    // Browser config — use OpenClaw-managed headless Chromium (NOT Chrome extension relay)
+    // Browser config — use Blitzer-managed headless Chromium (NOT Chrome extension relay)
     // defaultProfile MUST be "openclaw" — the default "chrome" tries to use a browser extension
     // relay which doesn't exist in Docker containers
     browser: {
@@ -71,7 +71,7 @@ export function generateOpenClawConfig(
       noSandbox: true,
     },
 
-    // Enable bundled plugins (shipped with OpenClaw image but disabled by default)
+    // Enable bundled plugins (shipped with Blitzer image but disabled by default)
     plugins: {
       enabled: true,
       entries: buildPluginEntries(),
@@ -331,7 +331,7 @@ export function generateSoulMd(employee: EmployeeInput): string {
   parts.push("- `weather` — get weather information");
   parts.push("- `goplaces` / `local-places` — find places and locations");
   parts.push("- `healthcheck` — check service health");
-  parts.push("- `clawhub` — browse and install OpenClaw skills from the hub");
+  parts.push("- `clawhub` — browse and install Blitzer skills from the hub");
   parts.push("- `skill-creator` — create new custom skills");
   parts.push("- `mcporter` — MCP tool integration");
   parts.push("");
@@ -502,13 +502,13 @@ export function generateSoulMd(employee: EmployeeInput): string {
   parts.push("# Install Chromium browser binary");
   parts.push("cd /app && npx playwright-core install chromium");
   parts.push("");
-  parts.push("# Create symlink so OpenClaw finds it");
+  parts.push("# Create symlink so Blitzer finds it");
   parts.push("CHROME=$(find ~/.cache/ms-playwright -name chrome -path '*/chrome-linux64/*' | head -1)");
   parts.push("sudo ln -sf \"$CHROME\" /usr/local/bin/chromium");
   parts.push("```");
   parts.push("Then restart the gateway to pick up the browser:");
   parts.push("```bash");
-  parts.push("# Restart the OpenClaw gateway (it will auto-restart via Docker)");
+  parts.push("# Restart the Blitzer gateway (it will auto-restart via Docker)");
   parts.push("kill 1");
   parts.push("```");
   parts.push("");
@@ -546,7 +546,7 @@ export function generateEmployeeEmail(
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-// Valid OpenClaw channel types (from https://docs.openclaw.ai/channels/index)
+// Valid Blitzer channel types (from https://docs.openclaw.ai/channels/index)
 const VALID_OPENCLAW_CHANNELS = new Set([
   "whatsapp", "telegram", "discord", "slack", "feishu", "google-chat",
   "mattermost", "signal", "bluebubbles", "imessage", "teams", "line",
@@ -554,14 +554,14 @@ const VALID_OPENCLAW_CHANNELS = new Set([
 ]);
 
 // Channels handled externally by the Slack proxy on the droplet API.
-// These are NOT passed to OpenClaw's built-in channel integration.
+// These are NOT passed to Blitzer's built-in channel integration.
 const PROXY_HANDLED_CHANNELS = new Set(["slack"]);
 
 // Channels that use QR code / device-linking instead of static credentials.
-// These are valid even with empty credentials — OpenClaw handles auth via its Gateway.
+// These are valid even with empty credentials — Blitzer handles auth via its Gateway.
 const QR_PAIRED_CHANNELS = new Set(["whatsapp"]);
 
-/** Filter to only channels OpenClaw supports AND that have real credentials (or use QR pairing) */
+/** Filter to only channels Blitzer supports AND that have real credentials (or use QR pairing) */
 function filterValidChannels(channels: ChannelInput[]): ChannelInput[] {
   return channels.filter((ch) => {
     if (!VALID_OPENCLAW_CHANNELS.has(ch.type)) return false;
@@ -636,7 +636,7 @@ function buildToolAllow(toolsConfig: Record<string, unknown>): string[] {
   return Array.from(expanded);
 }
 
-/** Bundled OpenClaw plugins verified to exist in ghcr.io/openclaw/openclaw:latest */
+/** Bundled Blitzer plugins verified to exist in ghcr.io/openclaw/openclaw:latest */
 const BUNDLED_PLUGINS = [
   "lobster",       // Media & content creation
   "voice-call",    // Voice calling
@@ -645,7 +645,7 @@ const BUNDLED_PLUGINS = [
 ];
 
 /**
- * Update an existing OpenClaw config with new channel connections.
+ * Update an existing Blitzer config with new channel connections.
  * This avoids needing the full employee data — just the existing config
  * and the new list of channels with their credentials.
  */

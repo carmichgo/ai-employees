@@ -48,7 +48,7 @@ async function pollEmployeeHealth(employee: {
       return;
     }
 
-    // Check OpenClaw gateway health via HTTP
+    // Check Blitzer gateway health via HTTP
     if (employee.containerHost && employee.containerPort) {
       const healthUrl = `http://${employee.containerHost}:${employee.containerPort}/api/health`;
       const controller = new AbortController();

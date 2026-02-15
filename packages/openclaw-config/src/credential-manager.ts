@@ -1,6 +1,6 @@
 /**
  * Credential Manager — generates a Node.js CLI script that gets installed
- * inside each OpenClaw container for secure credential storage.
+ * inside each Blitzer container for secure credential storage.
  *
  * Uses AES-256-GCM encryption with the container's ENCRYPTION_KEY env var.
  * Credentials are stored as encrypted JSON files in ~/.openclaw/credentials/

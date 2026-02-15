@@ -67,7 +67,7 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     // Ensure Docker network exists
     await ensureNetwork(OPENCLAW_NETWORK);
 
-    // Ensure OpenClaw image is available
+    // Ensure Blitzer image is available
     await ensureImage(OPENCLAW_IMAGE);
 
     // Create Docker volume for this employee's data
@@ -82,7 +82,7 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
       config: {},
     }));
 
-    // Generate OpenClaw config
+    // Generate Blitzer config
     const employeeInput: EmployeeInput = {
       id: employee.id,
       name: employee.name,
@@ -106,7 +106,7 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     const tier = (employee.tier as EmployeeTier) || "junior";
     const resources = getResourcesForTier(tier);
 
-    // Write OpenClaw config + soul.md + skills to a host directory that gets bind-mounted
+    // Write Blitzer config + soul.md + skills to a host directory that gets bind-mounted
     const configDir = `/opt/ai-employees/openclaw-configs/${employeeId}`;
     mkdirSync(`${configDir}/workspace`, { recursive: true });
     mkdirSync(`${configDir}/workspace/uploads`, { recursive: true });
@@ -127,7 +127,7 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     // Fix permissions for the node user (uid 1000) inside the container
     execSync(`chown -R 1000:1000 ${configDir}`);
 
-    // Create the container — OpenClaw starts directly with all built-in tools enabled
+    // Create the container — Blitzer starts directly with all built-in tools enabled
     const container = await docker.createContainer({
       Image: OPENCLAW_IMAGE,
       name: employee.containerName!,
@@ -385,7 +385,7 @@ function installCliTools(containerName: string, employeeId: string): void {
       echo "Sudo access granted to node user"
     '
 
-    # Install Chromium browser dependencies (for OpenClaw browser tool)
+    # Install Chromium browser dependencies (for Blitzer browser tool)
     # Uses playwright-core's install-deps to get the right system libraries
     docker exec -u root ${containerName} bash -c '
       cd /app && npx playwright-core install-deps chromium 2>/dev/null
@@ -396,7 +396,7 @@ function installCliTools(containerName: string, employeeId: string): void {
       cd /app && npx playwright-core install chromium 2>/dev/null
     '
 
-    # Create symlink so OpenClaw auto-detects the browser
+    # Create symlink so Blitzer auto-detects the browser
     docker exec -u root ${containerName} bash -c '
       CHROME_BIN=$(find /home/node/.cache/ms-playwright -name chrome -path "*/chrome-linux64/*" 2>/dev/null | head -1) &&
       if [ -n "$CHROME_BIN" ]; then

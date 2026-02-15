@@ -149,7 +149,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         employee: sanitize(updatedEmployee),
-        message: `${input.name} has been hired! (demo mode — no OpenClaw container)`,
+        message: `${input.name} has been hired! (demo mode — no Blitzer container)`,
       },
       { status: 201 },
     );

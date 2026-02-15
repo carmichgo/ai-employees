@@ -2,7 +2,7 @@
  * Backend client — routes requests to an employee's dedicated droplet.
  *
  * Each employee has their own DigitalOcean droplet.
- * The droplet runs the API + Worker that manages the OpenClaw container.
+ * The droplet runs the API + Worker that manages the Blitzer container.
  */
 
 import { eq } from "drizzle-orm";

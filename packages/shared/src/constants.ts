@@ -150,7 +150,7 @@ export const CAPABILITY_OPTIONS: CapabilityOption[] = [
 
 // ── Expertise Options ──────────────────────────────────
 // User-friendly focus areas shown in the wizard skills step.
-// Each maps to real OpenClaw skill slugs behind the scenes.
+// Each maps to real Blitzer skill slugs behind the scenes.
 
 export interface ExpertiseOption {
   id: string;

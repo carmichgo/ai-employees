@@ -81,7 +81,7 @@ export async function buildServer(config: Env) {
   });
 
   // Rolling deployment — rebuilds api + worker containers via Docker Compose.
-  // Employee (OpenClaw) containers, Redis, and Traefik are NOT touched.
+  // Employee (Blitzer) containers, Redis, and Traefik are NOT touched.
   // Runs in background since it takes minutes; check /deploy-status for results.
   fastify.get("/update", async (request) => {
     return triggerDeploy(request.query as Record<string, string>);
@@ -171,7 +171,7 @@ const HOST_APP_DIR = "/opt/ai-employees/app";
  *   1. Pulls latest code via git
  *   2. Rebuilds api + worker images via Docker Compose
  *   3. Rolling-restarts worker then api
- * Employee (OpenClaw) containers, Redis, and Traefik are NOT touched.
+ * Employee (Blitzer) containers, Redis, and Traefik are NOT touched.
  */
 function triggerDeploy(opts?: { branch?: string }) {
   let branch = opts?.branch || "main";

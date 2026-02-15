@@ -80,7 +80,7 @@ ENCRYPTION_KEY=${GENERATED_ENCRYPTION_KEY}
 # Inter-service auth — MUST match the BACKEND_SECRET env var in Vercel
 INTERSERVICE_SECRET=${GENERATED_INTERSERVICE_SECRET}
 
-# OpenClaw
+# Blitzer
 OPENCLAW_IMAGE=openclaw:latest
 OPENCLAW_NETWORK=ai-employees-internal
 
