@@ -270,6 +270,14 @@ class ApiClient {
     return this.request<{ company: any; employees: any }>("/api/dashboard/overview");
   }
 
+  // Company
+  async updateCompany(data: { plan?: string }) {
+    return this.request<{ company: any }>("/api/companies", {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
   // Droplet management
   async getDropletStatus() {
     return this.request<{ droplet: { id: string | null; ip: string | null; region: string | null; size: string | null; status: string; phase: string | null } }>(

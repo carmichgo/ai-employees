@@ -67,6 +67,7 @@ function SettingsContent() {
   const [logsLoading, setLogsLoading] = useState(false);
   const [integrations, setIntegrations] = useState<Record<string, any>>({});
   const [integrationsLoading, setIntegrationsLoading] = useState(false);
+  const [planLoading, setPlanLoading] = useState(false);
   const [slackNotice, setSlackNotice] = useState<{ type: "success" | "error" | "denied"; message: string } | null>(null);
   const searchParams = useSearchParams();
 
@@ -142,6 +143,24 @@ function SettingsContent() {
       // Integrations endpoint might not exist yet
     }
   }, []);
+
+  const handlePlanChange = async (newPlan: string) => {
+    if (company.plan === newPlan || planLoading) return;
+    const action = newPlan === "dedicated"
+      ? "Switch to Dedicated ($100/mo)? You'll get your own isolated server."
+      : "Switch to Shared (free)? Your employees will run on shared infrastructure.";
+    if (!confirm(action)) return;
+    setPlanLoading(true);
+    try {
+      const data = await api.updateCompany({ plan: newPlan });
+      setCompany(data.company);
+      if (newPlan === "dedicated") loadDroplet();
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setPlanLoading(false);
+    }
+  };
 
   const handleConnectSlack = () => {
     window.location.href = api.getSlackInstallUrl();
@@ -329,13 +348,16 @@ function SettingsContent() {
           <div style={{ display: "flex", gap: 10 }}>
             {/* Shared option */}
             <div
+              onClick={() => handlePlanChange("starter")}
               style={{
                 flex: 1,
                 padding: "14px 16px",
                 borderRadius: "var(--radius-md)",
                 border: `2px solid ${!isDedicated ? "var(--text)" : "var(--border)"}`,
                 background: !isDedicated ? "var(--bg-secondary)" : "var(--bg)",
-                cursor: "default",
+                cursor: isDedicated && !planLoading ? "pointer" : "default",
+                opacity: planLoading ? 0.6 : 1,
+                transition: "all 0.15s ease",
               }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
@@ -361,13 +383,16 @@ function SettingsContent() {
 
             {/* Dedicated option */}
             <div
+              onClick={() => handlePlanChange("dedicated")}
               style={{
                 flex: 1,
                 padding: "14px 16px",
                 borderRadius: "var(--radius-md)",
                 border: `2px solid ${isDedicated ? "var(--text)" : "var(--border)"}`,
                 background: isDedicated ? "var(--bg-secondary)" : "var(--bg)",
-                cursor: "default",
+                cursor: !isDedicated && !planLoading ? "pointer" : "default",
+                opacity: planLoading ? 0.6 : 1,
+                transition: "all 0.15s ease",
               }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
