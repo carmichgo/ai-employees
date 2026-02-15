@@ -55,103 +55,121 @@ export async function POST(request: NextRequest) {
   const session = await authenticate(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const body = await request.json();
-  const input = createEmployeeSchema.parse(body);
+  try {
+    const body = await request.json();
+    const input = createEmployeeSchema.parse(body);
 
-  // Fetch company for use throughout the handler
-  const [company] = await db
-    .select()
-    .from(companies)
-    .where(eq(companies.id, session.companyId))
-    .limit(1);
+    // Fetch company for use throughout the handler
+    const [company] = await db
+      .select()
+      .from(companies)
+      .where(eq(companies.id, session.companyId))
+      .limit(1);
 
-  if (!company) {
-    return NextResponse.json({ error: "Company not found" }, { status: 404 });
-  }
-
-  // Resolve template defaults
-  let persona = input.persona;
-  let goals = input.goals;
-  let emoji = "🤖";
-
-  if (input.templateId) {
-    const template = getJobTemplate(input.templateId);
-    if (template) {
-      persona = persona || template.persona;
-      goals = goals || template.goals;
-      emoji = template.emoji;
+    if (!company) {
+      return NextResponse.json({ error: "Company not found" }, { status: 404 });
     }
-  }
 
-  const gatewayToken = crypto.randomBytes(32).toString("hex");
-  const tier = (input.tier || "junior") as EmployeeTier;
-  const tierModel = getModelForTier(tier);
+    // Resolve template defaults
+    let persona = input.persona;
+    let goals = input.goals;
+    let emoji = "🤖";
 
-  // Always create the employee record first
-  const [employee] = await db
-    .insert(employees)
-    .values({
-      companyId: session.companyId,
-      name: input.name,
-      jobTitle: input.jobTitle,
-      templateId: input.templateId,
-      tier,
-      emoji,
-      persona,
-      goals,
-      personalityConfig: input.personalityConfig || { autonomy: "high", proactivity: "proactive", communication: "concise" },
-      modelConfig: input.modelConfig || { primary: tierModel },
-      toolsConfig: input.toolsAllow ? { allow: input.toolsAllow } : {},
-      gatewayToken,
-      status: "provisioning",
-      containerName: `ai-emp-${company.slug}-${slugify(input.name)}-${crypto.randomBytes(3).toString("hex")}`,
-    })
-    .returning();
+    if (input.templateId) {
+      const template = getJobTemplate(input.templateId);
+      if (template) {
+        persona = persona || template.persona;
+        goals = goals || template.goals;
+        emoji = template.emoji;
+      }
+    }
 
-  if (input.channels?.length) {
-    await createChannelConnectionRows(employee.id, input.channels);
-  }
+    const gatewayToken = crypto.randomBytes(32).toString("hex");
+    const tier = (input.tier || "junior") as EmployeeTier;
+    const tierModel = getModelForTier(tier);
 
-  // Auto-provision a droplet for this employee
-  if (isDropletProvisioningEnabled()) {
-    try {
-      await createEmployeeDroplet(employee.id);
-    } catch (err: any) {
+    // Always create the employee record first
+    const [employee] = await db
+      .insert(employees)
+      .values({
+        companyId: session.companyId,
+        name: input.name,
+        jobTitle: input.jobTitle,
+        templateId: input.templateId,
+        tier,
+        emoji,
+        persona,
+        goals,
+        personalityConfig: input.personalityConfig || { autonomy: "high", proactivity: "proactive", communication: "concise" },
+        modelConfig: input.modelConfig || { primary: tierModel },
+        toolsConfig: input.toolsAllow ? { allow: input.toolsAllow } : {},
+        gatewayToken,
+        status: "provisioning",
+        containerName: `ai-emp-${company.slug}-${slugify(input.name)}-${crypto.randomBytes(3).toString("hex")}`,
+      })
+      .returning();
+
+    if (input.channels?.length) {
+      await createChannelConnectionRows(employee.id, input.channels);
+    }
+
+    // Auto-provision a droplet for this employee
+    if (isDropletProvisioningEnabled()) {
+      try {
+        await createEmployeeDroplet(employee.id);
+      } catch (err: any) {
+        return NextResponse.json(
+          {
+            employee: sanitize(employee),
+            error: `Hired ${input.name} but droplet provisioning failed: ${err.message}`,
+            dropletStatus: "error",
+          },
+          { status: 201 },
+        );
+      }
+
       return NextResponse.json(
         {
           employee: sanitize(employee),
-          error: `Hired ${input.name} but droplet provisioning failed: ${err.message}`,
-          dropletStatus: "error",
+          message: `${input.name} is being hired! Setting up their dedicated server — this takes 2-3 minutes.`,
+          dropletStatus: "provisioning",
         },
         { status: 201 },
       );
     }
 
+    // No DO token — demo mode fallback
+    await db
+      .update(employees)
+      .set({ status: "active", updatedAt: new Date() })
+      .where(eq(employees.id, employee.id));
+
+    const updatedEmployee = { ...employee, status: "active" };
+
     return NextResponse.json(
       {
-        employee: sanitize(employee),
-        message: `${input.name} is being hired! Setting up their dedicated server — this takes 2-3 minutes.`,
-        dropletStatus: "provisioning",
+        employee: sanitize(updatedEmployee),
+        message: `${input.name} has been hired! (demo mode — no OpenClaw container)`,
       },
       { status: 201 },
     );
+  } catch (err: any) {
+    if (err?.name === "ZodError" && typeof err.flatten === "function") {
+      const fieldErrors = err.flatten().fieldErrors;
+      const messages = Object.entries(fieldErrors)
+        .map(([field, errs]) => `${field}: ${(errs as string[]).join(", ")}`)
+        .join("; ");
+      return NextResponse.json(
+        { error: `Validation error: ${messages}` },
+        { status: 400 },
+      );
+    }
+    console.error("Hire employee error:", err);
+    return NextResponse.json(
+      { error: err.message || "Internal server error" },
+      { status: 500 },
+    );
   }
-
-  // No DO token — demo mode fallback
-  await db
-    .update(employees)
-    .set({ status: "active", updatedAt: new Date() })
-    .where(eq(employees.id, employee.id));
-
-  const updatedEmployee = { ...employee, status: "active" };
-
-  return NextResponse.json(
-    {
-      employee: sanitize(updatedEmployee),
-      message: `${input.name} has been hired! (demo mode — no OpenClaw container)`,
-    },
-    { status: 201 },
-  );
 }
 
 /** Create channelConnections rows for selected channels */
