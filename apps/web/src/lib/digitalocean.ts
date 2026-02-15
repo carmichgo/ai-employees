@@ -20,7 +20,13 @@ const DO_API = "https://api.digitalocean.com/v2";
 
 // The GitHub repo URL for cloning on the droplet
 const REPO_URL = process.env.REPO_URL || "https://github.com/carmichgo/ai-employees.git";
-const REPO_BRANCH = (process.env.REPO_BRANCH || "claude/fix-wizard-box-sizing-m778i").trim();
+// Use the branch that Vercel deployed from (VERCEL_GIT_COMMIT_REF) so droplets
+// always run the same code as the frontend. Falls back to REPO_BRANCH env var.
+const REPO_BRANCH = (
+  process.env.VERCEL_GIT_COMMIT_REF ||
+  process.env.REPO_BRANCH ||
+  "claude/fix-wizard-box-sizing-m778i"
+).trim();
 
 export function isDropletProvisioningEnabled(): boolean {
   return !!DO_API_TOKEN;
