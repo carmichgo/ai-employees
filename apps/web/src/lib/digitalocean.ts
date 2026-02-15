@@ -20,7 +20,7 @@ const DO_API = "https://api.digitalocean.com/v2";
 
 // The GitHub repo URL for cloning on the droplet
 const REPO_URL = process.env.REPO_URL || "https://github.com/carmichgo/ai-employees.git";
-const REPO_BRANCH = (process.env.REPO_BRANCH || "main").trim();
+const REPO_BRANCH = (process.env.REPO_BRANCH || "claude/fix-wizard-box-sizing-m778i").trim();
 
 export function isDropletProvisioningEnabled(): boolean {
   return !!DO_API_TOKEN;

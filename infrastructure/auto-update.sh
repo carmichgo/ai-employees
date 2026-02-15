@@ -11,7 +11,7 @@ set -euo pipefail
 APP_DIR="/opt/ai-employees/app"
 LOCK_FILE="/tmp/ai-employees-deploy.lock"
 LOG_FILE="/var/log/ai-employees-update.log"
-BRANCH="${DEPLOY_BRANCH:-main}"
+BRANCH="${DEPLOY_BRANCH:-claude/fix-wizard-box-sizing-m778i}"
 
 log() {
   echo "[$(date -Iseconds)] $1" >> "$LOG_FILE"

@@ -14,7 +14,7 @@
 set -euo pipefail
 
 REPO_URL="${REPO_URL:-https://github.com/carmichgo/ai-employees.git}"
-BRANCH="${BRANCH:-main}"
+BRANCH="${BRANCH:-claude/fix-wizard-box-sizing-m778i}"
 APP_DIR="/opt/ai-employees/app"
 
 echo "=== AI Employees — DigitalOcean Droplet Setup ==="
