@@ -176,5 +176,10 @@ export function createBackendClient(config: CompanyBackendConfig) {
       });
       return res.json();
     },
+
+    async getWhatsAppQR(employeeId: string) {
+      const res = await backendFetch(config, `/internal/employees/${employeeId}/channels/whatsapp/qr`);
+      return res.json() as Promise<{ status: string; qr: string | null; message?: string }>;
+    },
   };
 }

@@ -10,6 +10,7 @@ import {
   MessageSquare, Send, Smartphone, Gamepad2, Shield, MonitorSmartphone, Hash, Radio,
 } from "lucide-react";
 import Link from "next/link";
+import { QRCodeSVG } from "qrcode.react";
 
 const EMAIL_PROVIDERS: Record<string, { label: string; smtpHost: string; smtpPort: number; imapHost: string; imapPort: number; webmail: string; note?: string }> = {
   gmail: { label: "Google / Gmail", smtpHost: "smtp.gmail.com", smtpPort: 587, imapHost: "imap.gmail.com", imapPort: 993, webmail: "https://mail.google.com", note: "Use an App Password (Google Account > Security > App Passwords)" },
@@ -46,12 +47,8 @@ const CHANNEL_META: Record<string, {
   whatsapp: {
     label: "WhatsApp",
     icon: Smartphone,
-    fields: [
-      { key: "phoneNumberId", label: "Phone Number ID", placeholder: "1234567890" },
-      { key: "accessToken", label: "Access Token", placeholder: "EAABsbCS..." },
-    ],
-    helpText: "Get credentials from Meta Business Suite > WhatsApp > API Setup. Or scan a QR code if using WhatsApp Web mode.",
-    helpUrl: "https://business.facebook.com/",
+    fields: [],
+    helpText: "Link your WhatsApp account by scanning a QR code — just like WhatsApp Web.",
   },
   signal: {
     label: "Signal",
@@ -161,6 +158,12 @@ export default function EmployeeDetailPage() {
   const [channelForm, setChannelForm] = useState<Record<string, string>>({});
   const [channelSaving, setChannelSaving] = useState(false);
   const [channelNotice, setChannelNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  // WhatsApp QR pairing state
+  const [waQR, setWaQR] = useState<string | null>(null);
+  const [waStatus, setWaStatus] = useState<"idle" | "loading" | "pending" | "linked" | "error">("idle");
+  const [waError, setWaError] = useState<string | null>(null);
+  const waPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Credentials state
   const [credentialsList, setCredentialsList] = useState<any[]>([]);
@@ -369,6 +372,64 @@ export default function EmployeeDetailPage() {
     }
   };
 
+  // ── WhatsApp QR pairing ──
+  const stopWaPolling = () => {
+    if (waPollingRef.current) { clearInterval(waPollingRef.current); waPollingRef.current = null; }
+  };
+  const fetchWhatsAppQR = async () => {
+    setWaStatus("loading");
+    setWaError(null);
+    setWaQR(null);
+    try {
+      // First, enable whatsapp channel in config (no credentials needed)
+      await api.connectChannel(employeeId, "whatsapp", {});
+      setChannelsList((prev) =>
+        prev.map((c) => c.channelType === "whatsapp" ? { ...c, status: "connected", hasCredentials: true } : c),
+      );
+    } catch {
+      // Channel may already be connected — continue to QR
+    }
+    try {
+      const res = await api.getWhatsAppQR(employeeId);
+      if (res.status === "linked") {
+        setWaStatus("linked");
+        setWaQR(null);
+        stopWaPolling();
+        setChannelNotice({ type: "success", message: "WhatsApp linked successfully!" });
+        return;
+      }
+      if (res.qr) {
+        setWaQR(res.qr);
+        setWaStatus("pending");
+        // Poll every 5s until linked or timeout
+        stopWaPolling();
+        waPollingRef.current = setInterval(async () => {
+          try {
+            const poll = await api.getWhatsAppQR(employeeId);
+            if (poll.status === "linked") {
+              setWaStatus("linked");
+              setWaQR(null);
+              stopWaPolling();
+              setChannelNotice({ type: "success", message: "WhatsApp linked successfully!" });
+            } else if (poll.qr && poll.qr !== waQR) {
+              setWaQR(poll.qr); // QR refreshed
+            }
+          } catch {
+            // Ignore transient polling errors
+          }
+        }, 5000);
+        return;
+      }
+      setWaStatus("error");
+      setWaError("No QR code received. The container may still be starting.");
+    } catch (err: any) {
+      setWaStatus("error");
+      setWaError(err.message);
+    }
+  };
+  // Cleanup polling on unmount
+  useEffect(() => () => stopWaPolling(), []);
+
   // ── Credential handlers ──
   const resetCredForm = () => {
     setCredLabel(""); setCredUsername(""); setCredPassword("");
@@ -572,7 +633,8 @@ export default function EmployeeDetailPage() {
               const meta = CHANNEL_META[ch.channelType];
               const Icon = meta?.icon || MessageSquare;
               const isAutoHandled = ch.channelType === "slack" || ch.channelType === "email";
-              const needsSetup = !isAutoHandled && meta?.fields?.length > 0;
+              const isWhatsApp = ch.channelType === "whatsapp";
+              const needsSetup = !isAutoHandled && !isWhatsApp && meta?.fields?.length > 0;
               const isSettingUp = setupChannel === ch.channelType;
 
               return (
@@ -590,15 +652,46 @@ export default function EmployeeDetailPage() {
                         fontSize: 10, padding: "2px 8px", borderRadius: 10,
                         fontWeight: 500,
                         ...(ch.status === "connected"
-                          ? { background: "rgba(22, 163, 74, 0.08)", color: "var(--green)" }
+                          ? isWhatsApp && waStatus === "linked"
+                            ? { background: "rgba(22, 163, 74, 0.08)", color: "var(--green)" }
+                            : isWhatsApp
+                              ? { background: "var(--bg-secondary)", color: "var(--text-tertiary)", border: "1px solid var(--border)" }
+                              : { background: "rgba(22, 163, 74, 0.08)", color: "var(--green)" }
                           : ch.status === "error"
                             ? { background: "rgba(220, 38, 38, 0.08)", color: "var(--red)" }
                             : { background: "var(--bg-secondary)", color: "var(--text-tertiary)", border: "1px solid var(--border)" }),
                       }}>
-                        {ch.status === "connected" ? "Connected" : ch.status === "error" ? "Error" : "Needs setup"}
+                        {isWhatsApp
+                          ? waStatus === "linked" ? "Linked" : ch.status === "connected" ? "Needs linking" : "Needs setup"
+                          : ch.status === "connected" ? "Connected" : ch.status === "error" ? "Error" : "Needs setup"}
                       </span>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      {/* WhatsApp uses QR-based linking */}
+                      {isWhatsApp && waStatus !== "linked" && waStatus !== "pending" && waStatus !== "loading" && (
+                        <button
+                          className="btn-primary btn-sm"
+                          onClick={fetchWhatsAppQR}
+                          style={{ fontSize: 11, padding: "4px 12px" }}
+                        >
+                          Link Device
+                        </button>
+                      )}
+                      {isWhatsApp && waStatus === "loading" && (
+                        <span style={{ fontSize: 11, color: "var(--text-tertiary)", display: "flex", alignItems: "center", gap: 4 }}>
+                          <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} /> Getting QR...
+                        </span>
+                      )}
+                      {isWhatsApp && (waStatus === "linked" || (ch.status === "connected" && waStatus === "idle")) && (
+                        <button
+                          onClick={() => { handleDisconnectChannel("whatsapp"); setWaStatus("idle"); setWaQR(null); stopWaPolling(); }}
+                          style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", padding: 2 }}
+                          title="Disconnect"
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+                      {/* Other channels with credential forms */}
                       {needsSetup && ch.status !== "connected" && !isSettingUp && (
                         <button
                           className="btn-primary btn-sm"
@@ -634,7 +727,55 @@ export default function EmployeeDetailPage() {
                     </div>
                   </div>
 
-                  {/* Setup form */}
+                  {/* WhatsApp QR pairing panel */}
+                  {isWhatsApp && waStatus === "pending" && waQR && (
+                    <div style={{
+                      marginTop: 12, padding: 16, background: "var(--bg-secondary)",
+                      borderRadius: "var(--radius-md)", border: "1px solid var(--border)",
+                      display: "flex", flexDirection: "column", alignItems: "center", gap: 12,
+                    }}>
+                      <div style={{ fontSize: 12, color: "var(--text-secondary)", textAlign: "center", lineHeight: 1.5 }}>
+                        Scan this QR code with WhatsApp on your phone:<br />
+                        <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
+                          Settings &rarr; Linked Devices &rarr; Link a Device
+                        </span>
+                      </div>
+                      <div style={{
+                        background: "#ffffff", padding: 16, borderRadius: "var(--radius-md)",
+                        border: "1px solid var(--border)", display: "inline-block",
+                      }}>
+                        <QRCodeSVG value={waQR} size={200} level="M" />
+                      </div>
+                      <div style={{ fontSize: 11, color: "var(--text-tertiary)", display: "flex", alignItems: "center", gap: 4 }}>
+                        <Loader2 size={10} style={{ animation: "spin 1s linear infinite" }} />
+                        Waiting for scan... QR refreshes automatically.
+                      </div>
+                      <button
+                        className="btn-secondary btn-sm"
+                        onClick={() => { setWaStatus("idle"); setWaQR(null); stopWaPolling(); }}
+                        style={{ fontSize: 11, padding: "4px 10px" }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                  {isWhatsApp && waStatus === "error" && waError && (
+                    <div style={{
+                      marginTop: 8, padding: "8px 12px", borderRadius: "var(--radius-sm)",
+                      background: "rgba(220, 38, 38, 0.06)", color: "var(--red)", fontSize: 12,
+                    }}>
+                      {waError}
+                      <button
+                        className="btn-secondary btn-sm"
+                        onClick={fetchWhatsAppQR}
+                        style={{ fontSize: 11, padding: "2px 8px", marginLeft: 8 }}
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Setup form (credential-based channels) */}
                   {isSettingUp && meta && meta.fields.length > 0 && (
                     <div style={{
                       marginTop: 12, padding: 14, background: "var(--bg-secondary)",

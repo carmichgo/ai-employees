@@ -233,6 +233,12 @@ class ApiClient {
     );
   }
 
+  async getWhatsAppQR(employeeId: string) {
+    return this.request<{ status: string; qr: string | null; message?: string }>(
+      `/api/employees/${employeeId}/channels/whatsapp/qr`,
+    );
+  }
+
   async getChatHistory(id: string) {
     return this.request<{
       messages: Array<{

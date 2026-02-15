@@ -253,6 +253,87 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     }
   });
 
+  // GET /internal/employees/:id/channels/whatsapp/qr — get WhatsApp QR code for pairing
+  // Runs `openclaw channels login` inside the container and captures the QR string,
+  // then generates a QR code PNG and returns it as base64.
+  fastify.get<{ Params: { id: string } }>("/internal/employees/:id/channels/whatsapp/qr", async (request, reply) => {
+    const { id } = request.params;
+
+    const employee = await db.query.employees.findFirst({
+      where: eq(employees.id, id),
+    });
+    if (!employee) return reply.status(404).send({ error: "Employee not found" });
+    if (employee.status !== "active") return reply.status(400).send({ error: `Employee is ${employee.status}` });
+    if (!employee.containerName) return reply.status(400).send({ error: "No container for this employee" });
+
+    try {
+      // Check if WhatsApp is already connected by looking at the session directory
+      const sessionCheck = execSync(
+        `docker exec ${employee.containerName} bash -c 'test -f /home/node/.openclaw/credentials/whatsapp/creds.json && echo "linked" || echo "unlinked"'`,
+        { timeout: 5000 },
+      ).toString().trim();
+
+      if (sessionCheck === "linked") {
+        return { status: "linked", qr: null, message: "WhatsApp is already linked to a device." };
+      }
+
+      // Run the login command with a short timeout to capture the QR code output.
+      // The command outputs QR data to stdout then waits for scan — we just need the QR string.
+      const output = execSync(
+        `docker exec ${employee.containerName} timeout 15 node -e "
+          const { makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+          const { Boom } = require('@hapi/boom');
+          (async () => {
+            const { state, saveCreds } = await useMultiFileAuthState('/home/node/.openclaw/credentials/whatsapp');
+            const sock = makeWASocket({ auth: state, printQRInTerminal: false });
+            sock.ev.on('creds.update', saveCreds);
+            sock.ev.on('connection.update', (update) => {
+              if (update.qr) {
+                console.log(JSON.stringify({ qr: update.qr }));
+                process.exit(0);
+              }
+              if (update.connection === 'open') {
+                console.log(JSON.stringify({ status: 'linked' }));
+                process.exit(0);
+              }
+              if (update.connection === 'close') {
+                const reason = new Boom(update.lastDisconnect?.error)?.output?.statusCode;
+                if (reason !== DisconnectReason.loggedOut) {
+                  console.log(JSON.stringify({ error: 'Connection closed', code: reason }));
+                }
+                process.exit(1);
+              }
+            });
+          })();
+        " 2>/dev/null`,
+        { timeout: 20000 },
+      ).toString().trim();
+
+      // Parse the last JSON line from output
+      const lines = output.split("\n").filter(Boolean);
+      const lastLine = lines[lines.length - 1];
+      const result = JSON.parse(lastLine);
+
+      if (result.status === "linked") {
+        return { status: "linked", qr: null, message: "WhatsApp linked successfully." };
+      }
+
+      if (result.qr) {
+        return { status: "pending", qr: result.qr };
+      }
+
+      return reply.status(500).send({ error: "Failed to get QR code" });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      // Timeout is expected — means QR wasn't generated yet, container may still be starting
+      if (message.includes("timed out") || message.includes("ETIMEDOUT")) {
+        return reply.status(503).send({ error: "Container is still starting up. Try again in a few seconds." });
+      }
+      fastify.log.error(`WhatsApp QR failed for ${id}: ${message}`);
+      return reply.status(500).send({ error: `Failed to get WhatsApp QR: ${message}` });
+    }
+  });
+
   // POST /internal/employees/:id/chat — proxy chat to container or call Anthropic directly
   fastify.post<{ Params: { id: string } }>("/internal/employees/:id/chat", async (request, reply) => {
     const { id } = request.params;

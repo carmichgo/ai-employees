@@ -557,12 +557,18 @@ const VALID_OPENCLAW_CHANNELS = new Set([
 // These are NOT passed to OpenClaw's built-in channel integration.
 const PROXY_HANDLED_CHANNELS = new Set(["slack"]);
 
-/** Filter to only channels OpenClaw supports AND that have real credentials */
+// Channels that use QR code / device-linking instead of static credentials.
+// These are valid even with empty credentials — OpenClaw handles auth via its Gateway.
+const QR_PAIRED_CHANNELS = new Set(["whatsapp"]);
+
+/** Filter to only channels OpenClaw supports AND that have real credentials (or use QR pairing) */
 function filterValidChannels(channels: ChannelInput[]): ChannelInput[] {
   return channels.filter((ch) => {
     if (!VALID_OPENCLAW_CHANNELS.has(ch.type)) return false;
     // Slack is handled by the centralized Slack proxy — skip it here
     if (PROXY_HANDLED_CHANNELS.has(ch.type)) return false;
+    // QR-paired channels (WhatsApp) don't need credentials — just enabled: true
+    if (QR_PAIRED_CHANNELS.has(ch.type)) return true;
     // Only include if credentials are provided (not empty)
     return Object.keys(ch.credentials).length > 0;
   });
