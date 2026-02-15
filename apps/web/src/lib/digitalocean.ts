@@ -13,7 +13,7 @@ import crypto from "node:crypto";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { employees, companies } from "@/lib/schema";
-import { getEmployeeBackend, createBackendClient } from "@/lib/backend";
+import { createBackendClient } from "@/lib/backend";
 
 const DO_API_TOKEN = process.env.DO_API_TOKEN;
 const DO_API = "https://api.digitalocean.com/v2";
@@ -514,6 +514,64 @@ export async function createEmployeeDroplet(employeeId: string): Promise<{
   return { dropletId, interserviceSecret };
 }
 
+/** Power off an employee's droplet (saves billing while paused) */
+export async function powerOffDroplet(employeeId: string): Promise<void> {
+  const [employee] = await db
+    .select()
+    .from(employees)
+    .where(eq(employees.id, employeeId))
+    .limit(1);
+
+  if (!employee?.dropletId) return;
+
+  try {
+    await doFetch(`/droplets/${employee.dropletId}/actions`, {
+      method: "POST",
+      body: JSON.stringify({ type: "shutdown" }),
+    });
+  } catch {
+    // Graceful shutdown failed — try hard power off
+    try {
+      await doFetch(`/droplets/${employee.dropletId}/actions`, {
+        method: "POST",
+        body: JSON.stringify({ type: "power_off" }),
+      });
+    } catch {
+      // Droplet may already be off
+    }
+  }
+
+  await db
+    .update(employees)
+    .set({ dropletStatus: "powered_off", updatedAt: new Date() })
+    .where(eq(employees.id, employeeId));
+}
+
+/** Power on an employee's droplet (for resume) */
+export async function powerOnDroplet(employeeId: string): Promise<void> {
+  const [employee] = await db
+    .select()
+    .from(employees)
+    .where(eq(employees.id, employeeId))
+    .limit(1);
+
+  if (!employee?.dropletId) return;
+
+  await doFetch(`/droplets/${employee.dropletId}/actions`, {
+    method: "POST",
+    body: JSON.stringify({ type: "power_on" }),
+  });
+
+  await db
+    .update(employees)
+    .set({
+      dropletStatus: "booting",
+      status: "provisioning",
+      updatedAt: new Date(),
+    })
+    .where(eq(employees.id, employeeId));
+}
+
 /** Poll DO API for an employee's droplet IP and readiness */
 export async function pollEmployeeDropletStatus(employeeId: string): Promise<{
   status: string;
@@ -530,41 +588,32 @@ export async function pollEmployeeDropletStatus(employeeId: string): Promise<{
     return { status: "none", ip: null, phase: null };
   }
 
-  // If active or error with an IP, check what phase the API is in
-  if ((employee.dropletStatus === "active" || employee.dropletStatus === "error") && employee.dropletIp) {
-    const apiCheck = await checkDropletApi(employee.dropletIp);
-    if (apiCheck.ok) {
-      const isReady = apiCheck.phase === "ready";
-      if (isReady && !employee.containerId) {
-        // Droplet ready but container not provisioned yet — trigger it
-        if (employee.dropletStatus === "error") {
-          await db
-            .update(employees)
-            .set({ dropletStatus: "active", updatedAt: new Date() })
-            .where(eq(employees.id, employeeId));
-        }
-        try {
-          const backendConfig = await getEmployeeBackend(employeeId);
-          if (backendConfig) {
-            const backend = createBackendClient(backendConfig);
-            await backend.provisionContainer(employeeId);
-          }
-        } catch {
-          // Will retry on next poll
-        }
-        return { status: "provisioning", ip: employee.dropletIp, phase: "container-provisioning" };
-      }
-      if (employee.dropletStatus === "error" && isReady) {
-        await db
-          .update(employees)
-          .set({ dropletStatus: "active", status: "active", updatedAt: new Date() })
-          .where(eq(employees.id, employeeId));
-      }
-      return { status: isReady ? "active" : "booting", ip: employee.dropletIp, phase: apiCheck.phase };
-    }
-    return { status: employee.dropletStatus, ip: employee.dropletIp, phase: null };
+  // Powered off — nothing to poll
+  if (employee.dropletStatus === "powered_off") {
+    return { status: "powered_off", ip: employee.dropletIp, phase: null };
   }
 
+  // If we already have an IP and the droplet was active/error/booting, check API health directly
+  if (["active", "error", "booting"].includes(employee.dropletStatus || "") && employee.dropletIp) {
+    const apiCheck = await checkDropletApi(employee.dropletIp);
+    if (apiCheck.ok && apiCheck.phase === "ready") {
+      // Droplet API is up — update dropletStatus if needed
+      if (employee.dropletStatus !== "active") {
+        await db
+          .update(employees)
+          .set({ dropletStatus: "active", updatedAt: new Date() })
+          .where(eq(employees.id, employeeId));
+      }
+      return handleDropletReady(employee, employeeId, employee.dropletIp);
+    }
+    // API not ready yet — still booting
+    if (employee.dropletStatus === "booting") {
+      return { status: "booting", ip: employee.dropletIp, phase: apiCheck.ok ? apiCheck.phase : null };
+    }
+    return { status: employee.dropletStatus || "unknown", ip: employee.dropletIp, phase: null };
+  }
+
+  // Check DO API for current droplet state
   try {
     const res = await doFetch(`/droplets/${employee.dropletId}`);
     const data = await res.json();
@@ -575,56 +624,24 @@ export async function pollEmployeeDropletStatus(employeeId: string): Promise<{
     );
     const ip = publicNet?.ip_address || null;
 
+    if (droplet.status === "off") {
+      return { status: "powered_off", ip, phase: null };
+    }
+
     if (droplet.status === "active" && ip) {
       const apiCheck = await checkDropletApi(ip);
 
       if (apiCheck.ok && apiCheck.phase === "ready") {
-        // Droplet API is up. Check if container still needs provisioning.
-        const emp = await db.select().from(employees).where(eq(employees.id, employeeId)).limit(1);
-        const hasContainer = emp[0]?.containerId;
-
-        if (!hasContainer) {
-          // Droplet ready but no Blitzer container yet — trigger provisioning
-          await db
-            .update(employees)
-            .set({
-              dropletIp: ip,
-              dropletStatus: "active",
-              // Keep status as "provisioning" until the worker creates the container
-              updatedAt: new Date(),
-            })
-            .where(eq(employees.id, employeeId));
-
-          // Tell the droplet to create the Blitzer container
-          try {
-            const backendConfig = await getEmployeeBackend(employeeId);
-            if (backendConfig) {
-              const backend = createBackendClient(backendConfig);
-              await backend.provisionContainer(employeeId);
-              console.log(`[droplet-poll] Triggered container provisioning for ${employeeId}`);
-            }
-          } catch (err: any) {
-            console.error(`[droplet-poll] Failed to trigger container provisioning: ${err.message}`);
-          }
-
-          return { status: "provisioning", ip, phase: "container-provisioning" };
-        }
-
-        // Container exists — employee is fully active
+        // Droplet API is up — save IP and update dropletStatus
         await db
           .update(employees)
-          .set({
-            dropletIp: ip,
-            dropletStatus: "active",
-            status: "active",
-            updatedAt: new Date(),
-          })
+          .set({ dropletIp: ip, dropletStatus: "active", updatedAt: new Date() })
           .where(eq(employees.id, employeeId));
 
-        return { status: "active", ip, phase: apiCheck.phase };
+        return handleDropletReady(employee, employeeId, ip);
       }
 
-      // Droplet is running but not fully ready yet
+      // Droplet is running but API not fully ready yet
       await db
         .update(employees)
         .set({ dropletIp: ip, updatedAt: new Date() })
@@ -641,6 +658,51 @@ export async function pollEmployeeDropletStatus(employeeId: string): Promise<{
       .where(eq(employees.id, employeeId));
     return { status: "error", ip: null, phase: null };
   }
+}
+
+/**
+ * Handle the case where the droplet API is ready.
+ * Decides whether to provision a new container, start a stopped one, or confirm active.
+ */
+async function handleDropletReady(
+  employee: Record<string, unknown>,
+  employeeId: string,
+  ip: string,
+): Promise<{ status: string; ip: string | null; phase: string | null }> {
+  const hasContainer = !!employee.containerId;
+  const secret = employee.interserviceSecret as string;
+
+  if (hasContainer) {
+    // Container was previously provisioned
+    if (employee.status === "active") {
+      return { status: "active", ip, phase: "ready" };
+    }
+
+    if (employee.status === "provisioning" || employee.status === "paused") {
+      // Resuming from pause — container exists but needs to be started
+      try {
+        const backend = createBackendClient({ url: `http://${ip}:3001`, secret });
+        await backend.resumeEmployee(employeeId);
+        console.log(`[droplet-poll] Triggered container start for ${employeeId} (resume)`);
+      } catch (err: any) {
+        console.error(`[droplet-poll] Failed to start container: ${err.message}`);
+      }
+      return { status: "provisioning", ip, phase: "container-starting" };
+    }
+
+    // Other status — return as-is
+    return { status: employee.status as string, ip, phase: "ready" };
+  }
+
+  // No container — need to provision one
+  try {
+    const backend = createBackendClient({ url: `http://${ip}:3001`, secret });
+    await backend.provisionContainer(employeeId);
+    console.log(`[droplet-poll] Triggered container provisioning for ${employeeId}`);
+  } catch (err: any) {
+    console.error(`[droplet-poll] Failed to trigger container provisioning: ${err.message}`);
+  }
+  return { status: "provisioning", ip, phase: "container-provisioning" };
 }
 
 /** Check if the droplet's API is responding and what phase it's in */

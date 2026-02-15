@@ -3,7 +3,7 @@ import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { employees } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
-import { getEmployeeBackend, createBackendClient } from "@/lib/backend";
+import { powerOnDroplet } from "@/lib/digitalocean";
 
 export async function POST(
   request: NextRequest,
@@ -33,25 +33,36 @@ export async function POST(
     return NextResponse.json({ error: "Employee is not paused" }, { status: 400 });
   }
 
-  // If employee has an active droplet, delegate to it
-  const backendConfig = await getEmployeeBackend(id);
-  if (backendConfig) {
+  // If employee has a droplet, power it on — the polling mechanism will
+  // detect when the API is ready and start the container automatically
+  if (employee.dropletId) {
     try {
-      const backend = createBackendClient(backendConfig);
-      const result = await backend.resumeEmployee(id);
-      return NextResponse.json(result);
+      await powerOnDroplet(id);
     } catch (err: any) {
-      return NextResponse.json({ error: err.message }, { status: 500 });
+      return NextResponse.json(
+        { error: `Failed to power on server: ${err.message}` },
+        { status: 500 },
+      );
     }
+
+    // Re-read the employee after powerOnDroplet updated the DB
+    const [updated] = await db
+      .select()
+      .from(employees)
+      .where(eq(employees.id, id))
+      .limit(1);
+
+    const { gatewayToken, interserviceSecret, ...safe } = updated as any;
+    return NextResponse.json({ employee: safe });
   }
 
-  // Demo mode fallback
+  // Demo mode fallback (no droplet)
   const [updated] = await db
     .update(employees)
     .set({ status: "active", updatedAt: new Date() })
     .where(eq(employees.id, id))
     .returning();
 
-  const { gatewayToken, ...safe } = updated;
+  const { gatewayToken, interserviceSecret, ...safe } = updated as any;
   return NextResponse.json({ employee: safe });
 }

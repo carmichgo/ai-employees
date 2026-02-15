@@ -156,6 +156,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
   // POST /internal/employees/:id/provision-container
   // Queues Blitzer container creation for an existing employee.
   // Called by the web app once the droplet reports phase "ready".
+  // Uses jobId to prevent duplicate provisioning jobs.
   fastify.post<{ Params: { id: string } }>("/internal/employees/:id/provision-container", async (request, reply) => {
     const { id } = request.params;
 
@@ -164,8 +165,8 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     });
     if (!employee) return reply.status(404).send({ error: "Employee not found" });
 
-    // Don't re-provision if already active with a container
-    if (employee.containerId && employee.status === "active") {
+    // Don't re-provision if already has a container
+    if (employee.containerId) {
       return { message: "Container already provisioned", status: employee.status };
     }
 
@@ -176,10 +177,13 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     const channels = connections.map((c) => c.channelType);
 
     const queue = getProvisionQueue();
+    // Use jobId to prevent duplicate provision jobs for the same employee
     await queue.add("provision-employee", {
       employeeId: id,
       companyId: employee.companyId,
       channels,
+    }, {
+      jobId: `provision-${id}`,
     });
 
     return { message: "Container provisioning queued", status: "provisioning" };
@@ -196,7 +200,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     if (employee.status !== "active") return reply.status(400).send({ error: "Employee is not active" });
 
     const queue = getProvisionQueue();
-    await queue.add("stop-employee", { employeeId: id });
+    await queue.add("stop-employee", { employeeId: id }, { jobId: `stop-${id}` });
 
     const [updated] = await db
       .update(employees)
@@ -215,10 +219,12 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       where: eq(employees.id, id),
     });
     if (!employee) return reply.status(404).send({ error: "Employee not found" });
-    if (employee.status !== "paused") return reply.status(400).send({ error: "Employee is not paused" });
+    if (employee.status !== "paused" && employee.status !== "provisioning") {
+      return reply.status(400).send({ error: "Employee is not paused" });
+    }
 
     const queue = getProvisionQueue();
-    await queue.add("start-employee", { employeeId: id });
+    await queue.add("start-employee", { employeeId: id }, { jobId: `start-${id}` });
 
     const [updated] = await db
       .update(employees)

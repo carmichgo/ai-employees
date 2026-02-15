@@ -243,12 +243,47 @@ export async function startEmployee(employeeId: string): Promise<void> {
   if (!employee?.containerId) return;
 
   const container = docker.getContainer(employee.containerId);
+
+  // Check if already running (idempotent — may be called multiple times by polling)
+  try {
+    const info = await container.inspect();
+    if (info.State.Running) {
+      const network = process.env.OPENCLAW_NETWORK || "ai-employees-internal";
+      const currentIp = info.NetworkSettings.Networks?.[network]?.IPAddress || null;
+      await db
+        .update(employees)
+        .set({
+          status: "active",
+          containerHost: currentIp || employee.containerHost,
+          updatedAt: new Date(),
+        })
+        .where(eq(employees.id, employeeId));
+      console.log(`[start] Container for ${employeeId} already running at ${currentIp}`);
+      return;
+    }
+  } catch {
+    // Container not found — can't start
+    console.error(`[start] Container ${employee.containerId} not found for ${employeeId}`);
+    return;
+  }
+
   await container.start();
+
+  // Get updated IP after start (Docker assigns a new IP on each start)
+  const info = await container.inspect();
+  const network = process.env.OPENCLAW_NETWORK || "ai-employees-internal";
+  const newIp = info.NetworkSettings.Networks?.[network]?.IPAddress || null;
 
   await db
     .update(employees)
-    .set({ status: "active", updatedAt: new Date() })
+    .set({
+      status: "active",
+      containerHost: newIp || employee.containerHost,
+      updatedAt: new Date(),
+    })
     .where(eq(employees.id, employeeId));
+
+  console.log(`[start] Container started for ${employeeId} at ${newIp}`);
 }
 
 export async function teardownEmployee(employeeId: string): Promise<void> {

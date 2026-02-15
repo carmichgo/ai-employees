@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { employees } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
 import { getEmployeeBackend, createBackendClient } from "@/lib/backend";
+import { powerOffDroplet } from "@/lib/digitalocean";
 
 export async function POST(
   request: NextRequest,
@@ -33,25 +34,32 @@ export async function POST(
     return NextResponse.json({ error: "Employee is not active" }, { status: 400 });
   }
 
-  // If employee has an active droplet, delegate to it
+  // If employee has an active droplet, stop the container then power off the droplet
   const backendConfig = await getEmployeeBackend(id);
   if (backendConfig) {
+    // Stop the container on the droplet (best-effort — don't fail if unreachable)
     try {
       const backend = createBackendClient(backendConfig);
-      const result = await backend.pauseEmployee(id);
-      return NextResponse.json(result);
+      await backend.pauseEmployee(id);
+    } catch {
+      // Container may already be stopped — proceed to power off
+    }
+
+    // Power off the droplet to save billing
+    try {
+      await powerOffDroplet(id);
     } catch (err: any) {
-      return NextResponse.json({ error: err.message }, { status: 500 });
+      console.error(`[pause] Failed to power off droplet for ${id}: ${err.message}`);
     }
   }
 
-  // Demo mode fallback
+  // Update employee status to paused
   const [updated] = await db
     .update(employees)
     .set({ status: "paused", updatedAt: new Date() })
     .where(eq(employees.id, id))
     .returning();
 
-  const { gatewayToken, ...safe } = updated;
+  const { gatewayToken, interserviceSecret, ...safe } = updated as any;
   return NextResponse.json({ employee: safe });
 }
