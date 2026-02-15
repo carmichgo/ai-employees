@@ -1,25 +1,17 @@
 /**
  * Backend client — routes provisioning requests to the appropriate backend.
  *
- * Default: All companies use the shared infrastructure backend.
+ * Default: All companies use a shared droplet (auto-provisioned on demand).
  * Dedicated plan ($100/mo): Company gets its own isolated DigitalOcean droplet.
  */
 
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { companies } from "@/lib/schema";
+import { companies, sharedInfrastructure } from "@/lib/schema";
 
 interface CompanyBackendConfig {
   url: string;
   secret: string;
-}
-
-const SHARED_BACKEND_URL = process.env.SHARED_BACKEND_URL;
-const SHARED_BACKEND_SECRET = process.env.SHARED_BACKEND_SECRET;
-
-/** Check if shared infrastructure is configured */
-export function isSharedBackendEnabled(): boolean {
-  return !!(SHARED_BACKEND_URL && SHARED_BACKEND_SECRET);
 }
 
 /**
@@ -27,8 +19,8 @@ export function isSharedBackendEnabled(): boolean {
  *
  * Priority:
  * 1. Dedicated droplet (plan === "dedicated" and droplet is active)
- * 2. Shared backend (SHARED_BACKEND_URL configured)
- * 3. null (demo mode)
+ * 2. Shared droplet (auto-provisioned, stored in shared_infrastructure table)
+ * 3. null (demo mode / needs provisioning)
  */
 export async function getCompanyBackend(
   companyId: string,
@@ -54,24 +46,51 @@ export async function getCompanyBackend(
     };
   }
 
-  // Shared backend: all other companies
-  if (SHARED_BACKEND_URL && SHARED_BACKEND_SECRET) {
-    return {
-      url: SHARED_BACKEND_URL,
-      secret: SHARED_BACKEND_SECRET,
-    };
-  }
-
-  return null;
+  // Shared backend: look up the shared droplet from DB
+  return getSharedBackend();
 }
 
-/** Check if a company has an active droplet backend */
+/** Get the shared droplet backend config from DB, or null if not ready */
+export async function getSharedBackend(): Promise<CompanyBackendConfig | null> {
+  const [shared] = await db
+    .select()
+    .from(sharedInfrastructure)
+    .where(eq(sharedInfrastructure.key, "default"))
+    .limit(1);
+
+  if (
+    !shared ||
+    shared.dropletStatus !== "active" ||
+    !shared.dropletIp ||
+    !shared.interserviceSecret
+  ) {
+    return null;
+  }
+
+  return {
+    url: `http://${shared.dropletIp}:3001`,
+    secret: shared.interserviceSecret,
+  };
+}
+
+/** Check if the shared droplet is currently provisioning */
+export async function getSharedDropletStatus(): Promise<string> {
+  const [shared] = await db
+    .select()
+    .from(sharedInfrastructure)
+    .where(eq(sharedInfrastructure.key, "default"))
+    .limit(1);
+
+  return shared?.dropletStatus || "none";
+}
+
+/** Check if a company has an active backend */
 export async function isCompanyBackendReady(companyId: string): Promise<boolean> {
   const backend = await getCompanyBackend(companyId);
   return backend !== null;
 }
 
-/** Make an authenticated request to a company's droplet API */
+/** Make an authenticated request to a backend API */
 async function backendFetch(
   config: CompanyBackendConfig,
   path: string,
@@ -96,7 +115,7 @@ async function backendFetch(
   return res;
 }
 
-/** Create a backend client bound to a specific company's droplet */
+/** Create a backend client bound to a specific backend */
 export function createBackendClient(config: CompanyBackendConfig) {
   return {
     async provisionEmployee(data: {

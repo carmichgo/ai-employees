@@ -11,6 +11,21 @@ import {
   unique,
 } from "drizzle-orm/pg-core";
 
+// ── Shared Infrastructure ────────────────────────────
+// Single shared droplet used by all non-dedicated companies.
+// Only one row should exist (key = "default").
+export const sharedInfrastructure = pgTable("shared_infrastructure", {
+  key: varchar("key", { length: 50 }).primaryKey().default("default"),
+  dropletId: varchar("droplet_id", { length: 50 }),
+  dropletIp: varchar("droplet_ip", { length: 45 }),
+  dropletRegion: varchar("droplet_region", { length: 20 }).default("nyc3"),
+  dropletSize: varchar("droplet_size", { length: 50 }).default("s-4vcpu-8gb"),
+  dropletStatus: varchar("droplet_status", { length: 20 }).default("none"),
+  interserviceSecret: varchar("interservice_secret", { length: 255 }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // ── Companies ──────────────────────────────────────────
 export const companies = pgTable("companies", {
   id: uuid("id").primaryKey().defaultRandom(),

@@ -235,6 +235,25 @@ export async function POST(request: NextRequest) {
       )
     `;
 
+    // Shared infrastructure table — single shared droplet for non-dedicated companies
+    await sql`
+      CREATE TABLE IF NOT EXISTS shared_infrastructure (
+        key VARCHAR(50) PRIMARY KEY DEFAULT 'default',
+        droplet_id VARCHAR(50),
+        droplet_ip VARCHAR(45),
+        droplet_region VARCHAR(20) DEFAULT 'nyc3',
+        droplet_size VARCHAR(50) DEFAULT 's-4vcpu-8gb',
+        droplet_status VARCHAR(20) DEFAULT 'none',
+        interservice_secret VARCHAR(255),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `;
+    await sql`INSERT INTO shared_infrastructure (key) VALUES ('default') ON CONFLICT DO NOTHING`;
+
+    // Add tier column to employees
+    await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS tier VARCHAR(20) NOT NULL DEFAULT 'junior'`;
+
     return NextResponse.json({ success: true, message: "All tables created" });
   } catch (error: any) {
     console.error("Setup error:", error);

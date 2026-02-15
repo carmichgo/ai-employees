@@ -4,7 +4,8 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { employees, companies, channelConnections } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
-import { getCompanyBackend, createBackendClient } from "@/lib/backend";
+import { getCompanyBackend, createBackendClient, getSharedDropletStatus } from "@/lib/backend";
+import { createSharedDroplet, createCompanyDroplet, isDropletProvisioningEnabled } from "@/lib/digitalocean";
 import {
   createEmployeeSchema,
   getJobTemplate,
@@ -68,7 +69,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Company not found" }, { status: 404 });
   }
 
-  // Resolve backend (shared infrastructure or dedicated droplet)
+  // Resolve backend (shared droplet or dedicated droplet)
   const backendConfig = await getCompanyBackend(session.companyId);
 
   if (backendConfig) {
@@ -104,7 +105,103 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // No backend configured — demo mode fallback
+  // No active backend — auto-provision if DO is configured
+  if (isDropletProvisioningEnabled()) {
+    const isDedicated = company.plan === "dedicated";
+
+    if (isDedicated) {
+      // Dedicated plan: provision company's own droplet
+      if (company.dropletStatus === "provisioning") {
+        return NextResponse.json(
+          {
+            error: "Your dedicated server is still being set up. This usually takes 2-3 minutes. Please try again shortly.",
+            dropletStatus: "provisioning",
+          },
+          { status: 503 },
+        );
+      }
+
+      try {
+        await createCompanyDroplet(session.companyId);
+      } catch (err: any) {
+        return NextResponse.json({ error: err.message }, { status: 500 });
+      }
+    } else {
+      // Shared plan: provision the shared droplet (if not already done)
+      const sharedStatus = await getSharedDropletStatus();
+      if (sharedStatus === "provisioning" || sharedStatus === "booting") {
+        return NextResponse.json(
+          {
+            error: "Infrastructure is still being set up. This usually takes 2-3 minutes. Please try again shortly.",
+            dropletStatus: "provisioning",
+          },
+          { status: 503 },
+        );
+      }
+
+      if (sharedStatus !== "active") {
+        try {
+          await createSharedDroplet();
+        } catch (err: any) {
+          return NextResponse.json({ error: err.message }, { status: 500 });
+        }
+      }
+    }
+
+    // Create employee record with "provisioning" status — it'll be processed
+    // once the droplet is ready (the dashboard will poll)
+    let persona = input.persona;
+    let goals = input.goals;
+    let emoji = "🤖";
+
+    if (input.templateId) {
+      const template = getJobTemplate(input.templateId);
+      if (template) {
+        persona = persona || template.persona;
+        goals = goals || template.goals;
+        emoji = template.emoji;
+      }
+    }
+
+    const gatewayToken = crypto.randomBytes(32).toString("hex");
+    const tier = (input.tier || "junior") as EmployeeTier;
+    const tierModel = getModelForTier(tier);
+
+    const [employee] = await db
+      .insert(employees)
+      .values({
+        companyId: session.companyId,
+        name: input.name,
+        jobTitle: input.jobTitle,
+        templateId: input.templateId,
+        tier,
+        emoji,
+        persona,
+        goals,
+        personalityConfig: input.personalityConfig || { autonomy: "high", proactivity: "proactive", communication: "concise" },
+        modelConfig: input.modelConfig || { primary: tierModel },
+        toolsConfig: input.toolsAllow ? { allow: input.toolsAllow } : {},
+        gatewayToken,
+        status: "provisioning",
+        containerName: `ai-emp-${company.slug}-${slugify(input.name)}-${crypto.randomBytes(3).toString("hex")}`,
+      })
+      .returning();
+
+    if (input.channels?.length) {
+      await createChannelConnectionRows(employee.id, input.channels);
+    }
+
+    return NextResponse.json(
+      {
+        employee: sanitize(employee),
+        message: `${input.name} is being hired! Setting up infrastructure — this takes 2-3 minutes.`,
+        dropletStatus: "provisioning",
+      },
+      { status: 201 },
+    );
+  }
+
+  // No DO token — demo mode fallback
   let persona = input.persona;
   let goals = input.goals;
   let emoji = "🤖";
@@ -142,7 +239,6 @@ export async function POST(request: NextRequest) {
     })
     .returning();
 
-  // Create channel connection rows for tracking
   if (input.channels?.length) {
     await createChannelConnectionRows(employee.id, input.channels);
   }
@@ -196,7 +292,6 @@ async function getChannelCredentials(
   const creds: Record<string, Record<string, unknown>> = {};
 
   // Slack: handled by the centralized Slack proxy on the backend.
-  // We don't pass Slack credentials to individual OpenClaw containers.
 
   return creds;
 }

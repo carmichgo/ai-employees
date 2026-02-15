@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { companies } from "@/lib/schema";
+import { companies, sharedInfrastructure } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
 import {
   pollDropletStatus,
+  pollSharedDropletStatus,
   destroyCompanyDroplet,
   createCompanyDroplet,
   isDropletProvisioningEnabled,
@@ -33,29 +34,60 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Company not found" }, { status: 404 });
   }
 
-  // Poll for updates (including phase info even when active or errored)
-  if (company.dropletStatus === "provisioning" || company.dropletStatus === "booting" || company.dropletStatus === "active" || company.dropletStatus === "error") {
-    const result = await pollDropletStatus(session.companyId);
+  // Dedicated plan: show company's own droplet
+  if (company.plan === "dedicated") {
+    if (company.dropletStatus === "provisioning" || company.dropletStatus === "booting" || company.dropletStatus === "active" || company.dropletStatus === "error") {
+      const result = await pollDropletStatus(session.companyId);
+      return NextResponse.json({
+        droplet: {
+          id: company.dropletId,
+          ip: result.ip || company.dropletIp,
+          region: company.dropletRegion,
+          size: company.dropletSize,
+          status: result.status,
+          phase: result.phase,
+        },
+      });
+    }
+
     return NextResponse.json({
       droplet: {
         id: company.dropletId,
-        ip: result.ip || company.dropletIp,
+        ip: company.dropletIp,
         region: company.dropletRegion,
         size: company.dropletSize,
+        status: company.dropletStatus || "none",
+        phase: null,
+      },
+    });
+  }
+
+  // Non-dedicated: show shared droplet status
+  const [shared] = await db
+    .select()
+    .from(sharedInfrastructure)
+    .where(eq(sharedInfrastructure.key, "default"))
+    .limit(1);
+
+  if (shared && (shared.dropletStatus === "provisioning" || shared.dropletStatus === "booting" || shared.dropletStatus === "active" || shared.dropletStatus === "error")) {
+    const result = await pollSharedDropletStatus();
+    return NextResponse.json({
+      droplet: {
+        ip: result.ip || shared.dropletIp,
+        region: shared.dropletRegion,
+        size: shared.dropletSize,
         status: result.status,
         phase: result.phase,
+        shared: true,
       },
     });
   }
 
   return NextResponse.json({
     droplet: {
-      id: company.dropletId,
-      ip: company.dropletIp,
-      region: company.dropletRegion,
-      size: company.dropletSize,
-      status: company.dropletStatus || "none",
+      status: shared?.dropletStatus || "none",
       phase: null,
+      shared: true,
     },
   });
 }
@@ -106,7 +138,6 @@ export async function DELETE(request: NextRequest) {
   const session = await authenticate(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  // Only admins can destroy droplets
   const [company] = await db
     .select()
     .from(companies)
