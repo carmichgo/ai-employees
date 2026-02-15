@@ -186,7 +186,7 @@ async function createChannelConnectionRows(employeeId: string, channels: string[
       employeeId,
       channelType: ch,
       name: CHANNEL_NAMES[ch] || ch,
-      status: ch === "slack" ? "connected" : "pending",
+      status: ch === "slack" || ch === "voice-chat" ? "connected" : "pending",
     })),
   );
 }
