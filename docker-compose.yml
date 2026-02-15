@@ -58,6 +58,10 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /opt/ai-employees/app:/host-app:ro
+      - deploy_logs:/deploy-logs
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.api.rule=Host(`${API_DOMAIN:-api.localhost}`)"
@@ -96,3 +100,4 @@ networks:
 volumes:
   redis_data:
   letsencrypt_data:
+  deploy_logs:

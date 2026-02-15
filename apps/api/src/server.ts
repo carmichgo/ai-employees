@@ -1,8 +1,8 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import jwt from "@fastify/jwt";
-import { execSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { execSync, execFileSync } from "node:child_process";
+import { readFileSync, existsSync, writeFileSync as writeSync } from "node:fs";
 import type { Env } from "./config.js";
 import { authPlugin } from "./plugins/auth.js";
 import { errorHandlerPlugin } from "./plugins/error-handler.js";
@@ -61,8 +61,8 @@ export async function buildServer(config: Env) {
     try { checks.networks = execSync("docker network ls --format '{{.Name}}'", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.networks = `error: ${e.message}`; }
     try { checks.containerInspect = execSync("docker inspect --format '{{.Name}} {{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $(docker ps -q) 2>/dev/null || echo 'no containers'", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.containerInspect = `error: ${e.message}`; }
     try { checks.containerLogs = execSync("docker logs --tail 20 $(docker ps -q --latest) 2>&1 || echo 'no containers'", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.containerLogs = `error: ${e.message}`; }
-    try { checks.workerService = execSync("systemctl is-active ai-employees-worker", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.workerService = `error: ${e.message}`; }
-    try { checks.workerLogs = execSync("journalctl -u ai-employees-worker --no-pager -n 20 2>&1 || echo 'no journal'", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.workerLogs = `error: ${e.message}`; }
+    try { checks.workerService = execSync("docker compose ps worker --format '{{.Status}}' 2>/dev/null || systemctl is-active ai-employees-worker 2>/dev/null || echo 'unknown'", { timeout: 5000, cwd: "/opt/ai-employees/app" }).toString().trim(); } catch (e: any) { checks.workerService = `error: ${e.message}`; }
+    try { checks.workerLogs = execSync("docker compose logs worker --tail 20 --no-color 2>/dev/null || journalctl -u ai-employees-worker --no-pager -n 20 2>&1 || echo 'no logs'", { timeout: 5000, cwd: "/opt/ai-employees/app" }).toString().trim(); } catch (e: any) { checks.workerLogs = `error: ${e.message}`; }
     checks.anthropicKeySet = !!process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY.length > 10;
     checks.anthropicKeyPrefix = process.env.ANTHROPIC_API_KEY?.slice(0, 8) || "NOT SET";
     try { checks.images = execSync("docker images --format '{{.Repository}}:{{.Tag}}'", { timeout: 5000 }).toString().trim() || "none"; } catch (e: any) { checks.images = `error: ${e.message}`; }
@@ -80,60 +80,20 @@ export async function buildServer(config: Env) {
     }
   });
 
-  // Hot code update — pulls latest code, rebuilds, and restarts services
-  // Runs in background since it takes minutes; check /update-status for results
-  fastify.get("/update", async () => {
-    const logFile = "/tmp/ai-employees-update.log";
-    // Spawn background update script
-    const { existsSync, writeFileSync: writeSync } = await import("node:fs");
-    const { spawn } = await import("node:child_process");
-    const appDir = "/opt/ai-employees/app";
-
-    const isGit = existsSync(`${appDir}/.git`);
-    let branch = "main";
-    try { branch = readFileSync(`${appDir}/.branch`, "utf-8").trim(); } catch {}
-
-    writeSync(logFile, `[${new Date().toISOString()}] Update started (${isGit ? "git" : "tarball"}, branch: ${branch})\n`);
-
-    // Build update script
-    const script = isGit
-      ? `cd ${appDir} && git pull origin ${branch} >> ${logFile} 2>&1`
-      : `curl -sL "https://github.com/carmichgo/ai-employees/archive/refs/heads/${branch}.tar.gz" -o /tmp/repo-update.tar.gz && tar xzf /tmp/repo-update.tar.gz --strip-components=1 -C ${appDir} && rm -f /tmp/repo-update.tar.gz && echo "${branch}" > ${appDir}/.branch`;
-
-    const fullScript = `
-      (${script}) >> ${logFile} 2>&1 && \
-      echo "[$(date -Iseconds)] Code updated" >> ${logFile} && \
-      cd ${appDir} && \
-      (pnpm install --frozen-lockfile 2>&1 || pnpm install 2>&1) >> ${logFile} 2>&1 && \
-      echo "[$(date -Iseconds)] Dependencies installed" >> ${logFile} && \
-      pnpm turbo build --filter=@ai-employees/api --filter=@ai-employees/worker >> ${logFile} 2>&1 && \
-      echo "[$(date -Iseconds)] Build complete" >> ${logFile} && \
-      sed -i 's|"main": "src/index.ts"|"main": "dist/index.js"|g' packages/*/package.json && \
-      echo "[$(date -Iseconds)] Restarting services..." >> ${logFile} && \
-      systemctl restart ai-employees-worker && \
-      echo "[$(date -Iseconds)] Worker restarted" >> ${logFile} && \
-      echo "[$(date -Iseconds)] UPDATE COMPLETE" >> ${logFile} && \
-      systemctl restart ai-employees-api || \
-      echo "[$(date -Iseconds)] UPDATE FAILED" >> ${logFile}
-    `;
-
-    spawn("bash", ["-c", fullScript], { detached: true, stdio: "ignore" }).unref();
-
-    return { status: "started", message: "Update running in background. Check /update-status for progress.", branch, mode: isGit ? "git" : "tarball" };
+  // Rolling deployment — rebuilds api + worker containers via Docker Compose.
+  // Employee (OpenClaw) containers, Redis, and Traefik are NOT touched.
+  // Runs in background since it takes minutes; check /deploy-status for results.
+  fastify.get("/update", async (request) => {
+    return triggerDeploy(request.query as Record<string, string>);
   });
 
-  // Check update progress
-  fastify.get("/update-status", async () => {
-    try {
-      const log = readFileSync("/tmp/ai-employees-update.log", "utf-8");
-      const lines = log.split("\n").filter(Boolean);
-      const lastLine = lines[lines.length - 1] || "";
-      const done = lastLine.includes("UPDATE COMPLETE") || lastLine.includes("UPDATE FAILED");
-      return { done, success: lastLine.includes("UPDATE COMPLETE"), lines };
-    } catch {
-      return { done: false, success: false, lines: ["No update in progress"] };
-    }
+  fastify.post<{ Body?: { branch?: string } }>("/deploy", async (request) => {
+    return triggerDeploy({ branch: request.body?.branch });
   });
+
+  // Check deployment progress
+  fastify.get("/update-status", async () => getDeployStatus());
+  fastify.get("/deploy-status", async () => getDeployStatus());
 
   // Slack proxy status endpoint
   fastify.get("/slack-proxy/status", async () => {
@@ -200,4 +160,103 @@ export async function buildServer(config: Env) {
   });
 
   return fastify;
+}
+
+const DEPLOY_LOG = "/deploy-logs/deploy.log";
+const HOST_APP_DIR = "/opt/ai-employees/app";
+
+/**
+ * Trigger a rolling deployment by spawning a temporary deployer container.
+ * The deployer runs independently (survives api/worker restarts) and:
+ *   1. Pulls latest code via git
+ *   2. Rebuilds api + worker images via Docker Compose
+ *   3. Rolling-restarts worker then api
+ * Employee (OpenClaw) containers, Redis, and Traefik are NOT touched.
+ */
+function triggerDeploy(opts?: { branch?: string }) {
+  let branch = opts?.branch || "main";
+  try { branch = readFileSync("/host-app/.branch", "utf-8").trim() || branch; } catch {}
+
+  // Check if a deploy is already running
+  try {
+    const status = getDeployStatus();
+    if (!status.done && status.lines.length > 1) {
+      return { status: "already_running", message: "A deployment is already in progress. Check /deploy-status.", branch };
+    }
+  } catch { /* no previous deploy */ }
+
+  writeSync(DEPLOY_LOG, `[${new Date().toISOString()}] Deploy triggered (branch: ${branch})\n`);
+
+  // Check if deploy.sh exists on the host
+  const hasScript = existsSync("/host-app/infrastructure/deploy.sh");
+
+  // Build the deploy command that will run inside the deployer container.
+  // The deployer container gets Docker socket + host app dir, so it can
+  // run git and docker compose commands against the host.
+  const deployScript = hasScript
+    ? `bash ${HOST_APP_DIR}/infrastructure/deploy.sh ${branch}`
+    : `
+      cd ${HOST_APP_DIR} &&
+      echo "[$(date -Iseconds)] Pulling code..." >> /logs/deploy.log &&
+      git fetch origin ${branch} >> /logs/deploy.log 2>&1 &&
+      git reset --hard origin/${branch} >> /logs/deploy.log 2>&1 &&
+      echo "[$(date -Iseconds)] Building images..." >> /logs/deploy.log &&
+      docker compose build --no-cache api worker >> /logs/deploy.log 2>&1 &&
+      echo "[$(date -Iseconds)] Restarting worker..." >> /logs/deploy.log &&
+      docker compose up -d --no-deps worker >> /logs/deploy.log 2>&1 &&
+      sleep 5 &&
+      echo "[$(date -Iseconds)] Restarting api..." >> /logs/deploy.log &&
+      docker compose up -d --no-deps api >> /logs/deploy.log 2>&1 &&
+      echo "[$(date -Iseconds)] Cleaning up..." >> /logs/deploy.log &&
+      docker image prune -f >> /logs/deploy.log 2>&1 &&
+      echo "[$(date -Iseconds)] ========== DEPLOY COMPLETE ==========" >> /logs/deploy.log ||
+      echo "[$(date -Iseconds)] DEPLOY FAILED" >> /logs/deploy.log
+    `.trim();
+
+  // Spawn a deployer container that runs on the HOST via the Docker socket.
+  // This container is independent of api/worker — it survives their restarts.
+  // Uses alpine with git + docker CLI + docker compose plugin.
+  const dockerArgs = [
+    "run", "-d", "--rm",
+    "--name", "ai-emp-deployer",
+    "-v", "/var/run/docker.sock:/var/run/docker.sock",
+    "-v", `${HOST_APP_DIR}:${HOST_APP_DIR}`,
+    "-v", "ai-employees_deploy_logs:/logs",
+    "-w", HOST_APP_DIR,
+    "-e", `DEPLOY_LOG=/logs/deploy.log`,
+    "-e", `APP_DIR=${HOST_APP_DIR}`,
+    "alpine:latest",
+    "sh", "-c",
+    `apk add --no-cache git docker-cli docker-cli-compose bash >> /logs/deploy.log 2>&1 && ${deployScript}`,
+  ];
+
+  try {
+    // Remove any leftover deployer container first
+    try { execFileSync("docker", ["rm", "-f", "ai-emp-deployer"], { timeout: 5000, stdio: "ignore" }); } catch {}
+
+    execFileSync("docker", dockerArgs, { timeout: 15000 });
+
+    return {
+      status: "started",
+      message: "Rolling deployment started. Employee containers will NOT be affected. Check /deploy-status for progress.",
+      branch,
+      mode: hasScript ? "script" : "inline",
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { status: "error", message: `Failed to start deployer: ${message}`, branch };
+  }
+}
+
+/** Read deployment log and return progress */
+function getDeployStatus() {
+  try {
+    const log = readFileSync(DEPLOY_LOG, "utf-8");
+    const lines = log.split("\n").filter(Boolean);
+    const lastLine = lines[lines.length - 1] || "";
+    const done = lastLine.includes("DEPLOY COMPLETE") || lastLine.includes("DEPLOY FAILED");
+    return { done, success: lastLine.includes("DEPLOY COMPLETE"), lines };
+  } catch {
+    return { done: false, success: false, lines: ["No deployment in progress"] };
+  }
 }
