@@ -237,7 +237,7 @@ export default function EmployeeDetailPage() {
 
   // Poll droplet status while provisioning
   useEffect(() => {
-    const shouldPoll = employee?.status === "provisioning" || dropletStatus?.status === "provisioning" || dropletStatus?.status === "booting";
+    const shouldPoll = employee?.status === "provisioning" || employee?.status === "onboarding" || dropletStatus?.status === "provisioning" || dropletStatus?.status === "booting" || dropletStatus?.status === "onboarding";
     if (!shouldPoll) {
       if (dropletPollRef.current) { clearInterval(dropletPollRef.current); dropletPollRef.current = null; }
       return;

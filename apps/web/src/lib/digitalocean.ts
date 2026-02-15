@@ -677,9 +677,10 @@ async function handleDropletReady(
       return { status: "active", ip, phase: "ready" };
     }
 
-    // Onboarding = container started, waiting for health check to promote to active
+    // Onboarding = container started, waiting for health check to promote to active.
+    // Return "provisioning" so the frontend keeps polling (it doesn't know "onboarding").
     if (employee.status === "onboarding") {
-      return { status: "onboarding", ip, phase: "container-starting" };
+      return { status: "provisioning", ip, phase: "container-starting" };
     }
 
     if (employee.status === "provisioning" || employee.status === "paused") {
