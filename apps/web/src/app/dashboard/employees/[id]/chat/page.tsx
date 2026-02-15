@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { api } from "@/lib/api";
-import { ArrowLeft, Send, Loader2, Bot, User, Download, FileText, FileSpreadsheet, FileCode, File, Mic, MicOff, Volume2, VolumeX } from "lucide-react";
+import { ArrowLeft, Send, Loader2, Bot, User, Download, FileText, FileSpreadsheet, FileCode, File, Mic, MicOff, Volume2, VolumeX, Phone, PhoneOff } from "lucide-react";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -28,11 +28,20 @@ export default function EmployeeChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Voice state
+  // Voice state (dictation)
   const [listening, setListening] = useState(false);
   const [autoSpeak, setAutoSpeak] = useState(false);
   const recognitionRef = useRef<any>(null);
   const [hasSpeechSupport, setHasSpeechSupport] = useState(false);
+
+  // Voice call state
+  const [inCall, setInCall] = useState(false);
+  const [callPhase, setCallPhase] = useState<"idle" | "listening" | "processing" | "speaking">("idle");
+  const [callDuration, setCallDuration] = useState(0);
+  const [callTranscript, setCallTranscript] = useState("");
+  const callRecognitionRef = useRef<any>(null);
+  const callTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const callActiveRef = useRef(false);
 
   useEffect(() => {
     setHasSpeechSupport(
@@ -156,6 +165,198 @@ export default function EmployeeChatPage() {
     utterance.pitch = 1.0;
     window.speechSynthesis.speak(utterance);
   }, []);
+
+  // ── Voice Call: send message and speak response ──
+  const callSendAndRespond = useCallback(async (text: string) => {
+    if (!text.trim() || !callActiveRef.current) return;
+
+    setCallPhase("processing");
+    const userMessage: Message = {
+      id: `user-${Date.now()}`,
+      role: "user",
+      content: text.trim(),
+      timestamp: new Date(),
+    };
+    setMessages((prev) => [...prev, userMessage]);
+
+    try {
+      const history = messages
+        .filter((m) => m.id !== "welcome")
+        .map((m) => ({ role: m.role, content: m.content }));
+      history.push({ role: "user", content: text.trim() });
+
+      const res = await api.chatWithEmployee(employeeId, text.trim(), history.slice(0, -1));
+
+      const assistantMessage: Message = {
+        id: `assistant-${Date.now()}`,
+        role: "assistant",
+        content: res.reply,
+        timestamp: new Date(),
+        mode: res.mode,
+      };
+      setMessages((prev) => [...prev, assistantMessage]);
+
+      if (!callActiveRef.current) return;
+
+      // Speak the response
+      setCallPhase("speaking");
+      const clean = res.reply
+        .replace(/```[\s\S]*?```/g, " code block ")
+        .replace(/`[^`]+`/g, (m: string) => m.slice(1, -1))
+        .replace(/!\[[^\]]*\]\([^)]+\)/g, " image ")
+        .replace(/\[[^\]]*\]\([^)]+\)/g, (m: string) => m.replace(/\[([^\]]*)\]\([^)]+\)/, "$1"))
+        .replace(/[#*_~>]/g, "")
+        .replace(/\n{2,}/g, ". ")
+        .replace(/\n/g, " ")
+        .trim();
+
+      if (clean && typeof window !== "undefined" && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(clean);
+        utterance.rate = 1.0;
+        utterance.pitch = 1.0;
+        utterance.onend = () => {
+          if (callActiveRef.current) {
+            callStartListening();
+          }
+        };
+        utterance.onerror = () => {
+          if (callActiveRef.current) {
+            callStartListening();
+          }
+        };
+        window.speechSynthesis.speak(utterance);
+      } else {
+        // No TTS — go back to listening
+        if (callActiveRef.current) callStartListening();
+      }
+    } catch (err: any) {
+      const errorMessage: Message = {
+        id: `error-${Date.now()}`,
+        role: "assistant",
+        content: `Sorry, I couldn't process that: ${err.message}`,
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, errorMessage]);
+      // Resume listening even on error
+      if (callActiveRef.current) callStartListening();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employeeId, messages]);
+
+  // ── Voice Call: start continuous listening ──
+  const callStartListening = useCallback(() => {
+    if (!callActiveRef.current) return;
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) return;
+
+    // Stop any existing recognition
+    callRecognitionRef.current?.abort();
+
+    const recognition = new SR();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+
+    let finalTranscript = "";
+
+    recognition.onresult = (event: any) => {
+      let interim = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript;
+        } else {
+          interim += event.results[i][0].transcript;
+        }
+      }
+      setCallTranscript(finalTranscript + interim);
+    };
+
+    recognition.onend = () => {
+      if (!callActiveRef.current) return;
+      if (finalTranscript.trim()) {
+        setCallTranscript("");
+        callSendAndRespond(finalTranscript);
+      } else {
+        // No speech detected — restart listening
+        if (callActiveRef.current) {
+          setTimeout(() => callStartListening(), 300);
+        }
+      }
+    };
+
+    recognition.onerror = (e: any) => {
+      if (e.error === "no-speech" && callActiveRef.current) {
+        setTimeout(() => callStartListening(), 300);
+        return;
+      }
+      if (e.error === "aborted") return;
+      // Other errors — try to restart
+      if (callActiveRef.current) {
+        setTimeout(() => callStartListening(), 1000);
+      }
+    };
+
+    callRecognitionRef.current = recognition;
+    setCallPhase("listening");
+    setCallTranscript("");
+    recognition.start();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [callSendAndRespond]);
+
+  // ── Voice Call: start/end call ──
+  const startCall = useCallback(() => {
+    callActiveRef.current = true;
+    setInCall(true);
+    setCallDuration(0);
+    setCallPhase("listening");
+    setCallTranscript("");
+
+    // Start duration timer
+    callTimerRef.current = setInterval(() => {
+      setCallDuration((d) => d + 1);
+    }, 1000);
+
+    callStartListening();
+  }, [callStartListening]);
+
+  const endCall = useCallback(() => {
+    callActiveRef.current = false;
+    setInCall(false);
+    setCallPhase("idle");
+    setCallTranscript("");
+
+    // Stop timer
+    if (callTimerRef.current) {
+      clearInterval(callTimerRef.current);
+      callTimerRef.current = null;
+    }
+
+    // Stop recognition
+    callRecognitionRef.current?.abort();
+    callRecognitionRef.current = null;
+
+    // Stop TTS
+    if (typeof window !== "undefined") {
+      window.speechSynthesis?.cancel();
+    }
+  }, []);
+
+  // Cleanup call on unmount
+  useEffect(() => {
+    return () => {
+      callActiveRef.current = false;
+      callRecognitionRef.current?.abort();
+      if (callTimerRef.current) clearInterval(callTimerRef.current);
+      if (typeof window !== "undefined") window.speechSynthesis?.cancel();
+    };
+  }, []);
+
+  const formatDuration = (s: number) => {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${m}:${sec.toString().padStart(2, "0")}`;
+  };
 
   const handleSend = async () => {
     const text = input.trim();
@@ -335,6 +536,28 @@ export default function EmployeeChatPage() {
           <div style={{ fontSize: 12, color: "var(--text-tertiary, #a3a3a3)" }}>{employee.jobTitle}</div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {/* Voice call button */}
+          {hasSpeechSupport && employee.status === "active" && (
+            <button
+              onClick={startCall}
+              title="Start voice call"
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: "var(--radius-md, 8px)",
+                border: "1px solid var(--border, #e5e5e5)",
+                background: "rgba(22, 163, 74, 0.08)",
+                color: "#16a34a",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+                transition: "all 0.15s",
+              }}
+            >
+              <Phone size={14} />
+            </button>
+          )}
           {/* Auto-speak toggle */}
           <button
             onClick={() => {
@@ -592,6 +815,101 @@ export default function EmployeeChatPage() {
         )}
       </div>
 
+      {/* Voice Call Overlay */}
+      {inCall && (
+        <div style={{
+          position: "fixed",
+          inset: 0,
+          zIndex: 1000,
+          background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 32,
+          color: "#ffffff",
+        }}>
+          {/* Employee avatar */}
+          <div style={{
+            width: 96,
+            height: 96,
+            borderRadius: "50%",
+            background: "rgba(255,255,255,0.1)",
+            border: callPhase === "speaking"
+              ? "3px solid #22c55e"
+              : callPhase === "listening"
+                ? "3px solid #3b82f6"
+                : "3px solid rgba(255,255,255,0.2)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 44,
+            transition: "border-color 0.3s",
+            animation: callPhase === "listening" ? "pulse-call 2s ease-in-out infinite" : "none",
+          }}>
+            {employee.emoji || "A"}
+          </div>
+
+          {/* Name and status */}
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 22, fontWeight: 600 }}>{employee.name}</div>
+            <div style={{ fontSize: 14, color: "rgba(255,255,255,0.6)", marginTop: 4 }}>
+              {callPhase === "listening" ? "Listening..."
+                : callPhase === "processing" ? "Thinking..."
+                : callPhase === "speaking" ? "Speaking..."
+                : "Connected"}
+            </div>
+          </div>
+
+          {/* Live transcript */}
+          <div style={{
+            minHeight: 48,
+            maxWidth: 500,
+            padding: "0 24px",
+            textAlign: "center",
+            fontSize: 16,
+            color: "rgba(255,255,255,0.8)",
+            fontStyle: callTranscript ? "normal" : "italic",
+          }}>
+            {callTranscript || (callPhase === "listening" ? "Say something..." : "")}
+          </div>
+
+          {/* Duration */}
+          <div style={{
+            fontSize: 18,
+            fontWeight: 500,
+            fontVariantNumeric: "tabular-nums",
+            color: "rgba(255,255,255,0.5)",
+          }}>
+            {formatDuration(callDuration)}
+          </div>
+
+          {/* Hang up button */}
+          <button
+            onClick={endCall}
+            style={{
+              width: 64,
+              height: 64,
+              borderRadius: "50%",
+              border: "none",
+              background: "#ef4444",
+              color: "#ffffff",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              transition: "transform 0.15s, background 0.15s",
+              marginTop: 16,
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "#dc2626")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "#ef4444")}
+            title="End call"
+          >
+            <PhoneOff size={28} />
+          </button>
+        </div>
+      )}
+
       <style>{`
         @keyframes spin { to { transform: rotate(360deg) } }
         @keyframes bounce {
@@ -601,6 +919,10 @@ export default function EmployeeChatPage() {
         @keyframes pulse-mic {
           0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.3); }
           50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+        }
+        @keyframes pulse-call {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
+          50% { box-shadow: 0 0 0 16px rgba(59, 130, 246, 0); }
         }
 
         /* Markdown styles for chat messages */
