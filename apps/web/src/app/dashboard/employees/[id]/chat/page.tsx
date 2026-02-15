@@ -145,11 +145,69 @@ export default function EmployeeChatPage() {
     setListening(false);
   }, []);
 
-  // ── Voice: Speech Synthesis (TTS) ──
-  const speak = useCallback((text: string) => {
-    if (typeof window === "undefined" || !window.speechSynthesis) return;
+  // ── TTS: API-backed speech with browser fallback ──
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const ttsAvailableRef = useRef<boolean | null>(null); // null = unknown, true/false = tested
+
+  /** Pick the best available browser voice (neural > default) */
+  const getBestVoice = useCallback((): SpeechSynthesisVoice | null => {
+    if (typeof window === "undefined" || !window.speechSynthesis) return null;
+    const voices = window.speechSynthesis.getVoices();
+    // Prefer neural/natural voices, English
+    const prefs = [
+      /Google US English/i, /Google UK English Female/i,
+      /Microsoft.*Neural/i, /Samantha/i, /Karen/i, /Daniel/i,
+      /en.*Female/i, /en.*Male/i, /en-US/i, /en-GB/i, /en/i,
+    ];
+    for (const pref of prefs) {
+      const v = voices.find((v) => pref.test(v.name) || pref.test(v.lang));
+      if (v) return v;
+    }
+    return voices[0] || null;
+  }, []);
+
+  /** Speak text via API, falling back to browser TTS. Returns a promise that resolves when done. */
+  const speakAsync = useCallback(async (text: string): Promise<void> => {
+    if (typeof window === "undefined") return;
+
+    // Try API TTS (skip if we already know it's unavailable)
+    if (ttsAvailableRef.current !== false) {
+      try {
+        const token = localStorage.getItem("token");
+        const res = await fetch("/api/tts", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ text }),
+        });
+
+        if (res.ok && res.headers.get("content-type")?.startsWith("audio/")) {
+          ttsAvailableRef.current = true;
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+
+          return new Promise<void>((resolve) => {
+            const audio = new Audio(url);
+            audioRef.current = audio;
+            audio.onended = () => { URL.revokeObjectURL(url); audioRef.current = null; resolve(); };
+            audio.onerror = () => { URL.revokeObjectURL(url); audioRef.current = null; resolve(); };
+            audio.play().catch(() => resolve());
+          });
+        }
+
+        // API returned JSON (fallback signal) or error
+        const body = await res.json().catch(() => ({}));
+        if (body.fallback) ttsAvailableRef.current = false;
+      } catch {
+        // Network error — don't permanently disable, just fall through
+      }
+    }
+
+    // Browser fallback with best voice selection
+    if (!window.speechSynthesis) return;
     window.speechSynthesis.cancel();
-    // Strip markdown for cleaner speech
     const clean = text
       .replace(/```[\s\S]*?```/g, " code block ")
       .replace(/`[^`]+`/g, (m) => m.slice(1, -1))
@@ -160,11 +218,23 @@ export default function EmployeeChatPage() {
       .replace(/\n/g, " ")
       .trim();
     if (!clean) return;
-    const utterance = new SpeechSynthesisUtterance(clean);
-    utterance.rate = 1.0;
-    utterance.pitch = 1.0;
-    window.speechSynthesis.speak(utterance);
-  }, []);
+
+    return new Promise<void>((resolve) => {
+      const utterance = new SpeechSynthesisUtterance(clean);
+      const voice = getBestVoice();
+      if (voice) utterance.voice = voice;
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+      utterance.onend = () => resolve();
+      utterance.onerror = () => resolve();
+      window.speechSynthesis.speak(utterance);
+    });
+  }, [getBestVoice]);
+
+  /** Fire-and-forget speak (for auto-speak in text chat) */
+  const speak = useCallback((text: string) => {
+    speakAsync(text);
+  }, [speakAsync]);
 
   // ── Voice Call: send message and speak response ──
   const callSendAndRespond = useCallback(async (text: string) => {
@@ -198,38 +268,14 @@ export default function EmployeeChatPage() {
 
       if (!callActiveRef.current) return;
 
-      // Speak the response
+      // Speak the response using high-quality TTS
       setCallPhase("speaking");
-      const clean = res.reply
-        .replace(/```[\s\S]*?```/g, " code block ")
-        .replace(/`[^`]+`/g, (m: string) => m.slice(1, -1))
-        .replace(/!\[[^\]]*\]\([^)]+\)/g, " image ")
-        .replace(/\[[^\]]*\]\([^)]+\)/g, (m: string) => m.replace(/\[([^\]]*)\]\([^)]+\)/, "$1"))
-        .replace(/[#*_~>]/g, "")
-        .replace(/\n{2,}/g, ". ")
-        .replace(/\n/g, " ")
-        .trim();
-
-      if (clean && typeof window !== "undefined" && window.speechSynthesis) {
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(clean);
-        utterance.rate = 1.0;
-        utterance.pitch = 1.0;
-        utterance.onend = () => {
-          if (callActiveRef.current) {
-            callStartListening();
-          }
-        };
-        utterance.onerror = () => {
-          if (callActiveRef.current) {
-            callStartListening();
-          }
-        };
-        window.speechSynthesis.speak(utterance);
-      } else {
-        // No TTS — go back to listening
-        if (callActiveRef.current) callStartListening();
+      try {
+        await speakAsync(res.reply);
+      } catch {
+        // speakAsync handles its own errors; this is just a safety net
       }
+      if (callActiveRef.current) callStartListening();
     } catch (err: any) {
       const errorMessage: Message = {
         id: `error-${Date.now()}`,
@@ -336,7 +382,11 @@ export default function EmployeeChatPage() {
     callRecognitionRef.current?.abort();
     callRecognitionRef.current = null;
 
-    // Stop TTS
+    // Stop TTS (both API audio and browser speech)
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
     if (typeof window !== "undefined") {
       window.speechSynthesis?.cancel();
     }
@@ -348,6 +398,7 @@ export default function EmployeeChatPage() {
       callActiveRef.current = false;
       callRecognitionRef.current?.abort();
       if (callTimerRef.current) clearInterval(callTimerRef.current);
+      if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
       if (typeof window !== "undefined") window.speechSynthesis?.cancel();
     };
   }, []);
