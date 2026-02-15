@@ -51,11 +51,19 @@ async function backendFetch(
 ): Promise<Response> {
   const url = `${config.url}${path}`;
 
+  const headers: Record<string, string> = {
+    "x-interservice-secret": config.secret,
+  };
+  // Only set Content-Type for requests that have a body — Fastify rejects
+  // empty bodies when Content-Type is application/json.
+  if (options.body) {
+    headers["Content-Type"] = "application/json";
+  }
+
   const res = await fetch(url, {
     ...options,
     headers: {
-      "Content-Type": "application/json",
-      "x-interservice-secret": config.secret,
+      ...headers,
       ...options.headers,
     },
   });
