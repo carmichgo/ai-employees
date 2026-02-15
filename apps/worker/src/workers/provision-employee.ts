@@ -181,7 +181,9 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     // Get container info for host/port
     const info = await container.inspect();
 
-    // Update DB with container details + email
+    // Update DB with container details + email.
+    // Use "onboarding" — the health poll will promote to "active" once the
+    // container gateway is actually responding to health checks.
     await db
       .update(employees)
       .set({
@@ -189,13 +191,13 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
         containerHost: info.NetworkSettings.Networks?.[OPENCLAW_NETWORK]?.IPAddress || null,
         containerPort: 18789,
         emailAddress,
-        status: "active",
+        status: "onboarding",
         updatedAt: new Date(),
       })
       .where(eq(employees.id, employeeId));
 
     console.log(
-      `[provision] Employee ${employee.name} (${employeeId}) is now active at ${info.NetworkSettings.Networks?.[OPENCLAW_NETWORK]?.IPAddress}:18789 — email: ${emailAddress}`,
+      `[provision] Employee ${employee.name} (${employeeId}) container started (onboarding) at ${info.NetworkSettings.Networks?.[OPENCLAW_NETWORK]?.IPAddress}:18789 — email: ${emailAddress}`,
     );
 
     // Create Slack channel for the employee if Slack is in their channels

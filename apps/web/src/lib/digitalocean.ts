@@ -161,7 +161,7 @@ python3 /opt/health-server.py &
 HEALTH_PID=\$!
 echo "Placeholder health server started on :3001 (PID \$HEALTH_PID)"
 
-# Report ready immediately so the platform marks this as active
+# Report Phase 1 ready — marks droplet as active (employee stays provisioning until container is up)
 report "ready" "ok"
 echo "PHASE1_READY" > /opt/ai-employees/status
 
