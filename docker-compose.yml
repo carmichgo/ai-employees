@@ -86,6 +86,9 @@ services:
         condition: service_healthy
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      # Config files written here must be visible to sibling OpenClaw containers
+      # via their bind mounts, so this path must map to the same host directory.
+      - /opt/ai-employees/openclaw-configs:/opt/ai-employees/openclaw-configs
     networks:
       - internal
       - ai-employees-internal
