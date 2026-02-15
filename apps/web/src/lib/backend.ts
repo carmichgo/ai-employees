@@ -18,7 +18,7 @@ interface CompanyBackendConfig {
  * Resolve which backend a company should use.
  *
  * Priority:
- * 1. Dedicated droplet (plan === "dedicated" and droplet is active)
+ * 1. Company's own droplet if active (dedicated plan or previously provisioned)
  * 2. Shared droplet (auto-provisioned, stored in shared_infrastructure table)
  * 3. null (demo mode / needs provisioning)
  */
@@ -33,9 +33,8 @@ export async function getCompanyBackend(
 
   if (!company) return null;
 
-  // Dedicated plan: use company's own droplet if active
+  // Use company's own droplet if it exists and is active
   if (
-    company.plan === "dedicated" &&
     company.dropletStatus === "active" &&
     company.dropletIp &&
     company.interserviceSecret

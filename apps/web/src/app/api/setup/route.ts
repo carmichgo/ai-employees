@@ -32,10 +32,29 @@ export async function GET(request: NextRequest) {
       role: row.role as string,
     });
 
+    // Full company details for debugging
+    const companyDetails = await sql`
+      SELECT id, name, slug, plan, droplet_id, droplet_ip, droplet_status,
+             interservice_secret IS NOT NULL as has_secret
+      FROM companies WHERE id = ${row.company_id}
+    `;
+    const sharedInfra = await sql`
+      SELECT key, droplet_id, droplet_ip, droplet_status,
+             interservice_secret IS NOT NULL as has_secret
+      FROM shared_infrastructure WHERE key = 'default'
+    `;
+    const empStatus = await sql`
+      SELECT id, name, status, container_name, container_host, container_port
+      FROM employees WHERE company_id = ${row.company_id}
+      ORDER BY created_at DESC LIMIT 5
+    `;
+
     return NextResponse.json({
       token,
       user: { id: row.user_id, email: row.email, role: row.role },
-      company: { id: row.company_id, slug: row.slug, dropletId: row.droplet_id, dropletStatus: row.droplet_status },
+      company: companyDetails[0] || null,
+      sharedInfra: sharedInfra[0] || null,
+      employees: empStatus,
     });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
