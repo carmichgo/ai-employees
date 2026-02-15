@@ -24,6 +24,37 @@ function sanitize(emp: Record<string, unknown>) {
   return safe;
 }
 
+/**
+ * Resolve a running Docker container target for an employee.
+ * Tries containerName first, then containerId as fallback.
+ * Returns the identifier to use with docker exec/inspect, or null if not found.
+ */
+function resolveContainer(employee: { containerName: string | null; containerId: string | null }): string | null {
+  if (employee.containerName) {
+    try {
+      const running = execSync(
+        `docker inspect --format '{{.State.Running}}' ${employee.containerName}`,
+        { timeout: 5000 },
+      ).toString().trim();
+      if (running === "true") return employee.containerName;
+    } catch {
+      // Container not found by name — try containerId below
+    }
+  }
+  if (employee.containerId) {
+    try {
+      const running = execSync(
+        `docker inspect --format '{{.State.Running}}' ${employee.containerId}`,
+        { timeout: 5000 },
+      ).toString().trim();
+      if (running === "true") return employee.containerId;
+    } catch {
+      // Not found by ID either
+    }
+  }
+  return null;
+}
+
 export async function provisionRoutes(fastify: FastifyInstance) {
   // Middleware: verify inter-service secret
   fastify.addHook("onRequest", async (request, reply) => {
@@ -226,14 +257,15 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       writeFileSync(configPath, JSON.stringify(updated, null, 2));
 
       // Restart container to pick up new config
-      if (employee.containerName) {
-        execSync(`docker restart ${employee.containerName}`, { timeout: 30000 });
+      const target = resolveContainer(employee);
+      if (target) {
+        execSync(`docker restart ${target}`, { timeout: 30000 });
 
         // Wait briefly for container to come up, then get new IP
         await new Promise((r) => setTimeout(r, 3000));
         try {
           const newIp = execSync(
-            `docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ${employee.containerName}`,
+            `docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ${target}`,
             { timeout: 5000 },
           ).toString().trim();
 
@@ -264,12 +296,20 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     });
     if (!employee) return reply.status(404).send({ error: "Employee not found" });
     if (employee.status !== "active") return reply.status(400).send({ error: `Employee is ${employee.status}` });
-    if (!employee.containerName) return reply.status(400).send({ error: "No container for this employee" });
+    if (!employee.containerName) return reply.status(400).send({ error: "No container name configured for this employee" });
+
+    // Resolve a running container (tries containerName, then containerId)
+    const containerTarget = resolveContainer(employee);
+    if (!containerTarget) {
+      return reply.status(503).send({
+        error: "Employee's OpenClaw container is not running. Chat works via direct API, but WhatsApp linking requires a running container. Check that the worker service has provisioned the container.",
+      });
+    }
 
     try {
       // Check if WhatsApp is already connected by looking at the session directory
       const sessionCheck = execSync(
-        `docker exec ${employee.containerName} bash -c 'test -f /home/node/.openclaw/credentials/whatsapp/creds.json && echo "linked" || echo "unlinked"'`,
+        `docker exec ${containerTarget} bash -c 'test -f /home/node/.openclaw/credentials/whatsapp/creds.json && echo "linked" || echo "unlinked"'`,
         { timeout: 5000 },
       ).toString().trim();
 
@@ -280,7 +320,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       // Run the login command with a short timeout to capture the QR code output.
       // The command outputs QR data to stdout then waits for scan — we just need the QR string.
       const output = execSync(
-        `docker exec ${employee.containerName} timeout 15 node -e "
+        `docker exec ${containerTarget} timeout 15 node -e "
           const { makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
           const { Boom } = require('@hapi/boom');
           (async () => {
@@ -328,6 +368,11 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       // Timeout is expected — means QR wasn't generated yet, container may still be starting
       if (message.includes("timed out") || message.includes("ETIMEDOUT")) {
         return reply.status(503).send({ error: "Container is still starting up. Try again in a few seconds." });
+      }
+      if (message.includes("No such container")) {
+        return reply.status(503).send({
+          error: "Employee's OpenClaw container is not available. It may have been removed or not yet provisioned. Check the worker service.",
+        });
       }
       fastify.log.error(`WhatsApp QR failed for ${id}: ${message}`);
       return reply.status(500).send({ error: `Failed to get WhatsApp QR: ${message}` });
