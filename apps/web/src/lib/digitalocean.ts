@@ -20,12 +20,13 @@ const DO_API = "https://api.digitalocean.com/v2";
 
 // The GitHub repo URL for cloning on the droplet
 const REPO_URL = process.env.REPO_URL || "https://github.com/carmichgo/ai-employees.git";
-// Use the branch that Vercel deployed from (VERCEL_GIT_COMMIT_REF) so droplets
-// always run the same code as the frontend. Falls back to REPO_BRANCH env var.
+// Resolve which branch droplets should clone.
+// VERCEL_GIT_COMMIT_REF is auto-set by Vercel to the deployed branch.
+// NOTE: REPO_BRANCH env var is intentionally NOT used — it is stale in the
+// Vercel dashboard (set to claude/build-new-system-L0OOg which has per-company
+// architecture instead of the per-employee architecture we need).
 const REPO_BRANCH = (
-  process.env.VERCEL_GIT_COMMIT_REF ||
-  process.env.REPO_BRANCH ||
-  "claude/fix-wizard-box-sizing-m778i"
+  process.env.VERCEL_GIT_COMMIT_REF || "claude/fix-wizard-box-sizing-m778i"
 ).trim();
 
 export function isDropletProvisioningEnabled(): boolean {
@@ -449,14 +450,14 @@ export async function createEmployeeDroplet(employeeId: string): Promise<{
   if (!company) throw new Error("Company not found");
 
   const interserviceSecret = crypto.randomBytes(32).toString("hex");
-  const databaseUrl = process.env.DATABASE_URL;
+  const databaseUrl = (process.env.DATABASE_URL || "").trim();
   if (!databaseUrl) throw new Error("DATABASE_URL not set");
 
   const region = employee.dropletRegion || "nyc3";
   const size = TIER_DROPLET_SIZES[employee.tier] || TIER_DROPLET_SIZES.junior;
 
-  const anthropicApiKey = process.env.ANTHROPIC_API_KEY || "";
-  const braveApiKey = process.env.BRAVE_API_KEY || "";
+  const anthropicApiKey = (process.env.ANTHROPIC_API_KEY || "").trim();
+  const braveApiKey = (process.env.BRAVE_API_KEY || "").trim();
   const slackAppToken = (process.env.SLACK_APP_TOKEN || "").trim();
   const slackSigningSecret = (process.env.SLACK_SIGNING_SECRET || "").trim();
 
@@ -612,11 +613,18 @@ export async function pollEmployeeDropletStatus(employeeId: string): Promise<{
       }
       return handleDropletReady(employee, employeeId, employee.dropletIp);
     }
-    // API not ready yet — still booting
-    if (employee.dropletStatus === "booting") {
-      return { status: "booting", ip: employee.dropletIp, phase: apiCheck.ok ? apiCheck.phase : null };
+
+    // Detect Phase 2 build failures (PHASE2_FAILED_*)
+    if (apiCheck.ok && apiCheck.phase && apiCheck.phase.startsWith("PHASE2_FAILED")) {
+      await db
+        .update(employees)
+        .set({ dropletStatus: "error", errorMessage: apiCheck.phase, updatedAt: new Date() })
+        .where(eq(employees.id, employeeId));
+      return { status: "error", ip: employee.dropletIp, phase: apiCheck.phase };
     }
-    return { status: employee.dropletStatus || "unknown", ip: employee.dropletIp, phase: null };
+
+    // API not ready yet — still booting/building. Pass phase through for visibility.
+    return { status: "booting", ip: employee.dropletIp, phase: apiCheck.ok ? apiCheck.phase : null };
   }
 
   // Check DO API for current droplet state
@@ -645,6 +653,15 @@ export async function pollEmployeeDropletStatus(employeeId: string): Promise<{
           .where(eq(employees.id, employeeId));
 
         return handleDropletReady(employee, employeeId, ip);
+      }
+
+      // Detect Phase 2 build failures
+      if (apiCheck.ok && apiCheck.phase && apiCheck.phase.startsWith("PHASE2_FAILED")) {
+        await db
+          .update(employees)
+          .set({ dropletIp: ip, dropletStatus: "error", errorMessage: apiCheck.phase, updatedAt: new Date() })
+          .where(eq(employees.id, employeeId));
+        return { status: "error", ip, phase: apiCheck.phase };
       }
 
       // Droplet is running but API not fully ready yet
