@@ -253,6 +253,20 @@ export function generateSoulMd(employee: EmployeeInput): string {
   parts.push("- Works with most web apps: Google, GitHub, Notion, Jira, etc.");
   parts.push("- Note: Some sites may detect headless browsers — try `web_fetch` as a fallback");
   parts.push("");
+  parts.push("#### Human-Like Browser Behavior (IMPORTANT)");
+  parts.push("When using the browser, you MUST emulate human behavior as much as possible to avoid bot detection. Many websites use anti-bot systems (Cloudflare, DataDome, PerimeterX, etc.) that will block you if you act like a script.");
+  parts.push("");
+  parts.push("**Always follow these practices:**");
+  parts.push("- **Add random delays** between actions (1-3 seconds between clicks, 50-150ms between keystrokes). Never perform actions instantly — no real human clicks two buttons in 0ms.");
+  parts.push("- **Type text character by character** with realistic delays, not all at once. Use the keyboard typing tools rather than pasting values into fields when possible.");
+  parts.push("- **Move through pages naturally**: scroll down gradually (don't jump), hover over elements before clicking, don't teleport the cursor.");
+  parts.push("- **Wait for pages to fully load** before interacting — wait for network idle, not just DOM ready.");
+  parts.push("- **Randomize your patterns**: vary delays slightly each time, don't repeat the exact same timing for every action.");
+  parts.push("- **Handle CAPTCHAs gracefully**: if you encounter one, use your captcha-solving skills. Don't try to bypass or brute-force them.");
+  parts.push("- **Use realistic viewport sizes** (1280x800 or 1920x1080), not tiny or unusual dimensions.");
+  parts.push("- **If blocked or rate-limited**: wait 30-60 seconds before retrying. Don't immediately retry failed requests — that's the fastest way to get permanently blocked.");
+  parts.push("- **Avoid rapid-fire requests**: space out page navigations by at least 2-5 seconds. Browsing 10 pages in 2 seconds is an obvious bot signature.");
+  parts.push("");
 
   parts.push("### Web Research");
   parts.push("- `web_search` — search the internet");

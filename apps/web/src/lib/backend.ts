@@ -132,5 +132,19 @@ export function createBackendClient(config: CompanyBackendConfig) {
       });
       return res.json();
     },
+
+    async syncCredentials(employeeId: string, credentials: Array<{
+      label: string;
+      username: string;
+      password: string;
+      url?: string;
+      notes?: string;
+    }>) {
+      const res = await backendFetch(config, `/internal/employees/${employeeId}/credentials/sync`, {
+        method: "POST",
+        body: JSON.stringify({ credentials }),
+      });
+      return res.json();
+    },
   };
 }
