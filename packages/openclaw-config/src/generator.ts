@@ -42,6 +42,7 @@ export type OpenClawConfig = Record<string, unknown>;
 export function generateOpenClawConfig(
   employee: EmployeeInput,
   gatewayToken: string,
+  soulMd?: string,
 ): OpenClawConfig {
   const agentId = slugify(employee.name);
 
@@ -49,6 +50,9 @@ export function generateOpenClawConfig(
   const validChannels = filterValidChannels(employee.channels);
   const channels = buildChannels(validChannels);
   const bindings = buildBindings(agentId, validChannels);
+
+  // Inline the SOUL.md as the agent's system prompt
+  const systemPrompt = soulMd || generateSoulMd(employee);
 
   const config: OpenClawConfig = {
     gateway: {
@@ -88,7 +92,7 @@ export function generateOpenClawConfig(
           id: agentId,
           default: true,
           workspace: "/home/node/.openclaw/workspace",
-          soul: "/home/node/.openclaw/SOUL.md",
+          system: systemPrompt,
           model: employee.modelConfig,
           identity: {
             name: employee.name,
@@ -579,7 +583,6 @@ function buildChannels(channels: ChannelInput[]): Record<string, Record<string, 
   const result: Record<string, Record<string, unknown>> = {};
   for (const ch of channels) {
     result[ch.type] = {
-      enabled: true,
       ...ch.credentials,
       ...ch.config,
     };

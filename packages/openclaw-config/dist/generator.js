@@ -8,12 +8,14 @@
  *   - Channel integrations (Slack, Discord, etc.) when credentials are provided
  */
 /** Generate a complete Blitzer configuration for an AI employee */
-export function generateOpenClawConfig(employee, gatewayToken) {
+export function generateOpenClawConfig(employee, gatewayToken, soulMd) {
     const agentId = slugify(employee.name);
     // Only include channels that have real credentials
     const validChannels = filterValidChannels(employee.channels);
     const channels = buildChannels(validChannels);
     const bindings = buildBindings(agentId, validChannels);
+    // Inline the SOUL.md as the agent's system prompt
+    const systemPrompt = soulMd || generateSoulMd(employee);
     const config = {
         gateway: {
             auth: { token: gatewayToken },
@@ -49,7 +51,7 @@ export function generateOpenClawConfig(employee, gatewayToken) {
                     id: agentId,
                     default: true,
                     workspace: "/home/node/.openclaw/workspace",
-                    soul: "/home/node/.openclaw/SOUL.md",
+                    system: systemPrompt,
                     model: employee.modelConfig,
                     identity: {
                         name: employee.name,
@@ -498,7 +500,6 @@ function buildChannels(channels) {
     const result = {};
     for (const ch of channels) {
         result[ch.type] = {
-            enabled: true,
             ...ch.credentials,
             ...ch.config,
         };
