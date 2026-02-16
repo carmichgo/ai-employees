@@ -12,6 +12,7 @@ import {
   generateCaptchaSolvingSkill,
   generateAccountCreationSkill,
   generateMediaGenerationSkill,
+  generateRestartGatewaySkill,
   generateImageScript,
   generateVideoScript,
   type EmployeeInput,
@@ -119,6 +120,7 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     mkdirSync(`${configDir}/skills/captcha-solving`, { recursive: true });
     mkdirSync(`${configDir}/skills/account-creation`, { recursive: true });
     mkdirSync(`${configDir}/skills/media-generation`, { recursive: true });
+    mkdirSync(`${configDir}/skills/restart-gateway`, { recursive: true });
     writeFileSync(`${configDir}/openclaw.json`, JSON.stringify(config, null, 2));
     writeFileSync(`${configDir}/SOUL.md`, soulMd);
     writeFileSync(`${configDir}/workspace/SOUL.md`, soulMd);
@@ -130,6 +132,7 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     writeFileSync(`${configDir}/skills/captcha-solving/SKILL.md`, generateCaptchaSolvingSkill());
     writeFileSync(`${configDir}/skills/account-creation/SKILL.md`, generateAccountCreationSkill());
     writeFileSync(`${configDir}/skills/media-generation/SKILL.md`, generateMediaGenerationSkill());
+    writeFileSync(`${configDir}/skills/restart-gateway/SKILL.md`, generateRestartGatewaySkill());
 
     // Write CLI wrapper scripts for image/video generation (installed into container below)
     writeFileSync(`${configDir}/generate-image.sh`, generateImageScript(), { mode: 0o755 });
@@ -151,9 +154,12 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
         ...(GEMINI_API_KEY ? [`GEMINI_API_KEY=${GEMINI_API_KEY}`] : []),
         ...(BRAVE_API_KEY ? [`BRAVE_API_KEY=${BRAVE_API_KEY}`] : []),
         `ENCRYPTION_KEY=${deriveEmployeeEncryptionKey(employeeId)}`,
+        `EMPLOYEE_ID=${employeeId}`,
         `EMPLOYEE_EMAIL=${emailAddress}`,
         `EMPLOYEE_NAME=${employee.name}`,
         `EMPLOYEE_JOB_TITLE=${employee.jobTitle}`,
+        // Internal API URL — used by the restart-gateway skill
+        `BLITZ_API_URL=http://api:${process.env.API_PORT || "3001"}`,
         // Email IMAP/SMTP credentials (if configured by company owner)
         ...buildEmailEnvVars(employee.provisionedAccounts as Record<string, unknown>),
       ],
