@@ -50,6 +50,7 @@ import {
   Zap,
   Crown,
   Rocket,
+  Video,
 } from "lucide-react";
 
 // ── Steps ──────────────────────────────────────
@@ -83,6 +84,7 @@ const CAPABILITY_ICONS: Record<string, any> = {
   scheduling: Calendar,
   memory: Sparkles,
   images: Palette,
+  "video-generation": Video,
   "phone-calls": Headphones,
   pdf: FileText,
 };
@@ -126,14 +128,14 @@ const TEMPLATE_CAPABILITIES: Record<string, string[]> = {
 // ── Template → Expertise Mapping ───────────────
 
 const TEMPLATE_EXPERTISE: Record<string, string[]> = {
-  marketer: ["web-research", "writing", "social-media", "data-analytics", "email-outreach"],
+  marketer: ["web-research", "writing", "social-media", "data-analytics", "email-outreach", "design-media"],
   "seo-manager": ["web-research", "writing", "data-analytics"],
   coo: ["project-management", "data-analytics", "scheduling-ops"],
   "customer-support": ["customer-support", "writing", "email-outreach"],
   "sales-rep": ["sales-crm", "email-outreach", "web-research"],
   "software-engineer": ["code-engineering", "web-research", "file-documents"],
   "data-analyst": ["data-analytics", "code-engineering", "file-documents"],
-  "content-writer": ["writing", "web-research", "social-media"],
+  "content-writer": ["writing", "web-research", "social-media", "design-media"],
   "executive-assistant": ["scheduling-ops", "email-outreach", "file-documents"],
   researcher: ["web-research", "writing", "data-analytics", "file-documents"],
 };
