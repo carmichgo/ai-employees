@@ -466,6 +466,25 @@ async function startConnection(authDir, browser, isRetry) {
                 return reply.status(500).send({ error: `WhatsApp QR failed: ${result.error}` });
             }
             if (result.status === "linked") {
+                // Restart the container so the gateway picks up the saved WhatsApp credentials.
+                // The Baileys helper saved session files to /home/node/.openclaw/credentials/whatsapp/
+                // but the gateway needs a restart to initialize its WhatsApp adapter with them.
+                try {
+                    execSync(`docker restart ${containerTarget}`, { timeout: 30000 });
+                    // Wait for container to come back up
+                    await new Promise((r) => setTimeout(r, 4000));
+                    // Update container IP in case it changed
+                    try {
+                        const newIp = execSync(`docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ${containerTarget}`, { timeout: 5000 }).toString().trim();
+                        if (newIp) {
+                            await db.update(employees).set({ containerHost: newIp, updatedAt: new Date() }).where(eq(employees.id, id));
+                        }
+                    }
+                    catch { /* IP lookup non-fatal */ }
+                }
+                catch (restartErr) {
+                    fastify.log.error(`Failed to restart container after WhatsApp link: ${restartErr}`);
+                }
                 return { status: "linked", qr: null, message: "WhatsApp linked successfully." };
             }
             if (result.qr) {

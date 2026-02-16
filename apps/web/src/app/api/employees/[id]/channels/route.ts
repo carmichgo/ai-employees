@@ -136,8 +136,12 @@ export async function POST(
     .from(channelConnections)
     .where(eq(channelConnections.employeeId, id));
 
+  // QR-paired channels (like WhatsApp) have empty credentials — they authenticate
+  // via device linking, not static API keys. Include them in the config.
+  const QR_PAIRED = new Set(["whatsapp"]);
+
   const allChannels = allConnections
-    .filter((c) => c.status === "connected" && Object.keys((c.credentials as Record<string, unknown>) || {}).length > 0)
+    .filter((c) => c.status === "connected" && (QR_PAIRED.has(c.channelType) || Object.keys((c.credentials as Record<string, unknown>) || {}).length > 0))
     .map((c) => ({
       type: c.channelType,
       credentials: (c.credentials as Record<string, unknown>) || {},
@@ -208,8 +212,9 @@ export async function DELETE(
     .from(channelConnections)
     .where(eq(channelConnections.employeeId, id));
 
+  const QR_PAIRED_DEL = new Set(["whatsapp"]);
   const allChannels = allConnections
-    .filter((c) => c.status === "connected" && Object.keys((c.credentials as Record<string, unknown>) || {}).length > 0)
+    .filter((c) => c.status === "connected" && (QR_PAIRED_DEL.has(c.channelType) || Object.keys((c.credentials as Record<string, unknown>) || {}).length > 0))
     .map((c) => ({
       type: c.channelType,
       credentials: (c.credentials as Record<string, unknown>) || {},
