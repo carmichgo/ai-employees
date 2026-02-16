@@ -223,36 +223,51 @@ function rewriteWorkspacePaths(text: string, employeeId: string): string {
 }
 
 /**
- * Auto-embed workspace image URLs as markdown images.
- * Converts bare URLs like /api/employees/{id}/workspace/screenshot.png
- * into ![screenshot](url) so the frontend renders them as <img> tags.
- * Skips URLs already inside markdown image syntax ![...](url).
+ * Auto-embed workspace URLs as markdown images or file links.
+ * - Image URLs → ![filename](url) so the frontend renders <img> tags
+ * - Non-image file URLs → [filename](url) so the frontend renders download links
+ * Skips URLs already inside markdown syntax ![...](url) or [...](url).
  */
 function autoEmbedImages(text: string, employeeId: string): string {
   const prefix = `/api/employees/${employeeId}/workspace/`;
   if (!text.includes(prefix)) return text;
 
   const imageExts = ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"];
+  const fileExts = [
+    ...imageExts,
+    "pdf", "csv", "tsv", "xlsx", "xls", "docx", "doc", "pptx", "ppt",
+    "txt", "md", "json", "yaml", "yml", "html", "xml",
+    "zip", "tar", "gz", "tgz", "rar",
+    "mp3", "mp4", "wav", "ogg",
+    "py", "js", "ts", "tsx", "jsx", "sh", "sql", "rb", "go", "java", "css",
+  ];
 
-  // Split by existing markdown images to avoid double-wrapping
-  const parts = text.split(/(!\[[^\]]*\]\([^)]+\))/);
+  // Split by existing markdown images and links to avoid double-wrapping
+  const parts = text.split(/(!\[[^\]]*\]\([^)]+\)|\[[^\]]*\]\([^)]+\))/);
 
   return parts
     .map((part, i) => {
-      // Odd indices are existing markdown images — leave them alone
+      // Odd indices are existing markdown images/links — leave them alone
       if (i % 2 === 1) return part;
 
-      // In text parts, find bare workspace image URLs and wrap them
+      // In text parts, find bare workspace file URLs and wrap them
       const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const re = new RegExp(
-        `(${escaped}[^\\s"'\`\\)\\]>]+\\.(?:${imageExts.join("|")}))`,
+        `(${escaped}[^\\s"'\`\\)\\]>]+\\.(?:${fileExts.join("|")}))`,
         "gi",
       );
 
       return part.replace(re, (url) => {
-        const filename =
-          url.split("/").pop()?.replace(/\.[^.]+$/, "") || "image";
-        return `![${filename}](${url})`;
+        const fullFilename = url.split("/").pop() || "file";
+        const name = fullFilename.replace(/\.[^.]+$/, "");
+        const ext = (fullFilename.split(".").pop() || "").toLowerCase();
+
+        // Images get embedded as inline images
+        if (imageExts.includes(ext)) {
+          return `![${name}](${url})`;
+        }
+        // Non-image files get a markdown download link
+        return `[${fullFilename}](${url})`;
       });
     })
     .join("");

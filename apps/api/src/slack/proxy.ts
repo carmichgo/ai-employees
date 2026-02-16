@@ -518,7 +518,7 @@ export class SlackProxy {
     }
   }
 
-  /** Post a message as a specific employee, uploading any workspace images to Slack */
+  /** Post a message as a specific employee, uploading any workspace files to Slack */
   private async postAsEmployee(
     client: any,
     channel: string,
@@ -526,10 +526,10 @@ export class SlackProxy {
     text: string,
   ): Promise<void> {
     try {
-      // Extract workspace image paths from the response text
-      const { cleanText, imagePaths } = extractWorkspaceImages(text, employee.id);
+      // Extract workspace file paths from the response text
+      const { cleanText, filePaths } = extractWorkspaceFiles(text, employee.id);
 
-      // Post the text message (with image paths cleaned out)
+      // Post the text message (with file paths cleaned out)
       const messageText = cleanText.trim();
       if (messageText) {
         await client.chat.postMessage({
@@ -540,12 +540,12 @@ export class SlackProxy {
         });
       }
 
-      // Upload each image to the Slack channel
-      for (const imgPath of imagePaths) {
+      // Upload each file to the Slack channel
+      for (const file of filePaths) {
         try {
-          await this.uploadImageToSlack(client, channel, employee, imgPath);
+          await this.uploadFileToSlack(client, channel, employee, file);
         } catch (uploadErr) {
-          console.error(`[slack-proxy] Failed to upload image ${imgPath.hostPath}:`, uploadErr);
+          console.error(`[slack-proxy] Failed to upload file ${file.hostPath}:`, uploadErr);
         }
       }
     } catch (err) {
@@ -553,20 +553,20 @@ export class SlackProxy {
     }
   }
 
-  /** Upload an image file from the employee's workspace to a Slack channel */
-  private async uploadImageToSlack(
+  /** Upload a file from the employee's workspace to a Slack channel */
+  private async uploadFileToSlack(
     client: any,
     channel: string,
-    employee: EmployeeMapping,
-    image: WorkspaceImage,
+    _employee: EmployeeMapping,
+    file: WorkspaceFile,
   ): Promise<void> {
-    if (!existsSync(image.hostPath)) {
-      console.warn(`[slack-proxy] Image file not found: ${image.hostPath}`);
+    if (!existsSync(file.hostPath)) {
+      console.warn(`[slack-proxy] File not found: ${file.hostPath}`);
       return;
     }
 
-    const fileContent = readFileSync(image.hostPath);
-    const filename = path.basename(image.hostPath);
+    const fileContent = readFileSync(file.hostPath);
+    const filename = path.basename(file.hostPath);
 
     try {
       // Use files.uploadV2 (modern Slack API)
@@ -574,7 +574,7 @@ export class SlackProxy {
         channel_id: channel,
         file: fileContent,
         filename,
-        initial_comment: image.altText || undefined,
+        initial_comment: file.altText || undefined,
       });
     } catch (err: unknown) {
       // Fallback: if uploadV2 isn't available, try legacy upload
@@ -585,7 +585,7 @@ export class SlackProxy {
             channels: channel,
             file: fileContent,
             filename,
-            initial_comment: image.altText || undefined,
+            initial_comment: file.altText || undefined,
           });
         } catch (legacyErr) {
           throw legacyErr;
@@ -700,13 +700,17 @@ export class SlackProxy {
 }
 
 // ---------------------------------------------------------------------------
-// Image extraction — detects workspace image paths in employee responses
+// File extraction — detects workspace file paths in employee responses
 // and maps them to host filesystem paths for Slack upload.
+// Handles images, documents, spreadsheets, and other shareable files.
 // ---------------------------------------------------------------------------
 
 const CONFIG_BASE = "/opt/ai-employees/openclaw-configs";
 
-interface WorkspaceImage {
+// File extensions we detect and upload to Slack
+const SHAREABLE_EXTS = "png|jpe?g|gif|webp|svg|bmp|pdf|csv|tsv|xlsx?|docx?|pptx?|txt|md|json|yaml|yml|html|xml|zip|tar|gz|mp3|mp4|wav|ogg";
+
+interface WorkspaceFile {
   /** Absolute path on the host filesystem */
   hostPath: string;
   /** Optional alt text / context from surrounding text */
@@ -714,36 +718,57 @@ interface WorkspaceImage {
 }
 
 /**
- * Extract workspace image paths from an employee response and return:
- * - cleanText: the response with image paths removed (to avoid showing raw paths in Slack)
- * - imagePaths: list of host-filesystem paths to upload
+ * Extract workspace file paths from an employee response and return:
+ * - cleanText: the response with file paths removed (to avoid showing raw paths in Slack)
+ * - filePaths: list of host-filesystem paths to upload
  *
  * Detects paths like:
  *   /home/node/.openclaw/workspace-main/screenshot.png
- *   /home/node/.openclaw/workspace/chart.jpg
+ *   /home/node/.openclaw/workspace/report.pdf
  *   /home/node/.openclaw/media/browser/page.png
  */
-function extractWorkspaceImages(
+function extractWorkspaceFiles(
   text: string,
   employeeId: string,
-): { cleanText: string; imagePaths: WorkspaceImage[] } {
-  const imagePaths: WorkspaceImage[] = [];
+): { cleanText: string; filePaths: WorkspaceFile[] } {
+  const filePaths: WorkspaceFile[] = [];
 
-  // Match container workspace paths that end with image extensions
+  // Match container workspace paths that end with shareable file extensions
   // Covers: /home/node/.openclaw/workspace-main/*, /home/node/.openclaw/workspace/*, /home/node/.openclaw/media/*
-  const pathPattern = /(?:\/home\/node\/\.openclaw|~\/\.openclaw)\/((?:workspace-main|workspace|media)\/[^\s"'`)\]>]+\.(?:png|jpe?g|gif|webp|svg|bmp))/gi;
+  const pathPattern = new RegExp(
+    `(?:\\/home\\/node\\/\\.openclaw|~\\/\\.openclaw)\\/((?:workspace-main|workspace|media)\\/[^\\s"'\`\\)\\]>]+\\.(?:${SHAREABLE_EXTS}))`,
+    "gi",
+  );
 
-  // Also match markdown image syntax ![alt](path)
-  const mdImagePattern = /!\[([^\]]*)\]\((\/home\/node\/\.openclaw|~\/\.openclaw)\/((?:workspace-main|workspace|media)\/[^\s)]+\.(?:png|jpe?g|gif|webp|svg|bmp))\)/gi;
+  // Also match markdown image syntax ![alt](path) — images use this format
+  const mdImagePattern = new RegExp(
+    `!\\[([^\\]]*)\\]\\((\\/home\\/node\\/\\.openclaw|~\\/\\.openclaw)\\/((?:workspace-main|workspace|media)\\/[^\\s)]+\\.(?:${SHAREABLE_EXTS}))\\)`,
+    "gi",
+  );
+
+  // Also match markdown link syntax [text](path) — documents may use this
+  const mdLinkPattern = new RegExp(
+    `\\[([^\\]]*)\\]\\((\\/home\\/node\\/\\.openclaw|~\\/\\.openclaw)\\/((?:workspace-main|workspace|media)\\/[^\\s)]+\\.(?:${SHAREABLE_EXTS}))\\)`,
+    "gi",
+  );
 
   const seen = new Set<string>();
 
-  // First pass: extract markdown images (these have alt text)
+  // First pass: extract markdown images and links (these have alt text)
   let cleanText = text.replace(mdImagePattern, (_match, alt, _base, relPath) => {
     const hostPath = path.join(CONFIG_BASE, employeeId, relPath);
     if (!seen.has(hostPath)) {
       seen.add(hostPath);
-      imagePaths.push({ hostPath, altText: alt || undefined });
+      filePaths.push({ hostPath, altText: alt || undefined });
+    }
+    return ""; // Remove from text
+  });
+
+  cleanText = cleanText.replace(mdLinkPattern, (_match, linkText, _base, relPath) => {
+    const hostPath = path.join(CONFIG_BASE, employeeId, relPath);
+    if (!seen.has(hostPath)) {
+      seen.add(hostPath);
+      filePaths.push({ hostPath, altText: linkText || undefined });
     }
     return ""; // Remove from text
   });
@@ -753,7 +778,7 @@ function extractWorkspaceImages(
     const hostPath = path.join(CONFIG_BASE, employeeId, relPath);
     if (!seen.has(hostPath)) {
       seen.add(hostPath);
-      imagePaths.push({ hostPath });
+      filePaths.push({ hostPath });
     }
     return ""; // Remove from text
   });
@@ -761,7 +786,7 @@ function extractWorkspaceImages(
   // Clean up leftover empty lines from removed paths
   cleanText = cleanText.replace(/\n{3,}/g, "\n\n");
 
-  return { cleanText, imagePaths };
+  return { cleanText, filePaths };
 }
 
 /** Split a long message into chunks at line boundaries */
