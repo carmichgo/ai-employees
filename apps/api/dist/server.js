@@ -100,7 +100,28 @@ export async function buildServer(config) {
         }
         // Check WhatsApp-related files inside employee container
         try {
-            checks.waFiles = execSync("docker exec $(docker ps -q --latest) bash -c 'find /home/node/.openclaw -maxdepth 4 -name \"*.json\" 2>/dev/null | grep -i \"wa\\|whatsapp\\|cred\" | head -30; echo \"---\"; ls -la /home/node/.openclaw/credentials/ 2>/dev/null; echo \"---\"; cat /home/node/.openclaw/wa-qr-status.json 2>/dev/null; echo \"---\"; tail -30 /home/node/.openclaw/wa-qr.log 2>/dev/null'", { timeout: 10000 }).toString().trim();
+            const cid = execSync("docker ps -q --latest", { timeout: 3000 }).toString().trim();
+            if (cid) {
+                checks.waFiles = execSync(`docker exec ${cid} find /home/node/.openclaw -maxdepth 4 -type f -name '*.json' 2>/dev/null`, { timeout: 10000 }).toString().trim();
+                try {
+                    checks.waStatus = execSync(`docker exec ${cid} cat /home/node/.openclaw/wa-qr-status.json 2>/dev/null || echo none`, { timeout: 5000 }).toString().trim();
+                }
+                catch {
+                    checks.waStatus = "none";
+                }
+                try {
+                    checks.waLog = execSync(`docker exec ${cid} cat /home/node/.openclaw/wa-qr.log 2>/dev/null || echo none`, { timeout: 5000 }).toString().trim();
+                }
+                catch {
+                    checks.waLog = "none";
+                }
+                try {
+                    checks.openlawConfig = execSync(`docker exec ${cid} cat /home/node/.openclaw/openclaw.json 2>/dev/null | head -c 3000 || echo none`, { timeout: 5000 }).toString().trim();
+                }
+                catch {
+                    checks.openlawConfig = "none";
+                }
+            }
         }
         catch (e) {
             checks.waFiles = `error: ${e.message}`;
