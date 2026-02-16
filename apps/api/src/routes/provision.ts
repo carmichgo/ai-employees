@@ -383,9 +383,10 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       } catch { /* no PID file — not running */ }
 
       if (!alreadyRunning) {
-        // Wipe stale credentials and status from previous attempts
+        // Wipe stale credentials and status from previous attempts.
+        // OpenClaw stores WhatsApp auth per account under credentials/whatsapp/<account>/
         execSync(
-          `docker exec ${containerTarget} bash -c 'rm -rf /home/node/.openclaw/credentials/whatsapp /home/node/.openclaw/wa-qr-status.json /home/node/.openclaw/wa-qr.pid'`,
+          `docker exec ${containerTarget} bash -c 'rm -rf /home/node/.openclaw/credentials/whatsapp/default /home/node/.openclaw/wa-qr-status.json /home/node/.openclaw/wa-qr.pid'`,
           { timeout: 5000 },
         );
 
@@ -515,7 +516,7 @@ async function startConnection(authDir, browser, isRetry) {
 }
 
 (async () => {
-  const authDir = '/home/node/.openclaw/credentials/whatsapp';
+  const authDir = '/home/node/.openclaw/credentials/whatsapp/default';
   fs.mkdirSync(authDir, { recursive: true });
   // Use Chrome on Ubuntu — matches Baileys default multi-device fingerprint
   const browser = baileys.Browsers ? baileys.Browsers.ubuntu('Chrome') : ['Ubuntu', 'Chrome', '24.0'];
