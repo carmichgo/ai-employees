@@ -13,6 +13,7 @@ export interface EmployeeInput {
   name: string;
   jobTitle: string;
   emoji?: string;
+  tier?: string;
   persona?: string | null;
   goals?: string | null;
   personalityConfig?: {
@@ -38,17 +39,69 @@ export interface ChannelInput {
 // OpenClaw config type — loosely typed to allow any valid OpenClaw config
 export type OpenClawConfig = Record<string, unknown>;
 
+// Sonnet model ID — used as the fast/efficient model for Expert tier routing
+const SONNET_MODEL = "anthropic/claude-sonnet-4-5-20250929";
+const OPUS_MODEL = "anthropic/claude-opus-4-6";
+
 /** Generate a complete OpenClaw configuration for an AI employee */
 export function generateOpenClawConfig(
   employee: EmployeeInput,
   gatewayToken: string,
 ): OpenClawConfig {
   const agentId = slugify(employee.name);
+  const isExpertTier = employee.tier === "expert" || employee.modelConfig.primary === OPUS_MODEL;
 
   // Only include channels that have real credentials
   const validChannels = filterValidChannels(employee.channels);
   const channels = buildChannels(validChannels);
   const bindings = buildBindings(agentId, validChannels);
+
+  // Build agent list — Expert tier gets a dual-agent setup for cost optimization:
+  //   Main agent (Sonnet): Handles 80%+ of tasks — fast, efficient, cost-effective
+  //   Deep agent (Opus):   Complex reasoning, strategy, analysis — invoked on demand
+  // Junior/Senior tiers use a single agent with their designated model.
+  const toolsAllow = buildToolAllow(employee.toolsConfig);
+  const agentsList: Record<string, unknown>[] = [];
+
+  if (isExpertTier) {
+    // Main agent — runs on Sonnet for speed and cost efficiency
+    agentsList.push({
+      id: agentId,
+      default: true,
+      workspace: "/home/node/.openclaw/workspace",
+      model: { primary: SONNET_MODEL },
+      identity: {
+        name: employee.name,
+        emoji: employee.emoji || "🤖",
+      },
+      tools: { allow: toolsAllow },
+    });
+
+    // Deep-thinking agent — runs on Opus for complex reasoning
+    agentsList.push({
+      id: `${agentId}-deep`,
+      workspace: "/home/node/.openclaw/workspace",
+      model: { primary: OPUS_MODEL },
+      identity: {
+        name: `${employee.name} (Deep Thinking)`,
+        emoji: "🧠",
+      },
+      tools: { allow: toolsAllow },
+    });
+  } else {
+    // Junior/Senior — single agent with their tier's model
+    agentsList.push({
+      id: agentId,
+      default: true,
+      workspace: "/home/node/.openclaw/workspace",
+      model: employee.modelConfig,
+      identity: {
+        name: employee.name,
+        emoji: employee.emoji || "🤖",
+      },
+      tools: { allow: toolsAllow },
+    });
+  }
 
   const config: OpenClawConfig = {
     gateway: {
@@ -79,29 +132,11 @@ export function generateOpenClawConfig(
 
     agents: {
       defaults: {
-        model: { primary: employee.modelConfig.primary },
+        model: { primary: isExpertTier ? SONNET_MODEL : employee.modelConfig.primary },
         // Sandbox OFF — the Docker container itself IS the sandbox
         sandbox: { mode: "off" },
       },
-      list: [
-        {
-          id: agentId,
-          default: true,
-          workspace: "/home/node/.openclaw/workspace",
-          model: employee.modelConfig,
-          identity: {
-            name: employee.name,
-            emoji: employee.emoji || "🤖",
-          },
-          // Tool access — uses employee-specific selection if provided,
-          // otherwise enables everything (backward compatible).
-          // Skills (SKILL.md files at ~/.openclaw/skills/) are automatically
-          // available and don't need to be listed here.
-          tools: {
-            allow: buildToolAllow(employee.toolsConfig),
-          },
-        },
-      ],
+      list: agentsList,
     },
 
     // Only include channels/bindings if there are real integrations
@@ -224,6 +259,44 @@ export function generateSoulMd(employee: EmployeeInput): string {
   parts.push("");
   parts.push("**Don't over-explain yourself.** Don't narrate your thought process or list your capabilities unless asked. Just do the work and report the result.");
   parts.push("");
+
+  // Smart model routing — Expert tier only
+  const isExpertTier = employee.tier === "expert" || employee.modelConfig.primary === OPUS_MODEL;
+  if (isExpertTier) {
+    const deepAgentId = slugify(employee.name) + "-deep";
+    parts.push("## Smart Task Routing (IMPORTANT — Cost Optimization)");
+    parts.push("");
+    parts.push("You have access to two thinking modes to optimize speed and cost:");
+    parts.push("");
+    parts.push("**You (Sonnet)** — your default mode. Fast, efficient, great for the vast majority of tasks. Use this for everything that doesn't require deep reasoning.");
+    parts.push("");
+    parts.push("**Deep Thinking (Opus)** — your `" + deepAgentId + "` agent. Slower but far more capable for complex problems. Delegate to this when a task genuinely requires it.");
+    parts.push("");
+    parts.push("### When to delegate to Deep Thinking (Opus):");
+    parts.push("- Complex strategic analysis with multiple tradeoffs and no clear answer");
+    parts.push("- Business strategy, competitive analysis, or nuanced decision-making");
+    parts.push("- Debugging a hard problem after your initial attempt failed");
+    parts.push("- Writing that requires exceptional nuance (investor memos, legal-adjacent copy, high-stakes communications)");
+    parts.push("- Multi-step reasoning chains where getting the logic wrong has consequences");
+    parts.push("- Understanding and synthesizing large amounts of conflicting information");
+    parts.push("- Novel problems you haven't seen before that feel genuinely hard");
+    parts.push("");
+    parts.push("### Handle yourself (Sonnet) — the default for everything else:");
+    parts.push("- Email, scheduling, routine messages, status updates");
+    parts.push("- Web research, browsing, data collection");
+    parts.push("- File creation, document writing, spreadsheets, reports");
+    parts.push("- Simple Q&A, lookups, summaries");
+    parts.push("- Code for straightforward tasks, scripts, automation");
+    parts.push("- Image/video generation, media tasks");
+    parts.push("- Social media, CRM updates, project management");
+    parts.push("- Anything you can do well and quickly");
+    parts.push("");
+    parts.push("### How to delegate:");
+    parts.push("When you determine a task needs deep reasoning, delegate it to the `" + deepAgentId + "` agent. Pass it a clear, specific description of what needs to be analyzed or decided. The deep-thinking agent has access to all the same tools and workspace as you.");
+    parts.push("");
+    parts.push("**The golden rule:** If you're confident you can handle it well, just do it. Only escalate when the problem genuinely benefits from deeper reasoning. Most tasks (80%+) should be handled by you directly — that's what makes you fast and cost-efficient.");
+    parts.push("");
+  }
 
   // Confidentiality & identity rules
   parts.push("## Confidentiality & Identity Rules (CRITICAL)");
