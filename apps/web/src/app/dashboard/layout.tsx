@@ -15,6 +15,7 @@ import {
   MessageCircle,
   Server,
   Link2,
+  Inbox,
 } from "lucide-react";
 
 const NAV_SECTIONS = [
@@ -23,6 +24,7 @@ const NAV_SECTIONS = [
     items: [
       { href: "/dashboard/employees", label: "Employees", icon: Users },
       { href: "/dashboard/hire", label: "Hire Employee", icon: UserPlus },
+      { href: "/dashboard/inbox", label: "Inbox", icon: Inbox },
       { href: "/dashboard/tasks", label: "Tasks", icon: ListTodo },
     ],
   },
@@ -72,6 +74,8 @@ export default function DashboardLayout({
     if (href === "/dashboard") return pathname === "/dashboard";
     return pathname.startsWith(href);
   };
+
+  const isFullWidth = pathname.startsWith("/dashboard/inbox");
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
@@ -286,11 +290,11 @@ export default function DashboardLayout({
         }}
       >
         <div
-          style={{
-            maxWidth: 1100,
-            margin: "0 auto",
-            padding: "24px 32px",
-          }}
+          style={
+            isFullWidth
+              ? { padding: "24px 32px", height: "100vh" }
+              : { maxWidth: 1100, margin: "0 auto", padding: "24px 32px" }
+          }
         >
           {children}
         </div>
