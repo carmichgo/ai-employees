@@ -312,15 +312,22 @@ const fs = require('fs');
 
 const STATUS_FILE = '${statusFile}';
 const PID_FILE = '/home/node/.openclaw/wa-qr.pid';
+const LOG_FILE = '/home/node/.openclaw/wa-qr.log';
 
-// Write PID so the API can check if we're still running
 fs.writeFileSync(PID_FILE, String(process.pid));
 
+function log(msg) {
+  const line = new Date().toISOString() + ' ' + msg + '\\n';
+  fs.appendFileSync(LOG_FILE, line);
+}
 function writeStatus(data) {
-  fs.writeFileSync(STATUS_FILE, JSON.stringify({ ...data, ts: Date.now() }));
+  const payload = { ...data, ts: Date.now() };
+  fs.writeFileSync(STATUS_FILE, JSON.stringify(payload));
+  log('STATUS: ' + JSON.stringify(payload));
 }
 
 writeStatus({ phase: 'starting' });
+log('PID=' + process.pid);
 
 // Resolve Baileys from OpenClaw's node_modules
 const searchDirs = ['/app/node_modules', '/usr/local/lib/node_modules/openclaw/node_modules'];
@@ -329,6 +336,7 @@ for (const dir of searchDirs) {
   try {
     baileys = require(path.join(dir, '@whiskeysockets/baileys'));
     Boom = require(path.join(dir, '@hapi/boom')).Boom;
+    log('Found baileys in ' + dir);
     break;
   } catch {}
 }
@@ -336,70 +344,107 @@ if (!baileys) {
   try {
     baileys = require('@whiskeysockets/baileys');
     Boom = require('@hapi/boom').Boom;
+    log('Found baileys via standard require');
   } catch (e) {
     writeStatus({ error: 'Cannot find baileys: ' + e.message });
     process.exit(1);
   }
 }
 
-const { makeWASocket, useMultiFileAuthState, DisconnectReason } = baileys;
+// Log version info
+try {
+  const pkg = require(path.join(path.dirname(require.resolve('@whiskeysockets/baileys')), '..', 'package.json'));
+  log('Baileys version: ' + pkg.version);
+} catch { log('Could not determine Baileys version'); }
 
-(async () => {
-  const authDir = '/home/node/.openclaw/credentials/whatsapp';
-  fs.mkdirSync(authDir, { recursive: true });
+const { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = baileys;
+
+async function startConnection(authDir, browser, isRetry) {
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
-  const browser = baileys.Browsers ? baileys.Browsers.ubuntu('Chrome') : ['Ubuntu', 'Chrome', '24.0'];
-  const sock = makeWASocket({ auth: state, printQRInTerminal: false, browser });
 
-  sock.ev.on('creds.update', saveCreds);
+  const socketOpts = {
+    auth: state,
+    printQRInTerminal: false,
+    browser,
+    markOnlineOnConnect: false,
+    syncFullHistory: false,
+    generateHighQualityLinkPreview: false,
+  };
+
+  // Try to use latest WA version if available
+  try {
+    if (fetchLatestBaileysVersion) {
+      const { version, isLatest } = await fetchLatestBaileysVersion();
+      socketOpts.version = version;
+      log('WA version: ' + JSON.stringify(version) + ' isLatest=' + isLatest);
+    }
+  } catch (e) { log('fetchLatestBaileysVersion failed: ' + e.message); }
+
+  log((isRetry ? 'RECONNECT' : 'CONNECT') + ' with browser=' + JSON.stringify(browser));
+  const sock = makeWASocket(socketOpts);
+
+  sock.ev.on('creds.update', () => {
+    log('creds.update fired');
+    saveCreds();
+  });
+
   sock.ev.on('connection.update', (update) => {
+    log('connection.update: ' + JSON.stringify(update));
+
     if (update.qr) {
-      // Write QR to status file — DO NOT EXIT! Session must stay alive for scanning.
       writeStatus({ qr: update.qr });
+      log('QR code written to status file (length=' + update.qr.length + ')');
     }
     if (update.connection === 'open') {
+      log('CONNECTION OPEN — linked successfully!');
       writeStatus({ status: 'linked' });
-      // Stay alive briefly so credentials are fully saved, then exit
-      setTimeout(() => process.exit(0), 3000);
+      setTimeout(() => process.exit(0), 5000);
     }
     if (update.connection === 'close') {
-      const reason = new Boom(update.lastDisconnect?.error)?.output?.statusCode;
-      if (reason === DisconnectReason.restartRequired) {
-        // WhatsApp requires restart after QR scan — this is NORMAL
+      const statusCode = update.lastDisconnect?.error?.output?.statusCode;
+      const reason = update.lastDisconnect?.error?.output?.payload?.message || 'unknown';
+      log('CONNECTION CLOSED: statusCode=' + statusCode + ' reason=' + reason + ' DisconnectReason.restartRequired=' + DisconnectReason.restartRequired);
+
+      if (statusCode === DisconnectReason.restartRequired) {
+        log('Restart required (normal after QR scan) — reconnecting in 2s...');
         writeStatus({ phase: 'restarting' });
-        // Reconnect automatically
-        setTimeout(async () => {
-          const { state: newState, saveCreds: newSave } = await useMultiFileAuthState(authDir);
-          const newSock = makeWASocket({ auth: newState, printQRInTerminal: false, browser });
-          newSock.ev.on('creds.update', newSave);
-          newSock.ev.on('connection.update', (u) => {
-            if (u.connection === 'open') {
-              writeStatus({ status: 'linked' });
-              setTimeout(() => process.exit(0), 3000);
-            }
-            if (u.connection === 'close') {
-              writeStatus({ error: 'Failed to reconnect after QR scan', code: new Boom(u.lastDisconnect?.error)?.output?.statusCode });
-              process.exit(1);
-            }
-          });
-        }, 1000);
+        setTimeout(() => startConnection(authDir, browser, true), 2000);
+      } else if (statusCode === 515 || statusCode === DisconnectReason.connectionReplaced) {
+        log('Connection replaced — another session took over');
+        writeStatus({ error: 'Connection replaced by another session' });
+        process.exit(1);
+      } else if (statusCode === 401) {
+        log('Logged out / unauthorized');
+        writeStatus({ error: 'WhatsApp rejected the connection (401). Try again.' });
+        process.exit(1);
       } else {
-        writeStatus({ error: 'Connection closed', code: reason });
+        writeStatus({ error: 'Connection closed: ' + reason, code: statusCode });
         process.exit(1);
       }
     }
   });
 
-  // Keep alive for 90 seconds — enough time for user to scan QR
+  return sock;
+}
+
+(async () => {
+  const authDir = '/home/node/.openclaw/credentials/whatsapp';
+  fs.mkdirSync(authDir, { recursive: true });
+  // Use Chrome on Ubuntu — matches Baileys default multi-device fingerprint
+  const browser = baileys.Browsers ? baileys.Browsers.ubuntu('Chrome') : ['Ubuntu', 'Chrome', '24.0'];
+  await startConnection(authDir, browser, false);
+
+  // Keep alive for 120 seconds — enough time for user to scan QR + complete handshake
   setTimeout(() => {
     writeStatus({ error: 'Session expired. Click Link Device to get a new QR code.' });
     process.exit(0);
-  }, 90000);
+  }, 120000);
 })();
 `;
                 writeFileSync(`${configDir}/wa-qr-helper.cjs`, helperScript);
-                // Start the helper as a BACKGROUND process (detached) so it stays alive
-                execSync(`docker exec -d ${containerTarget} bash -c 'cd /app && exec node /home/node/.openclaw/wa-qr-helper.cjs > /home/node/.openclaw/wa-qr.log 2>&1'`, { timeout: 5000 });
+                // Start the helper as a BACKGROUND process (detached) so it stays alive.
+                // The script handles its own logging to wa-qr.log; redirect stderr for crashes.
+                execSync(`docker exec -d ${containerTarget} bash -c 'cd /app && exec node /home/node/.openclaw/wa-qr-helper.cjs 2>> /home/node/.openclaw/wa-qr.log'`, { timeout: 5000 });
             }
             // Poll the status file until QR appears (up to 10 seconds)
             let result = null;
@@ -442,6 +487,40 @@ const { makeWASocket, useMultiFileAuthState, DisconnectReason } = baileys;
             fastify.log.error(`WhatsApp QR failed for ${id}: ${message}`);
             return reply.status(500).send({ error: `Failed to get WhatsApp QR: ${message}` });
         }
+    });
+    // GET /internal/employees/:id/channels/whatsapp/debug — check QR helper status & logs
+    fastify.get("/internal/employees/:id/channels/whatsapp/debug", async (request, reply) => {
+        const { id } = request.params;
+        const employee = await db.query.employees.findFirst({ where: eq(employees.id, id) });
+        if (!employee)
+            return reply.status(404).send({ error: "Employee not found" });
+        const containerTarget = employee.containerName
+            ? `--name ${employee.containerName}`
+            : employee.containerHost && employee.containerPort
+                ? `${employee.containerHost}:${employee.containerPort}`
+                : null;
+        if (!containerTarget)
+            return reply.status(503).send({ error: "No container" });
+        const result = {};
+        try {
+            result.statusFile = execSync(`docker exec ${containerTarget} cat /home/node/.openclaw/wa-qr-status.json 2>&1`, { timeout: 5000 }).toString().trim();
+        }
+        catch (e) {
+            result.statusFile = e.message;
+        }
+        try {
+            result.log = execSync(`docker exec ${containerTarget} tail -100 /home/node/.openclaw/wa-qr.log 2>&1`, { timeout: 5000 }).toString().trim();
+        }
+        catch (e) {
+            result.log = e.message;
+        }
+        try {
+            result.pidAlive = execSync(`docker exec ${containerTarget} bash -c 'PID=$(cat /home/node/.openclaw/wa-qr.pid 2>/dev/null); echo "PID=$PID"; ps -p $PID 2>&1 || echo "dead"'`, { timeout: 5000 }).toString().trim();
+        }
+        catch (e) {
+            result.pidAlive = e.message;
+        }
+        return result;
     });
     // POST /internal/employees/:id/chat — proxy chat to Blitzer container
     fastify.post("/internal/employees/:id/chat", async (request, reply) => {
