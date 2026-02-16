@@ -16,6 +16,8 @@
  */
 
 import { execSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { eq, and } from "drizzle-orm";
 import { db, employees, companies } from "@ai-employees/db";
 
@@ -24,6 +26,7 @@ type SlackApp = { message: Function; event: Function; start: Function; stop: Fun
 type SlackWebClient = {
   conversations: { create: Function; setTopic: Function; setPurpose: Function; list: Function; join: Function; archive: Function; history: Function };
   chat: { postMessage: Function };
+  files: { uploadV2: Function };
 };
 
 // Emoji → Slack-compatible icon. Slack's `icon_emoji` needs colon-wrapped shortcodes.
@@ -515,7 +518,7 @@ export class SlackProxy {
     }
   }
 
-  /** Post a message as a specific employee */
+  /** Post a message as a specific employee, uploading any workspace images to Slack */
   private async postAsEmployee(
     client: any,
     channel: string,
@@ -523,14 +526,73 @@ export class SlackProxy {
     text: string,
   ): Promise<void> {
     try {
-      await client.chat.postMessage({
-        channel,
-        text,
-        username: employee.name,
-        icon_emoji: emojiToSlackIcon(employee.emoji) || ":robot_face:",
-      });
+      // Extract workspace image paths from the response text
+      const { cleanText, imagePaths } = extractWorkspaceImages(text, employee.id);
+
+      // Post the text message (with image paths cleaned out)
+      const messageText = cleanText.trim();
+      if (messageText) {
+        await client.chat.postMessage({
+          channel,
+          text: messageText,
+          username: employee.name,
+          icon_emoji: emojiToSlackIcon(employee.emoji) || ":robot_face:",
+        });
+      }
+
+      // Upload each image to the Slack channel
+      for (const imgPath of imagePaths) {
+        try {
+          await this.uploadImageToSlack(client, channel, employee, imgPath);
+        } catch (uploadErr) {
+          console.error(`[slack-proxy] Failed to upload image ${imgPath.hostPath}:`, uploadErr);
+        }
+      }
     } catch (err) {
       console.error(`[slack-proxy] Failed to post as ${employee.name}:`, err);
+    }
+  }
+
+  /** Upload an image file from the employee's workspace to a Slack channel */
+  private async uploadImageToSlack(
+    client: any,
+    channel: string,
+    employee: EmployeeMapping,
+    image: WorkspaceImage,
+  ): Promise<void> {
+    if (!existsSync(image.hostPath)) {
+      console.warn(`[slack-proxy] Image file not found: ${image.hostPath}`);
+      return;
+    }
+
+    const fileContent = readFileSync(image.hostPath);
+    const filename = path.basename(image.hostPath);
+
+    try {
+      // Use files.uploadV2 (modern Slack API)
+      await client.files.uploadV2({
+        channel_id: channel,
+        file: fileContent,
+        filename,
+        initial_comment: image.altText || undefined,
+      });
+    } catch (err: unknown) {
+      // Fallback: if uploadV2 isn't available, try legacy upload
+      const errorStr = err instanceof Error ? err.message : String(err);
+      if (errorStr.includes("not a function") || errorStr.includes("uploadV2")) {
+        try {
+          await client.files.upload({
+            channels: channel,
+            file: fileContent,
+            filename,
+            initial_comment: image.altText || undefined,
+          });
+        } catch (legacyErr) {
+          throw legacyErr;
+        }
+      } else {
+        throw err;
+      }
     }
   }
 
@@ -618,18 +680,88 @@ export class SlackProxy {
     if (!emp) return false;
 
     try {
-      await this.webClient.chat.postMessage({
-        channel: channelId,
-        text,
-        username: emp.name,
-        icon_emoji: emojiToSlackIcon(emp.emoji) || ":robot_face:",
-      });
+      const mapping: EmployeeMapping = {
+        id: emp.id,
+        name: emp.name,
+        emoji: emp.emoji,
+        jobTitle: emp.jobTitle,
+        containerHost: emp.containerHost,
+        containerPort: emp.containerPort,
+        gatewayToken: emp.gatewayToken,
+        slackChannelId: channelId,
+      };
+      await this.postAsEmployee(this.webClient, channelId, mapping, text);
       return true;
     } catch (err) {
       console.error(`[slack-proxy] Failed to post message as ${emp.name}:`, err);
       return false;
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Image extraction — detects workspace image paths in employee responses
+// and maps them to host filesystem paths for Slack upload.
+// ---------------------------------------------------------------------------
+
+const CONFIG_BASE = "/opt/ai-employees/openclaw-configs";
+
+interface WorkspaceImage {
+  /** Absolute path on the host filesystem */
+  hostPath: string;
+  /** Optional alt text / context from surrounding text */
+  altText?: string;
+}
+
+/**
+ * Extract workspace image paths from an employee response and return:
+ * - cleanText: the response with image paths removed (to avoid showing raw paths in Slack)
+ * - imagePaths: list of host-filesystem paths to upload
+ *
+ * Detects paths like:
+ *   /home/node/.openclaw/workspace-main/screenshot.png
+ *   /home/node/.openclaw/workspace/chart.jpg
+ *   /home/node/.openclaw/media/browser/page.png
+ */
+function extractWorkspaceImages(
+  text: string,
+  employeeId: string,
+): { cleanText: string; imagePaths: WorkspaceImage[] } {
+  const imagePaths: WorkspaceImage[] = [];
+
+  // Match container workspace paths that end with image extensions
+  // Covers: /home/node/.openclaw/workspace-main/*, /home/node/.openclaw/workspace/*, /home/node/.openclaw/media/*
+  const pathPattern = /(?:\/home\/node\/\.openclaw|~\/\.openclaw)\/((?:workspace-main|workspace|media)\/[^\s"'`)\]>]+\.(?:png|jpe?g|gif|webp|svg|bmp))/gi;
+
+  // Also match markdown image syntax ![alt](path)
+  const mdImagePattern = /!\[([^\]]*)\]\((\/home\/node\/\.openclaw|~\/\.openclaw)\/((?:workspace-main|workspace|media)\/[^\s)]+\.(?:png|jpe?g|gif|webp|svg|bmp))\)/gi;
+
+  const seen = new Set<string>();
+
+  // First pass: extract markdown images (these have alt text)
+  let cleanText = text.replace(mdImagePattern, (_match, alt, _base, relPath) => {
+    const hostPath = path.join(CONFIG_BASE, employeeId, relPath);
+    if (!seen.has(hostPath)) {
+      seen.add(hostPath);
+      imagePaths.push({ hostPath, altText: alt || undefined });
+    }
+    return ""; // Remove from text
+  });
+
+  // Second pass: extract bare workspace paths
+  cleanText = cleanText.replace(pathPattern, (_match, relPath) => {
+    const hostPath = path.join(CONFIG_BASE, employeeId, relPath);
+    if (!seen.has(hostPath)) {
+      seen.add(hostPath);
+      imagePaths.push({ hostPath });
+    }
+    return ""; // Remove from text
+  });
+
+  // Clean up leftover empty lines from removed paths
+  cleanText = cleanText.replace(/\n{3,}/g, "\n\n");
+
+  return { cleanText, imagePaths };
 }
 
 /** Split a long message into chunks at line boundaries */
