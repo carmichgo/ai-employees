@@ -11,6 +11,9 @@ import {
   generateCredentialManagerScript,
   generateCaptchaSolvingSkill,
   generateAccountCreationSkill,
+  generateMediaGenerationSkill,
+  generateImageScript,
+  generateVideoScript,
   type EmployeeInput,
 } from "@ai-employees/openclaw-config";
 import { docker, ensureNetwork, ensureImage } from "../docker/client.js";
@@ -18,6 +21,7 @@ import { docker, ensureNetwork, ensureImage } from "../docker/client.js";
 const OPENCLAW_IMAGE = process.env.OPENCLAW_IMAGE || "ghcr.io/carmichgo/openclaw:latest";
 const OPENCLAW_NETWORK = process.env.OPENCLAW_NETWORK || "ai-employees-internal";
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
 const BRAVE_API_KEY = process.env.BRAVE_API_KEY || "";
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || "";
 
@@ -113,6 +117,7 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     mkdirSync(`${configDir}/credentials`, { recursive: true, mode: 0o700 });
     mkdirSync(`${configDir}/skills/captcha-solving`, { recursive: true });
     mkdirSync(`${configDir}/skills/account-creation`, { recursive: true });
+    mkdirSync(`${configDir}/skills/media-generation`, { recursive: true });
     writeFileSync(`${configDir}/openclaw.json`, JSON.stringify(config, null, 2));
     writeFileSync(`${configDir}/SOUL.md`, soulMd);
     writeFileSync(`${configDir}/workspace/SOUL.md`, soulMd);
@@ -123,6 +128,11 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     // Write skill files
     writeFileSync(`${configDir}/skills/captcha-solving/SKILL.md`, generateCaptchaSolvingSkill());
     writeFileSync(`${configDir}/skills/account-creation/SKILL.md`, generateAccountCreationSkill());
+    writeFileSync(`${configDir}/skills/media-generation/SKILL.md`, generateMediaGenerationSkill());
+
+    // Write CLI wrapper scripts for image/video generation (installed into container below)
+    writeFileSync(`${configDir}/generate-image.sh`, generateImageScript(), { mode: 0o755 });
+    writeFileSync(`${configDir}/generate-video.sh`, generateVideoScript(), { mode: 0o755 });
 
     // Fix permissions for the node user (uid 1000) inside the container
     execSync(`chown -R 1000:1000 ${configDir}`);
@@ -137,6 +147,7 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
         `NODE_OPTIONS=--max-old-space-size=1536`,
         `OPENCLAW_GATEWAY_TOKEN=${employee.gatewayToken}`,
         `ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}`,
+        ...(GEMINI_API_KEY ? [`GEMINI_API_KEY=${GEMINI_API_KEY}`] : []),
         ...(BRAVE_API_KEY ? [`BRAVE_API_KEY=${BRAVE_API_KEY}`] : []),
         `ENCRYPTION_KEY=${deriveEmployeeEncryptionKey(employeeId)}`,
         `EMPLOYEE_EMAIL=${emailAddress}`,
@@ -476,6 +487,20 @@ CREDEOF
     docker exec -u root ${containerName} bash -c '
       apt-get install -y -qq oathtool 2>/dev/null &&
       echo "oathtool installed" || true
+    '
+
+    # Install generate-image and generate-video CLI wrappers (Nano Banana + Veo 3)
+    docker exec -u root ${containerName} bash -c '
+      cp /home/node/.openclaw/generate-image.sh /usr/local/bin/generate-image 2>/dev/null &&
+      cp /home/node/.openclaw/generate-video.sh /usr/local/bin/generate-video 2>/dev/null &&
+      chmod +x /usr/local/bin/generate-image /usr/local/bin/generate-video &&
+      echo "generate-image and generate-video CLI tools installed"
+    '
+
+    # Pre-install Python dependencies for media generation
+    docker exec ${containerName} bash -c '
+      pip3 install -q google-genai Pillow 2>/dev/null &&
+      echo "google-genai and Pillow installed for media generation"
     '
 
     # Restart container so gateway picks up newly installed Chromium browser

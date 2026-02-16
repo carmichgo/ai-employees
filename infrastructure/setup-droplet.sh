@@ -79,6 +79,10 @@ INTERSERVICE_SECRET=${GENERATED_INTERSERVICE_SECRET}
 OPENCLAW_IMAGE=ghcr.io/carmichgo/openclaw:latest
 OPENCLAW_NETWORK=ai-employees-internal
 
+# Google Gemini API (for Nano Banana image gen + Veo 3 video gen)
+# Get from: https://aistudio.google.com/apikey
+GEMINI_API_KEY=
+
 # API
 API_PORT=3001
 PLATFORM_URL=https://ai-employees-ten.vercel.app
