@@ -100,7 +100,7 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     };
 
     const soulMd = generateSoulMd(employeeInput);
-    const config = generateOpenClawConfig(employeeInput, employee.gatewayToken!, soulMd);
+    const config = generateOpenClawConfig(employeeInput, employee.gatewayToken!);
 
     // Determine resource limits based on employee tier
     const tier = (employee.tier as EmployeeTier) || "junior";

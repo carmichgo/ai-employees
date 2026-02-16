@@ -72,7 +72,7 @@ export async function provisionEmployee(data) {
             channels: channelInputs,
         };
         const soulMd = generateSoulMd(employeeInput);
-        const config = generateOpenClawConfig(employeeInput, employee.gatewayToken, soulMd);
+        const config = generateOpenClawConfig(employeeInput, employee.gatewayToken);
         // Determine resource limits based on employee tier
         const tier = employee.tier || "junior";
         const resources = getResourcesForTier(tier);

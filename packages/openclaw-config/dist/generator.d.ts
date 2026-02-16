@@ -41,7 +41,7 @@ export interface ChannelInput {
 }
 export type OpenClawConfig = Record<string, unknown>;
 /** Generate a complete Blitzer configuration for an AI employee */
-export declare function generateOpenClawConfig(employee: EmployeeInput, gatewayToken: string, soulMd?: string): OpenClawConfig;
+export declare function generateOpenClawConfig(employee: EmployeeInput, gatewayToken: string): OpenClawConfig;
 /** Generate a rich SOUL.md that defines the employee's identity and capabilities */
 export declare function generateSoulMd(employee: EmployeeInput): string;
 /** Generate an email address for the employee */
