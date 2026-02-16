@@ -290,8 +290,15 @@ export async function provisionRoutes(fastify) {
             });
         }
         try {
-            // Check if WhatsApp is already connected by looking at known session paths
-            const sessionCheck = execSync(`docker exec ${containerTarget} bash -c 'test -f /home/node/.openclaw/credentials/whatsapp/creds.json && echo "linked" || (ls /home/node/.openclaw/whatsapp-sessions/*/creds.json 2>/dev/null && echo "linked" || echo "unlinked")'`, { timeout: 5000 }).toString().trim();
+            // Check if WhatsApp is already linked by looking for the "me" field in creds.json.
+            // creds.json is created by Baileys on first run (stores keypair), but the "me"
+            // field only appears AFTER a successful QR scan + device link.
+            const sessionCheck = execSync(`docker exec ${containerTarget} bash -c '
+          for f in /home/node/.openclaw/credentials/whatsapp/creds.json /home/node/.openclaw/whatsapp-sessions/*/creds.json; do
+            [ -f "$f" ] && grep -q "\"me\"" "$f" 2>/dev/null && echo "linked" && exit 0
+          done
+          echo "unlinked"
+        '`, { timeout: 5000 }).toString().trim();
             if (sessionCheck.includes("linked")) {
                 return { status: "linked", qr: null, message: "WhatsApp is already linked to a device." };
             }
