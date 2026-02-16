@@ -1,0 +1,1 @@
+{"version":3,"file":"client.d.ts","sourceRoot":"","sources":["../../src/docker/client.ts"],"names":[],"mappings":"AAAA,OAAO,MAAM,MAAM,WAAW,CAAC;AAE/B,eAAO,MAAM,MAAM,QAAqD,CAAC;AAEzE,wBAAsB,aAAa,CAAC,WAAW,EAAE,MAAM,GAAG,OAAO,CAAC,IAAI,CAAC,CAWtE;AAED,wBAAsB,WAAW,CAAC,SAAS,EAAE,MAAM,GAAG,OAAO,CAAC,IAAI,CAAC,CAalE"}

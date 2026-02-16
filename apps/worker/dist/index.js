@@ -1,0 +1,60 @@
+import { Worker } from "bullmq";
+import IORedis from "ioredis";
+import { provisionEmployee, stopEmployee, startEmployee, teardownEmployee, cleanupOrphanedContainers, } from "./workers/provision-employee.js";
+import { pollAllEmployeeHealth } from "./workers/health-poll.js";
+const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
+const connection = new IORedis(REDIS_URL, {
+    maxRetriesPerRequest: null,
+});
+// Main provisioning worker
+const provisionWorker = new Worker("employee-provisioning", async (job) => {
+    console.log(`[worker] Processing job ${job.name} (${job.id})`);
+    switch (job.name) {
+        case "provision-employee":
+            await provisionEmployee(job.data);
+            break;
+        case "stop-employee":
+            await stopEmployee(job.data.employeeId);
+            break;
+        case "start-employee":
+            await startEmployee(job.data.employeeId);
+            break;
+        case "teardown-employee":
+            await teardownEmployee(job.data.employeeId);
+            break;
+        default:
+            console.warn(`[worker] Unknown job type: ${job.name}`);
+    }
+}, {
+    connection,
+    concurrency: 5,
+});
+provisionWorker.on("completed", (job) => {
+    console.log(`[worker] Job ${job.name} (${job.id}) completed`);
+});
+provisionWorker.on("failed", (job, err) => {
+    console.error(`[worker] Job ${job?.name} (${job?.id}) failed:`, err.message);
+});
+// Health polling - runs every 60 seconds
+const healthInterval = setInterval(async () => {
+    try {
+        await pollAllEmployeeHealth();
+    }
+    catch (error) {
+        console.error("[health] Health polling error:", error);
+    }
+}, 60_000);
+// Graceful shutdown
+async function shutdown() {
+    console.log("[worker] Shutting down...");
+    clearInterval(healthInterval);
+    await provisionWorker.close();
+    await connection.quit();
+    process.exit(0);
+}
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
+console.log("AI Employees Worker started — listening for provisioning jobs");
+// Clean up any orphaned containers from terminated employees on startup
+cleanupOrphanedContainers().catch((err) => console.error("[cleanup] Startup cleanup failed:", err.message));
+//# sourceMappingURL=index.js.map

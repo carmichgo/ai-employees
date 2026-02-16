@@ -166,16 +166,25 @@ const DEPLOY_LOG = "/deploy-logs/deploy.log";
 const HOST_APP_DIR = "/opt/ai-employees/app";
 
 /**
- * Trigger a rolling deployment by spawning a temporary deployer container.
- * The deployer runs independently (survives api/worker restarts) and:
- *   1. Pulls latest code via git
- *   2. Rebuilds api + worker images via Docker Compose
- *   3. Rolling-restarts worker then api
+ * Trigger a rolling deployment.
+ *
+ * Two modes:
+ *  1. **Systemd** (native droplet) — the API runs directly on the host, so we
+ *     pull, rebuild, and restart services in-process. No deployer container needed.
+ *  2. **Docker Compose** — spawns a deployer container that rebuilds and
+ *     rolling-restarts api + worker via Docker Compose.
+ *
  * Employee (Blitzer) containers, Redis, and Traefik are NOT touched.
  */
 function triggerDeploy(opts?: { branch?: string }) {
   let branch = opts?.branch || "main";
   try { branch = readFileSync("/host-app/.branch", "utf-8").trim() || branch; } catch {}
+  try { branch = readFileSync(`${HOST_APP_DIR}/.branch`, "utf-8").trim() || branch; } catch {}
+
+  // Sanitise branch name to prevent command injection
+  if (!/^[\w.\-/]+$/.test(branch)) {
+    return { status: "error", message: "Invalid branch name" };
+  }
 
   // Check if a deploy is already running
   try {
@@ -185,14 +194,18 @@ function triggerDeploy(opts?: { branch?: string }) {
     }
   } catch { /* no previous deploy */ }
 
+  // Detect systemd-based deployment (API running natively on the host)
+  const isSystemd = existsSync("/etc/systemd/system/ai-employees-api.service");
+
+  if (isSystemd) {
+    return triggerSystemdDeploy(branch);
+  }
+
   writeSync(DEPLOY_LOG, `[${new Date().toISOString()}] Deploy triggered (branch: ${branch})\n`);
 
-  // Check if deploy.sh exists on the host
+  // Check if deploy.sh exists on the host (for Docker Compose deployments)
   const hasScript = existsSync("/host-app/infrastructure/deploy.sh");
 
-  // Build the deploy command that will run inside the deployer container.
-  // The deployer container gets Docker socket + host app dir, so it can
-  // run git and docker compose commands against the host.
   const deployScript = hasScript
     ? `bash ${HOST_APP_DIR}/infrastructure/deploy.sh ${branch}`
     : `
@@ -213,9 +226,6 @@ function triggerDeploy(opts?: { branch?: string }) {
       echo "[$(date -Iseconds)] DEPLOY FAILED" >> /logs/deploy.log
     `.trim();
 
-  // Spawn a deployer container that runs on the HOST via the Docker socket.
-  // This container is independent of api/worker — it survives their restarts.
-  // Uses alpine with git + docker CLI + docker compose plugin.
   const dockerArgs = [
     "run", "-d", "--rm",
     "--name", "ai-emp-deployer",
@@ -231,11 +241,8 @@ function triggerDeploy(opts?: { branch?: string }) {
   ];
 
   try {
-    // Remove any leftover deployer container first
     try { execFileSync("docker", ["rm", "-f", "ai-emp-deployer"], { timeout: 5000, stdio: "ignore" }); } catch {}
-
     execFileSync("docker", dockerArgs, { timeout: 15000 });
-
     return {
       status: "started",
       message: "Rolling deployment started. Employee containers will NOT be affected. Check /deploy-status for progress.",
@@ -246,6 +253,66 @@ function triggerDeploy(opts?: { branch?: string }) {
     const message = err instanceof Error ? err.message : String(err);
     return { status: "error", message: `Failed to start deployer: ${message}`, branch };
   }
+}
+
+/**
+ * In-process deploy for systemd-based droplets.
+ * Runs git pull, pnpm build, and restarts services via systemctl.
+ * The API restarts itself last (systemd will bring it back up).
+ */
+function triggerSystemdDeploy(branch: string) {
+  const logFile = "/var/log/ai-employees-deploy.log";
+  const log = (msg: string) => {
+    const line = `[${new Date().toISOString()}] ${msg}\n`;
+    try { require("fs").appendFileSync(logFile, line); } catch {}
+    console.log(`[deploy] ${msg}`);
+  };
+
+  log(`========== SYSTEMD DEPLOY STARTED (branch: ${branch}) ==========`);
+
+  // Run the deploy in a detached child process so the API can respond immediately
+  const { spawn: spawnChild } = require("child_process");
+  const script = `
+    set -e
+    LOG="${logFile}"
+    log() { echo "[$(date -Iseconds)] $1" >> "$LOG"; }
+
+    cd ${HOST_APP_DIR}
+
+    log "Pulling code..."
+    git fetch origin ${branch} >> "$LOG" 2>&1
+    git reset --hard origin/${branch} >> "$LOG" 2>&1
+    COMMIT=$(git rev-parse --short HEAD)
+    log "Checked out ${branch} at $COMMIT"
+
+    log "Installing dependencies..."
+    pnpm install --frozen-lockfile >> "$LOG" 2>&1 || pnpm install >> "$LOG" 2>&1
+
+    log "Building..."
+    pnpm turbo build >> "$LOG" 2>&1
+
+    log "Restarting worker..."
+    systemctl restart ai-employees-worker >> "$LOG" 2>&1
+
+    sleep 2
+
+    log "Restarting API (service will come back up automatically)..."
+    log "========== DEPLOY COMPLETE ($COMMIT) =========="
+    systemctl restart ai-employees-api
+  `;
+
+  const child = spawnChild("bash", ["-c", script], {
+    detached: true,
+    stdio: "ignore",
+  });
+  child.unref();
+
+  return {
+    status: "started",
+    message: "Systemd deploy started. The API will restart after build completes. Check logs at /var/log/ai-employees-deploy.log.",
+    branch,
+    mode: "systemd",
+  };
 }
 
 /** Read deployment log and return progress */
