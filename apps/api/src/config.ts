@@ -9,6 +9,8 @@ const envSchema = z.object({
   INTERSERVICE_SECRET: z.string().min(32).describe("Shared secret for Vercel-to-DO API auth"),
   ANTHROPIC_API_KEY: z.string().optional().describe("Anthropic API key for direct LLM calls"),
   GEMINI_API_KEY: z.string().optional().describe("Google Gemini API key for Nano Banana image gen and Veo 3 video gen"),
+  TWILIO_ACCOUNT_SID: z.string().optional().describe("Twilio Account SID for provisioning phone numbers"),
+  TWILIO_AUTH_TOKEN: z.string().optional().describe("Twilio Auth Token for provisioning phone numbers"),
   SLACK_APP_TOKEN: z.string().optional().describe("Slack app-level token for Socket Mode"),
   SLACK_SIGNING_SECRET: z.string().optional().describe("Slack signing secret for request verification"),
   OPENCLAW_IMAGE: z.string().default("ghcr.io/carmichgo/openclaw:latest"),

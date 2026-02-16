@@ -56,6 +56,8 @@ function generateCloudInit(params: {
   anthropicApiKey: string;
   geminiApiKey: string;
   braveApiKey: string;
+  twilioAccountSid: string;
+  twilioAuthToken: string;
   slackAppToken: string;
   slackSigningSecret: string;
 }): string {
@@ -231,6 +233,8 @@ PLATFORM_URL=${params.platformUrl}
 ANTHROPIC_API_KEY=${params.anthropicApiKey}
 GEMINI_API_KEY=${params.geminiApiKey}
 BRAVE_API_KEY=${params.braveApiKey}
+TWILIO_ACCOUNT_SID=${params.twilioAccountSid}
+TWILIO_AUTH_TOKEN=${params.twilioAuthToken}
 SLACK_APP_TOKEN=${params.slackAppToken}
 SLACK_SIGNING_SECRET=${params.slackSigningSecret}
 ENVEOF
@@ -351,7 +355,7 @@ sleep 2
 echo "Testing API startup..."
 cd /opt/ai-employees/app
 source /opt/ai-employees/.env
-export DATABASE_URL REDIS_URL JWT_SECRET JWT_EXPIRES_IN ENCRYPTION_KEY INTERSERVICE_SECRET OPENCLAW_IMAGE OPENCLAW_NETWORK API_PORT PLATFORM_URL ANTHROPIC_API_KEY GEMINI_API_KEY BRAVE_API_KEY NODE_ENV=production
+export DATABASE_URL REDIS_URL JWT_SECRET JWT_EXPIRES_IN ENCRYPTION_KEY INTERSERVICE_SECRET OPENCLAW_IMAGE OPENCLAW_NETWORK API_PORT PLATFORM_URL ANTHROPIC_API_KEY GEMINI_API_KEY BRAVE_API_KEY TWILIO_ACCOUNT_SID TWILIO_AUTH_TOKEN NODE_ENV=production
 timeout 10 /usr/bin/node apps/api/dist/index.js > /tmp/api-test.log 2>&1 &
 TEST_PID=\$!
 sleep 5
@@ -448,6 +452,8 @@ export async function createCompanyDroplet(companyId: string): Promise<{
   const anthropicApiKey = process.env.ANTHROPIC_API_KEY || "";
   const geminiApiKey = process.env.GEMINI_API_KEY || "";
   const braveApiKey = process.env.BRAVE_API_KEY || "";
+  const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID || "";
+  const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN || "";
   const slackAppToken = (process.env.SLACK_APP_TOKEN || "").trim();
   const slackSigningSecret = (process.env.SLACK_SIGNING_SECRET || "").trim();
 
@@ -461,6 +467,8 @@ export async function createCompanyDroplet(companyId: string): Promise<{
     anthropicApiKey,
     geminiApiKey,
     braveApiKey,
+    twilioAccountSid,
+    twilioAuthToken,
     slackAppToken,
     slackSigningSecret,
   });

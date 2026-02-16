@@ -25,6 +25,8 @@ const OPENCLAW_NETWORK = process.env.OPENCLAW_NETWORK || "ai-employees-internal"
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
 const BRAVE_API_KEY = process.env.BRAVE_API_KEY || "";
+const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID || "";
+const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || "";
 
 /** Derive a per-employee encryption key from the system key + employee ID */
@@ -156,6 +158,8 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
         `ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}`,
         ...(GEMINI_API_KEY ? [`GEMINI_API_KEY=${GEMINI_API_KEY}`] : []),
         ...(BRAVE_API_KEY ? [`BRAVE_API_KEY=${BRAVE_API_KEY}`] : []),
+        ...(TWILIO_ACCOUNT_SID ? [`TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}`] : []),
+        ...(TWILIO_AUTH_TOKEN ? [`TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}`] : []),
         `ENCRYPTION_KEY=${deriveEmployeeEncryptionKey(employeeId)}`,
         `EMPLOYEE_ID=${employeeId}`,
         `EMPLOYEE_EMAIL=${emailAddress}`,
