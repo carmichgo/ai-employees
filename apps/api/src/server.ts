@@ -95,6 +95,36 @@ export async function buildServer(config: Env) {
   fastify.get("/update-status", async () => getDeployStatus());
   fastify.get("/deploy-status", async () => getDeployStatus());
 
+  // Re-provision all employees — regenerate configs and restart containers.
+  // Useful after a deploy that changes the config generator.
+  fastify.get("/reprovision", async () => {
+    const { getProvisionQueue } = await import("./queues.js");
+    const { db, employees } = await import("@ai-employees/db");
+    const { ne, eq: eqOp } = await import("drizzle-orm");
+    const allEmployees = await db.query.employees.findMany({
+      where: ne(employees.status, "terminated"),
+    });
+    const queue = getProvisionQueue();
+    const results: Array<{ id: string; name: string; status: string }> = [];
+    for (const emp of allEmployees) {
+      await db.update(employees).set({
+        status: "provisioning",
+        containerId: null,
+        containerHost: null,
+        containerPort: null,
+        errorMessage: null,
+        updatedAt: new Date(),
+      }).where(eqOp(employees.id, emp.id));
+      await queue.add("provision-employee", {
+        employeeId: emp.id,
+        companyId: emp.companyId,
+        channels: [],
+      }, { jobId: `reprovision-${emp.id}-${Date.now()}` });
+      results.push({ id: emp.id, name: emp.name, status: "queued" });
+    }
+    return { reprovisioned: results.length, employees: results };
+  });
+
   // Slack proxy status endpoint
   fastify.get("/slack-proxy/status", async () => {
     const proxy = getSlackProxy();
