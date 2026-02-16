@@ -466,14 +466,36 @@ async function startConnection(authDir, browser, isRetry) {
                 return reply.status(500).send({ error: `WhatsApp QR failed: ${result.error}` });
             }
             if (result.status === "linked") {
+                // Ensure WhatsApp is in openclaw.json BEFORE restarting.
+                // The web frontend's connectChannel call may have failed to add it
+                // (empty credentials filter bug), so we patch the config directly.
+                try {
+                    const configPath = `${configDir}/openclaw.json`;
+                    if (existsSync(configPath)) {
+                        const config = JSON.parse(readFileSync(configPath, "utf-8"));
+                        const agentId = employee.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+                        if (!config.channels || !config.channels.whatsapp) {
+                            config.channels = config.channels || {};
+                            config.channels.whatsapp = {};
+                            config.bindings = config.bindings || [];
+                            const hasWaBinding = config.bindings.some((b) => b.match?.channel === "whatsapp");
+                            if (!hasWaBinding) {
+                                config.bindings.push({ agentId, match: { channel: "whatsapp" } });
+                            }
+                            writeFileSync(configPath, JSON.stringify(config, null, 2));
+                            fastify.log.info(`Added WhatsApp channel to openclaw.json for ${id}`);
+                        }
+                    }
+                }
+                catch (configErr) {
+                    fastify.log.error(`Failed to patch openclaw.json with WhatsApp: ${configErr}`);
+                }
                 // Restart the container so the gateway picks up the saved WhatsApp credentials.
                 // The Baileys helper saved session files to /home/node/.openclaw/credentials/whatsapp/
                 // but the gateway needs a restart to initialize its WhatsApp adapter with them.
                 try {
                     execSync(`docker restart ${containerTarget}`, { timeout: 30000 });
-                    // Wait for container to come back up
                     await new Promise((r) => setTimeout(r, 4000));
-                    // Update container IP in case it changed
                     try {
                         const newIp = execSync(`docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ${containerTarget}`, { timeout: 5000 }).toString().trim();
                         if (newIp) {
