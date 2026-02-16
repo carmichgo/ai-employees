@@ -13,6 +13,7 @@ import {
   generateAccountCreationSkill,
   generateMediaGenerationSkill,
   generateRestartGatewaySkill,
+  generateTeamCommunicationSkill,
   generateImageScript,
   generateVideoScript,
   type EmployeeInput,
@@ -121,6 +122,7 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     mkdirSync(`${configDir}/skills/account-creation`, { recursive: true });
     mkdirSync(`${configDir}/skills/media-generation`, { recursive: true });
     mkdirSync(`${configDir}/skills/restart-gateway`, { recursive: true });
+    mkdirSync(`${configDir}/skills/team-communication`, { recursive: true });
     writeFileSync(`${configDir}/openclaw.json`, JSON.stringify(config, null, 2));
     writeFileSync(`${configDir}/SOUL.md`, soulMd);
     writeFileSync(`${configDir}/workspace/SOUL.md`, soulMd);
@@ -133,6 +135,7 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     writeFileSync(`${configDir}/skills/account-creation/SKILL.md`, generateAccountCreationSkill());
     writeFileSync(`${configDir}/skills/media-generation/SKILL.md`, generateMediaGenerationSkill());
     writeFileSync(`${configDir}/skills/restart-gateway/SKILL.md`, generateRestartGatewaySkill());
+    writeFileSync(`${configDir}/skills/team-communication/SKILL.md`, generateTeamCommunicationSkill());
 
     // Write CLI wrapper scripts for image/video generation (installed into container below)
     writeFileSync(`${configDir}/generate-image.sh`, generateImageScript(), { mode: 0o755 });

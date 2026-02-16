@@ -4,3 +4,4 @@ export { generateCredentialManagerScript, generateCredentialManagerInstallScript
 export { generateCaptchaSolvingSkill, generateCaptchaInstallScript } from "./skills/captcha-solving.js";
 export { generateAccountCreationSkill } from "./skills/account-creation.js";
 export { generateRestartGatewaySkill } from "./skills/restart-gateway.js";
+export { generateTeamCommunicationSkill } from "./skills/team-communication.js";
