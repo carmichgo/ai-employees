@@ -41,6 +41,16 @@ export const employees = pgTable("employees", {
   toolsConfig: jsonb("tools_config").notNull().default({}),
   sandboxConfig: jsonb("sandbox_config").notNull().default({}),
 
+  // Authority — who can assign tasks vs. who can only ask questions
+  authorityConfig: jsonb("authority_config").notNull().default({
+    defaultRole: "manager",
+    members: [],
+  }),
+  // {
+  //   defaultRole: "manager" | "colleague" — what role do unrecognized Slack users get
+  //   members: [{ slackUserId: "U...", name: "Alice", role: "manager" | "colleague" }]
+  // }
+
   // Provisioned accounts
   emailAddress: varchar("email_address", { length: 255 }),
   provisionedAccounts: jsonb("provisioned_accounts").notNull().default({}),

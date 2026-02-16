@@ -103,6 +103,10 @@ class ApiClient {
       proactivity?: string;
       communication?: string;
     };
+    authorityConfig?: {
+      defaultRole: string;
+      members: Array<{ slackUserId: string; name: string; role: string }>;
+    };
   }) {
     return this.request<{ employee: any; message: string }>("/api/employees", {
       method: "POST",

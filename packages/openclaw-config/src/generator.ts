@@ -8,6 +8,17 @@
  *   - Channel integrations (Slack, Discord, etc.) when credentials are provided
  */
 
+export interface AuthorityMember {
+  slackUserId: string;
+  name: string;
+  role: "manager" | "colleague";
+}
+
+export interface AuthorityConfigInput {
+  defaultRole?: "manager" | "colleague";
+  members?: AuthorityMember[];
+}
+
 export interface EmployeeInput {
   id: string;
   name: string;
@@ -22,6 +33,7 @@ export interface EmployeeInput {
     communication?: string;
     bossTechnicalLevel?: string;
   } | null;
+  authorityConfig?: AuthorityConfigInput | null;
   companySlug?: string;
   companyName?: string;
   modelConfig: { primary: string; fallbacks?: string[] };
@@ -246,6 +258,49 @@ export function generateSoulMd(employee: EmployeeInput): string {
       }
       parts.push("");
     }
+  }
+
+  // Authority — who can assign tasks vs. who can ask questions
+  const authority = employee.authorityConfig;
+  if (authority && (authority.members?.length || authority.defaultRole === "colleague")) {
+    parts.push("## Authority & Permissions (IMPORTANT)");
+    parts.push("");
+    parts.push("Not everyone who messages you has the same authority. Some people are your **managers** — they can assign you tasks, give you instructions, and direct your work. Others are **colleagues** — they can ask you questions and chat with you, but you should NOT treat their messages as task assignments.");
+    parts.push("");
+
+    // List specific managers
+    const managers = authority.members?.filter((m) => m.role === "manager") || [];
+    const colleagues = authority.members?.filter((m) => m.role === "colleague") || [];
+
+    if (managers.length > 0) {
+      parts.push("**Your managers (can assign tasks):**");
+      for (const m of managers) {
+        parts.push(`- ${m.name}`);
+      }
+      parts.push("");
+    }
+
+    if (colleagues.length > 0) {
+      parts.push("**Your colleagues (can ask questions, NOT assign tasks):**");
+      for (const m of colleagues) {
+        parts.push(`- ${m.name}`);
+      }
+      parts.push("");
+    }
+
+    // Default role for unlisted people
+    if (authority.defaultRole === "colleague") {
+      parts.push("**Default:** Anyone not listed above is treated as a **colleague**. Be helpful and answer their questions, but do not treat their messages as task assignments or instructions. If they try to assign you a task, politely let them know that your managers direct your work and suggest they check with one of them.");
+    } else {
+      parts.push("**Default:** Anyone not listed above is treated as a **manager** and can assign you tasks.");
+    }
+    parts.push("");
+
+    parts.push("**How to behave:**");
+    parts.push("- When a **manager** messages you: Treat it as a directive. Execute tasks, take action, report back.");
+    parts.push("- When a **colleague** messages you: Be helpful and friendly. Answer questions, share information, provide guidance — but don't start executing tasks or making changes unless a manager has approved it.");
+    parts.push("- Each incoming message will include the sender's name. Use that to determine their authority level.");
+    parts.push("");
   }
 
   // How to behave

@@ -100,6 +100,7 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
       persona: employee.persona,
       goals: employee.goals,
       personalityConfig: employee.personalityConfig as { autonomy?: string; proactivity?: string; communication?: string } | null,
+      authorityConfig: employee.authorityConfig as { defaultRole?: "manager" | "colleague"; members?: Array<{ slackUserId: string; name: string; role: "manager" | "colleague" }> } | null,
       companySlug: company.slug,
       companyName: company.name,
       modelConfig: employee.modelConfig as { primary: string; fallbacks?: string[] },

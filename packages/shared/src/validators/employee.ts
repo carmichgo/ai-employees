@@ -7,6 +7,17 @@ export const personalityConfigSchema = z.object({
   bossTechnicalLevel: z.enum(["very-technical", "technical", "somewhat-technical", "non-technical"]).optional(),
 });
 
+export const authorityMemberSchema = z.object({
+  slackUserId: z.string().min(1),
+  name: z.string().min(1).max(100),
+  role: z.enum(["manager", "colleague"]),
+});
+
+export const authorityConfigSchema = z.object({
+  defaultRole: z.enum(["manager", "colleague"]).default("manager"),
+  members: z.array(authorityMemberSchema).default([]),
+});
+
 export const createEmployeeSchema = z.object({
   name: z.string().min(1).max(100),
   jobTitle: z.string().min(1).max(255),
@@ -30,6 +41,7 @@ export const createEmployeeSchema = z.object({
   skills: z
     .array(z.string().max(100))
     .optional(),
+  authorityConfig: authorityConfigSchema.optional(),
 });
 
 export const updateEmployeeSchema = createEmployeeSchema.partial();
@@ -37,3 +49,5 @@ export const updateEmployeeSchema = createEmployeeSchema.partial();
 export type CreateEmployeeInput = z.infer<typeof createEmployeeSchema>;
 export type UpdateEmployeeInput = z.infer<typeof updateEmployeeSchema>;
 export type PersonalityConfigInput = z.infer<typeof personalityConfigSchema>;
+export type AuthorityConfigInput = z.infer<typeof authorityConfigSchema>;
+export type AuthorityMemberInput = z.infer<typeof authorityMemberSchema>;

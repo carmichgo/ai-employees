@@ -44,6 +44,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       persona?: string;
       goals?: string;
       personalityConfig?: { autonomy?: string; proactivity?: string; communication?: string };
+      authorityConfig?: { defaultRole?: string; members?: Array<{ slackUserId: string; name: string; role: string }> };
       channels?: string[];
       channelCredentials?: Record<string, Record<string, unknown>>;
       modelConfig?: { primary: string };
@@ -98,6 +99,11 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     const tier = (body.tier || "junior") as EmployeeTier;
     const tierModel = getModelForTier(tier);
 
+    const authorityConfig = body.authorityConfig || {
+      defaultRole: "manager",
+      members: [],
+    };
+
     // Create employee record with status=provisioning
     const [employee] = await db
       .insert(employees)
@@ -111,6 +117,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
         persona,
         goals,
         personalityConfig,
+        authorityConfig,
         modelConfig: body.modelConfig || { primary: tierModel },
         toolsConfig: body.toolsAllow ? { allow: body.toolsAllow } : {},
         gatewayToken,

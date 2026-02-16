@@ -83,6 +83,7 @@ export function createBackendClient(config: CompanyBackendConfig) {
       persona?: string;
       goals?: string;
       personalityConfig?: { autonomy?: string; proactivity?: string; communication?: string };
+      authorityConfig?: { defaultRole?: string; members?: Array<{ slackUserId: string; name: string; role: string }> };
       channels?: string[];
       channelCredentials?: Record<string, Record<string, unknown>>;
       modelConfig?: { primary: string };

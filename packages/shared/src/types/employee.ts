@@ -39,6 +39,19 @@ export interface ProvisionedAccounts {
   browser?: { enabled: boolean };
 }
 
+export type AuthorityRole = "manager" | "colleague";
+
+export interface AuthorityMember {
+  slackUserId: string;
+  name: string;
+  role: AuthorityRole;
+}
+
+export interface AuthorityConfig {
+  defaultRole: AuthorityRole;
+  members: AuthorityMember[];
+}
+
 export interface EmployeeCreateInput {
   name: string;
   jobTitle: string;
@@ -47,4 +60,5 @@ export interface EmployeeCreateInput {
   goals?: string;
   modelConfig?: ModelConfig;
   channels?: ChannelType[];
+  authorityConfig?: AuthorityConfig;
 }

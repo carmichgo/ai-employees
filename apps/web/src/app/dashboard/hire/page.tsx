@@ -11,6 +11,7 @@ import {
   PROACTIVITY_OPTIONS,
   COMMUNICATION_OPTIONS,
   BOSS_TECHNICAL_LEVEL_OPTIONS,
+  DEFAULT_AUTHORITY_ROLE_OPTIONS,
   DEFAULT_PERSONALITY,
   CAPABILITY_OPTIONS,
   EXPERTISE_OPTIONS,
@@ -51,13 +52,16 @@ import {
   Crown,
   Rocket,
   Video,
+  Users,
+  Plus,
+  Trash2,
 } from "lucide-react";
 
 // ── Steps ──────────────────────────────────────
 
-type Step = "role" | "identity" | "tier" | "personality" | "boss-tech" | "channels" | "tools" | "skills" | "review";
-const STEPS: Step[] = ["role", "identity", "tier", "personality", "boss-tech", "channels", "tools", "skills", "review"];
-const SKIPPABLE_STEPS: Step[] = ["channels", "tools", "skills"];
+type Step = "role" | "identity" | "tier" | "personality" | "boss-tech" | "authority" | "channels" | "tools" | "skills" | "review";
+const STEPS: Step[] = ["role", "identity", "tier", "personality", "boss-tech", "authority", "channels", "tools", "skills", "review"];
+const SKIPPABLE_STEPS: Step[] = ["authority", "channels", "tools", "skills"];
 
 // ── Channel Options ────────────────────────────
 
@@ -216,6 +220,10 @@ export default function HireEmployeePage() {
     capabilities: [...ALL_CAPABILITY_IDS] as string[],
     skills: [] as string[],
     personality: { ...DEFAULT_PERSONALITY } as PersonalityConfig,
+    authority: {
+      defaultRole: "manager" as "manager" | "colleague",
+      members: [] as Array<{ slackUserId: string; name: string; role: "manager" | "colleague" }>,
+    },
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -258,6 +266,7 @@ export default function HireEmployeePage() {
       capabilities: TEMPLATE_CAPABILITIES[id] || [...ALL_CAPABILITY_IDS],
       skills: TEMPLATE_EXPERTISE[id] || [],
       personality: { ...t.defaultPersonality },
+      authority: { defaultRole: "manager", members: [] },
     });
     goTo(1);
   };
@@ -274,6 +283,7 @@ export default function HireEmployeePage() {
       capabilities: [...ALL_CAPABILITY_IDS],
       skills: [],
       personality: { ...DEFAULT_PERSONALITY },
+      authority: { defaultRole: "manager", members: [] },
     });
     goTo(1);
   };
@@ -334,6 +344,9 @@ export default function HireEmployeePage() {
         toolsAllow,
         skills: skillSlugs,
         personalityConfig: form.personality,
+        authorityConfig: form.authority.members.length > 0 || form.authority.defaultRole !== "manager"
+          ? form.authority
+          : undefined,
       });
       router.push(`/dashboard/employees/${result.employee.id}`);
     } catch (err: any) {
@@ -1109,6 +1122,229 @@ export default function HireEmployeePage() {
         </div>
       )}
 
+      {/* ═══ Step: Authority ═══ */}
+      {step === "authority" && (
+        <div key={animKey} className={animClass}>
+          <h1 style={styles.heading}>Who&apos;s in charge?</h1>
+          <p style={styles.subtitle}>
+            Control who can assign tasks to {form.name || "your employee"} and who can only ask questions
+          </p>
+
+          <div style={{ marginTop: 40 }}>
+            {/* Default role for unlisted users */}
+            <div style={styles.sectionLabel}>Default permission for Slack users</div>
+            <p style={styles.sectionHint}>
+              When someone messages {form.name || "your employee"} in Slack and isn&apos;t in the list below, what role do they get?
+            </p>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 32 }}>
+              {DEFAULT_AUTHORITY_ROLE_OPTIONS.map((opt) => {
+                const selected = form.authority.defaultRole === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    onClick={() =>
+                      setForm({
+                        ...form,
+                        authority: { ...form.authority, defaultRole: opt.value as "manager" | "colleague" },
+                      })
+                    }
+                    style={{
+                      padding: "16px 18px",
+                      background: selected ? "#ffffff" : "var(--bg-secondary)",
+                      border: selected ? "1.5px solid var(--text)" : "1px solid var(--border)",
+                      borderRadius: "var(--radius-xl)",
+                      cursor: "pointer",
+                      textAlign: "left",
+                      transition: "all 0.15s ease",
+                      position: "relative",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!selected) {
+                        (e.currentTarget as HTMLElement).style.borderColor = "var(--border-hover)";
+                        (e.currentTarget as HTMLElement).style.boxShadow = "var(--shadow-sm)";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!selected) {
+                        (e.currentTarget as HTMLElement).style.borderColor = "var(--border)";
+                        (e.currentTarget as HTMLElement).style.boxShadow = "none";
+                      }
+                    }}
+                  >
+                    <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)", marginBottom: 4 }}>
+                      {opt.label}
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.4 }}>
+                      {opt.desc}
+                    </div>
+                    {selected && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: 10,
+                          right: 10,
+                          width: 18,
+                          height: 18,
+                          borderRadius: "50%",
+                          background: "var(--text)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <Check size={11} style={{ color: "#ffffff" }} />
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Specific team members */}
+            <div style={styles.sectionLabel}>Team members (optional)</div>
+            <p style={styles.sectionHint}>
+              Override the default for specific people. Add Slack users and set whether they&apos;re a manager or colleague.
+            </p>
+
+            {/* Members list */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+              {form.authority.members.map((member, i) => (
+                <div
+                  key={i}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    background: "var(--bg-secondary)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "var(--radius-lg)",
+                    padding: "8px 12px",
+                  }}
+                >
+                  <Users size={14} style={{ color: "var(--text-tertiary)", flexShrink: 0 }} />
+                  <input
+                    className="input"
+                    placeholder="Name"
+                    value={member.name}
+                    onChange={(e) => {
+                      const updated = [...form.authority.members];
+                      updated[i] = { ...updated[i], name: e.target.value };
+                      setForm({ ...form, authority: { ...form.authority, members: updated } });
+                    }}
+                    style={{
+                      flex: 1,
+                      height: 32,
+                      fontSize: 13,
+                      borderRadius: "var(--radius-md)",
+                      padding: "0 10px",
+                      minWidth: 0,
+                    }}
+                  />
+                  <input
+                    className="input"
+                    placeholder="Slack User ID (U...)"
+                    value={member.slackUserId}
+                    onChange={(e) => {
+                      const updated = [...form.authority.members];
+                      updated[i] = { ...updated[i], slackUserId: e.target.value };
+                      setForm({ ...form, authority: { ...form.authority, members: updated } });
+                    }}
+                    style={{
+                      width: 160,
+                      height: 32,
+                      fontSize: 13,
+                      borderRadius: "var(--radius-md)",
+                      padding: "0 10px",
+                    }}
+                  />
+                  <select
+                    value={member.role}
+                    onChange={(e) => {
+                      const updated = [...form.authority.members];
+                      updated[i] = { ...updated[i], role: e.target.value as "manager" | "colleague" };
+                      setForm({ ...form, authority: { ...form.authority, members: updated } });
+                    }}
+                    style={{
+                      height: 32,
+                      fontSize: 13,
+                      borderRadius: "var(--radius-md)",
+                      padding: "0 8px",
+                      border: "1px solid var(--border)",
+                      background: "#ffffff",
+                      color: "var(--text)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <option value="manager">Manager</option>
+                    <option value="colleague">Colleague</option>
+                  </select>
+                  <button
+                    onClick={() => {
+                      const updated = form.authority.members.filter((_, idx) => idx !== i);
+                      setForm({ ...form, authority: { ...form.authority, members: updated } });
+                    }}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      padding: 4,
+                      color: "var(--text-tertiary)",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <button
+              onClick={() => {
+                setForm({
+                  ...form,
+                  authority: {
+                    ...form.authority,
+                    members: [...form.authority.members, { slackUserId: "", name: "", role: "manager" }],
+                  },
+                });
+              }}
+              style={{
+                background: "none",
+                border: "1px dashed var(--border)",
+                borderRadius: "var(--radius-lg)",
+                padding: "10px 16px",
+                cursor: "pointer",
+                color: "var(--text-secondary)",
+                fontSize: 13,
+                fontWeight: 500,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                width: "100%",
+                justifyContent: "center",
+              }}
+            >
+              <Plus size={14} />
+              Add team member
+            </button>
+
+            <p
+              style={{
+                fontSize: 12,
+                color: "var(--text-tertiary)",
+                marginTop: 16,
+                lineHeight: 1.5,
+              }}
+            >
+              You can find a user&apos;s Slack ID by clicking their profile in Slack, then clicking the &quot;...&quot; menu and selecting &quot;Copy member ID&quot;.
+              You can also configure this later from the employee settings page.
+            </p>
+          </div>
+
+          {renderBottomNav({ showSkip: true })}
+        </div>
+      )}
+
       {/* ═══ Step 5: Channels ═══ */}
       {step === "channels" && (
         <div key={animKey} className={animClass}>
@@ -1392,6 +1628,26 @@ export default function HireEmployeePage() {
                 ))}
               </div>
             </div>
+
+            {/* Authority */}
+            {(form.authority.members.length > 0 || form.authority.defaultRole !== "manager") && (
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>
+                  Authority
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  <span style={pillStyle}>
+                    Default: {form.authority.defaultRole === "manager" ? "Everyone is a manager" : "Everyone is a colleague"}
+                  </span>
+                  {form.authority.members.map((m, i) => (
+                    <span key={i} style={pillStyle}>
+                      <Users size={12} />
+                      {m.name || m.slackUserId}: {m.role}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Channels */}
             <div style={{ marginBottom: 20 }}>
