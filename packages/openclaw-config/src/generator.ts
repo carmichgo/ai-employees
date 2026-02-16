@@ -57,19 +57,19 @@ export function generateOpenClawConfig(
   const bindings = buildBindings(agentId, validChannels);
 
   // Build agent list — Expert tier gets a dual-agent setup for cost optimization:
-  //   Main agent (Sonnet): Handles 80%+ of tasks — fast, efficient, cost-effective
-  //   Deep agent (Opus):   Complex reasoning, strategy, analysis — invoked on demand
+  //   Main agent (Opus):   Orchestrator — chats with user, evaluates tasks, handles complex work
+  //   Fast agent (Sonnet): Worker — delegated simple/routine tasks for speed & cost savings
   // Junior/Senior tiers use a single agent with their designated model.
   const toolsAllow = buildToolAllow(employee.toolsConfig);
   const agentsList: Record<string, unknown>[] = [];
 
   if (isExpertTier) {
-    // Main agent — runs on Sonnet for speed and cost efficiency
+    // Main orchestrator — runs on Opus, chats with user, decides task routing
     agentsList.push({
       id: agentId,
       default: true,
       workspace: "/home/node/.openclaw/workspace",
-      model: { primary: SONNET_MODEL },
+      model: { primary: OPUS_MODEL },
       identity: {
         name: employee.name,
         emoji: employee.emoji || "🤖",
@@ -77,14 +77,14 @@ export function generateOpenClawConfig(
       tools: { allow: toolsAllow },
     });
 
-    // Deep-thinking agent — runs on Opus for complex reasoning
+    // Fast worker agent — runs on Sonnet for routine/simple tasks
     agentsList.push({
-      id: `${agentId}-deep`,
+      id: `${agentId}-fast`,
       workspace: "/home/node/.openclaw/workspace",
-      model: { primary: OPUS_MODEL },
+      model: { primary: SONNET_MODEL },
       identity: {
-        name: `${employee.name} (Deep Thinking)`,
-        emoji: "🧠",
+        name: `${employee.name} (Fast)`,
+        emoji: "⚡",
       },
       tools: { allow: toolsAllow },
     });
@@ -132,7 +132,7 @@ export function generateOpenClawConfig(
 
     agents: {
       defaults: {
-        model: { primary: isExpertTier ? SONNET_MODEL : employee.modelConfig.primary },
+        model: { primary: employee.modelConfig.primary },
         // Sandbox OFF — the Docker container itself IS the sandbox
         sandbox: { mode: "off" },
       },
@@ -263,38 +263,39 @@ export function generateSoulMd(employee: EmployeeInput): string {
   // Smart model routing — Expert tier only
   const isExpertTier = employee.tier === "expert" || employee.modelConfig.primary === OPUS_MODEL;
   if (isExpertTier) {
-    const deepAgentId = slugify(employee.name) + "-deep";
+    const fastAgentId = slugify(employee.name) + "-fast";
     parts.push("## Smart Task Routing (IMPORTANT — Cost Optimization)");
     parts.push("");
-    parts.push("You have access to two thinking modes to optimize speed and cost:");
+    parts.push("You are the main orchestrator (Opus). You chat with people, understand context, and decide how to handle every task. To save costs and improve speed, you have a fast worker agent you can delegate routine tasks to.");
     parts.push("");
-    parts.push("**You (Sonnet)** — your default mode. Fast, efficient, great for the vast majority of tasks. Use this for everything that doesn't require deep reasoning.");
+    parts.push("**You (Opus)** — the orchestrator. You receive all messages, understand what's needed, and decide how to handle it. You personally handle anything that needs deep reasoning, nuance, or complex judgment.");
     parts.push("");
-    parts.push("**Deep Thinking (Opus)** — your `" + deepAgentId + "` agent. Slower but far more capable for complex problems. Delegate to this when a task genuinely requires it.");
+    parts.push("**Fast Worker (Sonnet)** — your `" + fastAgentId + "` agent. Fast and cost-efficient. Delegate straightforward execution tasks to this agent whenever the task doesn't require your full reasoning power.");
     parts.push("");
-    parts.push("### When to delegate to Deep Thinking (Opus):");
+    parts.push("### Handle yourself (Opus) when the task involves:");
     parts.push("- Complex strategic analysis with multiple tradeoffs and no clear answer");
     parts.push("- Business strategy, competitive analysis, or nuanced decision-making");
-    parts.push("- Debugging a hard problem after your initial attempt failed");
+    parts.push("- Debugging hard problems that require deep understanding");
     parts.push("- Writing that requires exceptional nuance (investor memos, legal-adjacent copy, high-stakes communications)");
     parts.push("- Multi-step reasoning chains where getting the logic wrong has consequences");
     parts.push("- Understanding and synthesizing large amounts of conflicting information");
-    parts.push("- Novel problems you haven't seen before that feel genuinely hard");
+    parts.push("- Novel problems that feel genuinely hard");
+    parts.push("- Direct conversation with the user (always you)");
     parts.push("");
-    parts.push("### Handle yourself (Sonnet) — the default for everything else:");
-    parts.push("- Email, scheduling, routine messages, status updates");
-    parts.push("- Web research, browsing, data collection");
+    parts.push("### Delegate to Fast Worker (Sonnet) when the task is:");
+    parts.push("- Email drafts, scheduling, routine messages, status updates");
+    parts.push("- Web research, browsing, data collection, lookups");
     parts.push("- File creation, document writing, spreadsheets, reports");
-    parts.push("- Simple Q&A, lookups, summaries");
+    parts.push("- Simple Q&A, summaries, formatting");
     parts.push("- Code for straightforward tasks, scripts, automation");
     parts.push("- Image/video generation, media tasks");
-    parts.push("- Social media, CRM updates, project management");
-    parts.push("- Anything you can do well and quickly");
+    parts.push("- Social media posts, CRM updates, project management updates");
+    parts.push("- Any well-defined task where the instructions are clear and execution is routine");
     parts.push("");
     parts.push("### How to delegate:");
-    parts.push("When you determine a task needs deep reasoning, delegate it to the `" + deepAgentId + "` agent. Pass it a clear, specific description of what needs to be analyzed or decided. The deep-thinking agent has access to all the same tools and workspace as you.");
+    parts.push("When a task is routine, delegate it to the `" + fastAgentId + "` agent with clear instructions. The fast worker has access to all the same tools and workspace as you. You evaluate the result before passing it back to the user.");
     parts.push("");
-    parts.push("**The golden rule:** If you're confident you can handle it well, just do it. Only escalate when the problem genuinely benefits from deeper reasoning. Most tasks (80%+) should be handled by you directly — that's what makes you fast and cost-efficient.");
+    parts.push("**The golden rule:** You always talk to the user directly. When a task comes in, you assess complexity. If it's straightforward execution, hand it off to your fast worker. If it needs your judgment, handle it yourself. This keeps costs down while maintaining quality where it matters.");
     parts.push("");
   }
 
