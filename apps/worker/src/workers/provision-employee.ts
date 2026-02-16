@@ -15,7 +15,7 @@ import {
 } from "@ai-employees/openclaw-config";
 import { docker, ensureNetwork, ensureImage } from "../docker/client.js";
 
-const OPENCLAW_IMAGE = process.env.OPENCLAW_IMAGE || "ghcr.io/openclaw/openclaw:latest";
+const OPENCLAW_IMAGE = process.env.OPENCLAW_IMAGE || "ghcr.io/carmichgo/openclaw:latest";
 const OPENCLAW_NETWORK = process.env.OPENCLAW_NETWORK || "ai-employees-internal";
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
 const BRAVE_API_KEY = process.env.BRAVE_API_KEY || "";

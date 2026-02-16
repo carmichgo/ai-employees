@@ -201,7 +201,7 @@ systemctl start docker
 
 # Pull OpenClaw image
 echo "Pulling OpenClaw image..."
-docker pull ghcr.io/openclaw/openclaw:latest || {
+docker pull ghcr.io/carmichgo/openclaw:latest || {
   report "phase2-docker" "error" "openclaw image pull failed"
   echo "PHASE2_FAILED_DOCKER_PULL" > /opt/ai-employees/status
   exit 0
@@ -223,7 +223,7 @@ JWT_SECRET=${jwtSecret}
 JWT_EXPIRES_IN=7d
 ENCRYPTION_KEY=${encryptionKey}
 INTERSERVICE_SECRET=${params.interserviceSecret}
-OPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:latest
+OPENCLAW_IMAGE=ghcr.io/carmichgo/openclaw:latest
 OPENCLAW_NETWORK=ai-employees-internal
 API_PORT=3001
 PLATFORM_URL=${params.platformUrl}

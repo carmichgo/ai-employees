@@ -10,7 +10,7 @@ const envSchema = z.object({
   ANTHROPIC_API_KEY: z.string().optional().describe("Anthropic API key for direct LLM calls"),
   SLACK_APP_TOKEN: z.string().optional().describe("Slack app-level token for Socket Mode"),
   SLACK_SIGNING_SECRET: z.string().optional().describe("Slack signing secret for request verification"),
-  OPENCLAW_IMAGE: z.string().default("ghcr.io/openclaw/openclaw:latest"),
+  OPENCLAW_IMAGE: z.string().default("ghcr.io/carmichgo/openclaw:latest"),
   OPENCLAW_NETWORK: z.string().default("ai-employees-internal"),
   API_PORT: z.coerce.number().default(3001),
   PLATFORM_URL: z.string().default("http://localhost:3000"),

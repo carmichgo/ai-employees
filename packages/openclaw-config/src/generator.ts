@@ -698,7 +698,7 @@ function buildToolAllow(toolsConfig: Record<string, unknown>): string[] {
   return Array.from(expanded);
 }
 
-/** Bundled OpenClaw plugins verified to exist in ghcr.io/openclaw/openclaw:latest */
+/** Bundled OpenClaw plugins verified to exist in the openclaw image */
 const BUNDLED_PLUGINS = [
   "lobster",       // Media & content creation
   "voice-call",    // Voice calling
