@@ -49,6 +49,7 @@ export function generateOpenClawConfig(employee, gatewayToken) {
                     id: agentId,
                     default: true,
                     workspace: "/home/node/.openclaw/workspace",
+                    soul: "/home/node/.openclaw/SOUL.md",
                     model: employee.modelConfig,
                     identity: {
                         name: employee.name,

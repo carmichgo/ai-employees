@@ -88,6 +88,7 @@ export function generateOpenClawConfig(
           id: agentId,
           default: true,
           workspace: "/home/node/.openclaw/workspace",
+          soul: "/home/node/.openclaw/SOUL.md",
           model: employee.modelConfig,
           identity: {
             name: employee.name,
