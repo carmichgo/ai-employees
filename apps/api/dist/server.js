@@ -98,6 +98,13 @@ export async function buildServer(config) {
         catch (e) {
             checks.images = `error: ${e.message}`;
         }
+        // Check WhatsApp-related files inside employee container
+        try {
+            checks.waFiles = execSync("docker exec $(docker ps -q --latest) bash -c 'find /home/node/.openclaw -maxdepth 4 -name \"*.json\" 2>/dev/null | grep -i \"wa\\|whatsapp\\|cred\" | head -30; echo \"---\"; ls -la /home/node/.openclaw/credentials/ 2>/dev/null; echo \"---\"; cat /home/node/.openclaw/wa-qr-status.json 2>/dev/null; echo \"---\"; tail -30 /home/node/.openclaw/wa-qr.log 2>/dev/null'", { timeout: 10000 }).toString().trim();
+        }
+        catch (e) {
+            checks.waFiles = `error: ${e.message}`;
+        }
         return checks;
     });
     // Build logs — read from cloud-init log file
