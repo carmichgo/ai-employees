@@ -400,7 +400,10 @@ const { makeWASocket, useMultiFileAuthState, DisconnectReason } = baileys;
   const authDir = '/home/node/.openclaw/credentials/whatsapp';
   fs.mkdirSync(authDir, { recursive: true });
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
-  const sock = makeWASocket({ auth: state, printQRInTerminal: false, browser: ['OpenClaw', 'Chrome', '120.0'] });
+  // Browser fingerprint must match WhatsApp's whitelist of known clients.
+  // Use Baileys' built-in Browsers helper if available, otherwise use a standard string.
+  const browser = baileys.Browsers ? baileys.Browsers.ubuntu('Chrome') : ['Ubuntu', 'Chrome', '24.0'];
+  const sock = makeWASocket({ auth: state, printQRInTerminal: false, browser });
   sock.ev.on('creds.update', saveCreds);
   sock.ev.on('connection.update', (update) => {
     if (update.qr) {
