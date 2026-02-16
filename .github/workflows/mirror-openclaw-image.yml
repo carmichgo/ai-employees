@@ -1,0 +1,73 @@
+# Mirror the upstream OpenClaw Docker image to our own GHCR registry.
+#
+# This ensures we are NOT dependent on the upstream repo — if they
+# remove their image, our platform keeps working from our own copy.
+#
+# Runs daily + on demand. Pulls from upstream, re-tags, and pushes
+# to ghcr.io/carmichgo/openclaw:latest.
+#
+# Requires: GHCR access via the default GITHUB_TOKEN (already enabled
+# for Actions in GitHub repos). No additional secrets needed.
+
+name: Mirror OpenClaw Image
+
+on:
+  schedule:
+    # Run daily at 04:00 UTC to keep our mirror fresh
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+    # Allow manual trigger from GitHub Actions UI
+    inputs:
+      upstream_tag:
+        description: "Upstream tag to mirror (default: latest)"
+        required: false
+        default: "latest"
+
+env:
+  UPSTREAM_IMAGE: ghcr.io/openclaw/openclaw
+  OUR_IMAGE: ghcr.io/carmichgo/openclaw
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull upstream image
+        run: |
+          TAG="${{ github.event.inputs.upstream_tag || 'latest' }}"
+          echo "Pulling ${UPSTREAM_IMAGE}:${TAG}..."
+          docker pull "${UPSTREAM_IMAGE}:${TAG}"
+
+      - name: Re-tag and push to our registry
+        run: |
+          TAG="${{ github.event.inputs.upstream_tag || 'latest' }}"
+
+          # Tag as our image
+          docker tag "${UPSTREAM_IMAGE}:${TAG}" "${OUR_IMAGE}:${TAG}"
+
+          # Also tag with date for version pinning
+          DATE_TAG="$(date +%Y%m%d)"
+          docker tag "${UPSTREAM_IMAGE}:${TAG}" "${OUR_IMAGE}:${DATE_TAG}"
+
+          # Push both tags
+          echo "Pushing ${OUR_IMAGE}:${TAG}..."
+          docker push "${OUR_IMAGE}:${TAG}"
+          echo "Pushing ${OUR_IMAGE}:${DATE_TAG}..."
+          docker push "${OUR_IMAGE}:${DATE_TAG}"
+
+          echo "Mirror complete: ${OUR_IMAGE}:${TAG} and ${OUR_IMAGE}:${DATE_TAG}"
+
+      - name: Verify mirror
+        run: |
+          TAG="${{ github.event.inputs.upstream_tag || 'latest' }}"
+          docker pull "${OUR_IMAGE}:${TAG}"
+          echo "Verified: ${OUR_IMAGE}:${TAG} is available"

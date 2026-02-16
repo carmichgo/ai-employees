@@ -355,7 +355,7 @@ export default function EmployeeChatPage() {
                     color: "#b45309",
                   }}
                 >
-                  Demo mode — provision infrastructure in Settings for live responses
+                  Getting ready — this employee is still being set up
                 </div>
               )}
             </div>
@@ -546,8 +546,11 @@ export default function EmployeeChatPage() {
         .markdown-body ul, .markdown-body ol {
           margin: 0.4em 0;
           padding-left: 1.5em;
+          list-style-position: outside;
         }
-        .markdown-body li { margin: 0.15em 0; }
+        .markdown-body ul { list-style-type: disc; }
+        .markdown-body ol { list-style-type: decimal; }
+        .markdown-body li { margin: 0.15em 0; display: list-item; }
         .markdown-body li > p { margin: 0.2em 0; }
         .markdown-body blockquote {
           margin: 0.5em 0;

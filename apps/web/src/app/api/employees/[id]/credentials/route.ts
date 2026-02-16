@@ -9,6 +9,7 @@ import { db } from "@/lib/db";
 import { employees } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
 import { randomUUID } from "crypto";
+import { getCompanyBackend, createBackendClient } from "@/lib/backend";
 
 async function authenticate(request: NextRequest) {
   const token =
@@ -128,6 +129,27 @@ export async function PUT(
     .set({ credentials: creds, updatedAt: new Date() })
     .where(eq(employees.id, id));
 
+  // Sync all credentials to the employee's container so they can access them
+  const backendConfig = await getCompanyBackend(session.companyId);
+  if (backendConfig) {
+    try {
+      const backend = createBackendClient(backendConfig);
+      await backend.syncCredentials(
+        id,
+        creds.map((c) => ({
+          label: c.label,
+          username: c.username,
+          password: c.password,
+          url: c.url,
+          notes: c.notes,
+        })),
+      );
+    } catch (err: any) {
+      // Don't fail the whole operation — DB is saved, container sync can be retried
+      console.error(`Failed to sync credentials to container: ${err.message}`);
+    }
+  }
+
   const saved = creds[creds.length - 1];
   const target = body.id ? creds.find((c) => c.id === body.id)! : saved;
 
@@ -180,6 +202,26 @@ export async function DELETE(
     .update(employees)
     .set({ credentials: filtered, updatedAt: new Date() })
     .where(eq(employees.id, id));
+
+  // Re-sync remaining credentials to the container
+  const backendConfig = await getCompanyBackend(session.companyId);
+  if (backendConfig) {
+    try {
+      const backend = createBackendClient(backendConfig);
+      await backend.syncCredentials(
+        id,
+        filtered.map((c) => ({
+          label: c.label,
+          username: c.username,
+          password: c.password,
+          url: c.url,
+          notes: c.notes,
+        })),
+      );
+    } catch (err: any) {
+      console.error(`Failed to sync credentials to container: ${err.message}`);
+    }
+  }
 
   return NextResponse.json({ message: "Credential removed" });
 }
