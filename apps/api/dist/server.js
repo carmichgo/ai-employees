@@ -1,8 +1,8 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import jwt from "@fastify/jwt";
-import { execSync, execFileSync } from "node:child_process";
-import { readFileSync, existsSync, writeFileSync as writeSync } from "node:fs";
+import { execSync, execFileSync, spawn } from "node:child_process";
+import { readFileSync, existsSync, writeFileSync as writeSync, appendFileSync } from "node:fs";
 import { authPlugin } from "./plugins/auth.js";
 import { errorHandlerPlugin } from "./plugins/error-handler.js";
 import { authRoutes } from "./routes/auth.js";
@@ -285,14 +285,13 @@ function triggerSystemdDeploy(branch) {
     const log = (msg) => {
         const line = `[${new Date().toISOString()}] ${msg}\n`;
         try {
-            require("fs").appendFileSync(logFile, line);
+            appendFileSync(logFile, line);
         }
         catch { }
         console.log(`[deploy] ${msg}`);
     };
     log(`========== SYSTEMD DEPLOY STARTED (branch: ${branch}) ==========`);
     // Run the deploy in a detached child process so the API can respond immediately
-    const { spawn: spawnChild } = require("child_process");
     const script = `
     set -e
     LOG="${logFile}"
@@ -321,7 +320,7 @@ function triggerSystemdDeploy(branch) {
     log "========== DEPLOY COMPLETE ($COMMIT) =========="
     systemctl restart ai-employees-api
   `;
-    const child = spawnChild("bash", ["-c", script], {
+    const child = spawn("bash", ["-c", script], {
         detached: true,
         stdio: "ignore",
     });
