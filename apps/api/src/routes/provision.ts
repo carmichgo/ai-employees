@@ -300,30 +300,42 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       return reply.status(400).send({ error: "Employee config not found — container may not be provisioned yet" });
     }
 
+    // QR-paired channels (WhatsApp) don't need a container restart here —
+    // the QR endpoint patches the config and restarts after a successful scan.
+    // Restarting now would kill a QR helper that might already be running.
+    const QR_PAIRED = new Set(["whatsapp"]);
+    const hasCredentialChannels = body.allChannels.some(
+      (ch) => !QR_PAIRED.has(ch.type) && Object.keys(ch.credentials).length > 0,
+    );
+
     try {
       // Read existing config, merge in new channels
       const existing = JSON.parse(readFileSync(configPath, "utf-8"));
       const updated = regenerateChannelConfig(existing, body.agentId, body.allChannels);
       writeFileSync(configPath, JSON.stringify(updated, null, 2));
 
-      // Restart container to pick up new config
-      const target = resolveContainer(employee);
-      if (target) {
-        execSync(`docker restart ${target}`, { timeout: 30000 });
+      // Only restart when credential-based channels changed. QR-paired
+      // channels (WhatsApp) are handled by their dedicated QR endpoints
+      // which restart the container after successful pairing.
+      if (hasCredentialChannels) {
+        const target = resolveContainer(employee);
+        if (target) {
+          execSync(`docker restart ${target}`, { timeout: 30000 });
 
-        // Wait briefly for container to come up, then get new IP
-        await new Promise((r) => setTimeout(r, 3000));
-        try {
-          const newIp = execSync(
-            `docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ${target}`,
-            { timeout: 5000 },
-          ).toString().trim();
+          // Wait briefly for container to come up, then get new IP
+          await new Promise((r) => setTimeout(r, 3000));
+          try {
+            const newIp = execSync(
+              `docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ${target}`,
+              { timeout: 5000 },
+            ).toString().trim();
 
-          if (newIp) {
-            await db.update(employees).set({ containerHost: newIp, updatedAt: new Date() }).where(eq(employees.id, id));
+            if (newIp) {
+              await db.update(employees).set({ containerHost: newIp, updatedAt: new Date() }).where(eq(employees.id, id));
+            }
+          } catch {
+            // Non-fatal — IP lookup can fail briefly during restart
           }
-        } catch {
-          // Non-fatal — IP lookup can fail briefly during restart
         }
       }
 
@@ -557,17 +569,19 @@ async function startConnection(authDir, browser, isRetry) {
           if (existsSync(configPath)) {
             const config = JSON.parse(readFileSync(configPath, "utf-8"));
             const agentId = employee.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-            if (!config.channels || !config.channels.whatsapp) {
-              config.channels = config.channels || {};
-              config.channels.whatsapp = {};
-              config.bindings = config.bindings || [];
-              const hasWaBinding = config.bindings.some((b: { match?: { channel?: string } }) => b.match?.channel === "whatsapp");
-              if (!hasWaBinding) {
-                config.bindings.push({ agentId, match: { channel: "whatsapp" } });
-              }
-              writeFileSync(configPath, JSON.stringify(config, null, 2));
-              fastify.log.info(`Added WhatsApp channel to openclaw.json for ${id}`);
+            config.channels = config.channels || {};
+            // Always ensure WhatsApp has dmPolicy — without it the gateway
+            // silently drops inbound DMs and the session goes idle until
+            // WhatsApp unlinks the device.
+            const waDefaults = { dmPolicy: "open", sendReadReceipts: true };
+            config.channels.whatsapp = { ...waDefaults, ...(config.channels.whatsapp || {}) };
+            config.bindings = config.bindings || [];
+            const hasWaBinding = config.bindings.some((b: { match?: { channel?: string } }) => b.match?.channel === "whatsapp");
+            if (!hasWaBinding) {
+              config.bindings.push({ agentId, match: { channel: "whatsapp" } });
             }
+            writeFileSync(configPath, JSON.stringify(config, null, 2));
+            fastify.log.info(`Ensured WhatsApp channel config (dmPolicy=open) in openclaw.json for ${id}`);
           }
         } catch (configErr) {
           fastify.log.error(`Failed to patch openclaw.json with WhatsApp: ${configErr}`);

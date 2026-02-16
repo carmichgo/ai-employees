@@ -439,7 +439,9 @@ export default function EmployeeDetailPage() {
     setWaError(null);
     setWaQR(null);
     try {
-      // First, enable whatsapp channel in config (no credentials needed)
+      // Register WhatsApp channel in DB (no credentials needed).
+      // The backend skips the container restart for QR-paired channels
+      // since the QR endpoint handles config patching + restart after scan.
       await api.connectChannel(employeeId, "whatsapp", {});
       setChannelsList((prev) =>
         prev.map((c) => c.channelType === "whatsapp" ? { ...c, status: "connected", hasCredentials: true } : c),

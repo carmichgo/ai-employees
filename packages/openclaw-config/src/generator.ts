@@ -581,6 +581,13 @@ function buildChannels(channels: ChannelInput[]): Record<string, Record<string, 
       ...ch.credentials,
       ...ch.config,
     };
+    // WhatsApp needs explicit dmPolicy to accept incoming messages and
+    // sendReadReceipts so the phone owner sees delivery confirmation.
+    // Without dmPolicy the gateway silently drops inbound DMs.
+    if (ch.type === "whatsapp") {
+      if (!result[ch.type].dmPolicy) result[ch.type].dmPolicy = "open";
+      if (result[ch.type].sendReadReceipts === undefined) result[ch.type].sendReadReceipts = true;
+    }
   }
   return result;
 }
