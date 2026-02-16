@@ -336,8 +336,8 @@ export async function provisionRoutes(fastify: FastifyInstance) {
   });
 
   // GET /internal/employees/:id/channels/whatsapp/qr — get WhatsApp QR code for pairing
-  // Runs the WhatsApp login inside the container and captures the QR string,
-  // then generates a QR code PNG and returns it as base64.
+  // Uses a helper script written to the bind-mounted config dir, run from /app
+  // inside the container so Node.js can resolve OpenClaw's bundled Baileys dependency.
   fastify.get<{ Params: { id: string } }>("/internal/employees/:id/channels/whatsapp/qr", async (request, reply) => {
     const { id } = request.params;
 
@@ -357,52 +357,91 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     }
 
     try {
-      // Check if WhatsApp is already connected by looking at the session directory
+      // Check if WhatsApp is already connected by looking at known session paths
       const sessionCheck = execSync(
-        `docker exec ${containerTarget} bash -c 'test -f /home/node/.openclaw/credentials/whatsapp/creds.json && echo "linked" || echo "unlinked"'`,
+        `docker exec ${containerTarget} bash -c 'test -f /home/node/.openclaw/credentials/whatsapp/creds.json && echo "linked" || (ls /home/node/.openclaw/whatsapp-sessions/*/creds.json 2>/dev/null && echo "linked" || echo "unlinked")'`,
         { timeout: 5000 },
       ).toString().trim();
 
-      if (sessionCheck === "linked") {
+      if (sessionCheck.includes("linked")) {
         return { status: "linked", qr: null, message: "WhatsApp is already linked to a device." };
       }
 
-      // Run the login command with a short timeout to capture the QR code output.
-      // The command outputs QR data to stdout then waits for scan — we just need the QR string.
+      // Write helper script to the bind-mounted config dir so it's accessible
+      // inside the container at /home/node/.openclaw/wa-qr-helper.cjs
+      const configDir = `/opt/ai-employees/openclaw-configs/${id}`;
+      const helperScript = `
+const path = require('path');
+
+// Resolve Baileys from OpenClaw's node_modules — try common locations
+const searchDirs = ['/app/node_modules', '/usr/local/lib/node_modules/openclaw/node_modules'];
+let baileys, Boom;
+
+for (const dir of searchDirs) {
+  try {
+    baileys = require(path.join(dir, '@whiskeysockets/baileys'));
+    Boom = require(path.join(dir, '@hapi/boom')).Boom;
+    break;
+  } catch {}
+}
+
+// Fallback: try standard require (works if WORKDIR has node_modules)
+if (!baileys) {
+  try {
+    baileys = require('@whiskeysockets/baileys');
+    Boom = require('@hapi/boom').Boom;
+  } catch (e) {
+    console.log(JSON.stringify({ error: 'Cannot find @whiskeysockets/baileys: ' + e.message }));
+    process.exit(1);
+  }
+}
+
+const { makeWASocket, useMultiFileAuthState, DisconnectReason } = baileys;
+
+(async () => {
+  const authDir = '/home/node/.openclaw/credentials/whatsapp';
+  require('fs').mkdirSync(authDir, { recursive: true });
+  const { state, saveCreds } = await useMultiFileAuthState(authDir);
+  const sock = makeWASocket({ auth: state, printQRInTerminal: false, browser: ['OpenClaw', 'Chrome', '120.0'] });
+  sock.ev.on('creds.update', saveCreds);
+  sock.ev.on('connection.update', (update) => {
+    if (update.qr) {
+      console.log(JSON.stringify({ qr: update.qr }));
+      process.exit(0);
+    }
+    if (update.connection === 'open') {
+      console.log(JSON.stringify({ status: 'linked' }));
+      process.exit(0);
+    }
+    if (update.connection === 'close') {
+      const reason = new Boom(update.lastDisconnect?.error)?.output?.statusCode;
+      if (reason !== DisconnectReason.loggedOut) {
+        console.log(JSON.stringify({ error: 'Connection closed', code: reason }));
+      }
+      process.exit(1);
+    }
+  });
+  // Safety timeout
+  setTimeout(() => { console.log(JSON.stringify({ error: 'Timeout waiting for QR' })); process.exit(1); }, 14000);
+})();
+`;
+      writeFileSync(`${configDir}/wa-qr-helper.cjs`, helperScript);
+
+      // Run the helper script from /app (so standard require paths work as fallback)
       const output = execSync(
-        `docker exec ${containerTarget} timeout 15 node -e "
-          const { makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
-          const { Boom } = require('@hapi/boom');
-          (async () => {
-            const { state, saveCreds } = await useMultiFileAuthState('/home/node/.openclaw/credentials/whatsapp');
-            const sock = makeWASocket({ auth: state, printQRInTerminal: false });
-            sock.ev.on('creds.update', saveCreds);
-            sock.ev.on('connection.update', (update) => {
-              if (update.qr) {
-                console.log(JSON.stringify({ qr: update.qr }));
-                process.exit(0);
-              }
-              if (update.connection === 'open') {
-                console.log(JSON.stringify({ status: 'linked' }));
-                process.exit(0);
-              }
-              if (update.connection === 'close') {
-                const reason = new Boom(update.lastDisconnect?.error)?.output?.statusCode;
-                if (reason !== DisconnectReason.loggedOut) {
-                  console.log(JSON.stringify({ error: 'Connection closed', code: reason }));
-                }
-                process.exit(1);
-              }
-            });
-          })();
-        " 2>/dev/null`,
-        { timeout: 20000 },
+        `docker exec ${containerTarget} bash -c 'cd /app && timeout 18 node /home/node/.openclaw/wa-qr-helper.cjs' 2>/dev/null`,
+        { timeout: 25000 },
       ).toString().trim();
 
       // Parse the last JSON line from output
       const lines = output.split("\n").filter(Boolean);
       const lastLine = lines[lines.length - 1];
       const result = JSON.parse(lastLine);
+
+      if (result.error) {
+        fastify.log.error(`WhatsApp QR script error for ${id}: ${result.error}`);
+        return reply.status(500).send({ error: `WhatsApp QR failed: ${result.error}` });
+      }
 
       if (result.status === "linked") {
         return { status: "linked", qr: null, message: "WhatsApp linked successfully." };
