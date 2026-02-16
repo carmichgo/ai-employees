@@ -188,9 +188,9 @@ function generateDemoReply(employee: any, message: string): string {
   const title = employee.jobTitle;
 
   const greetings = [
-    `Hi there! I'm ${name}, your ${title}. I'm currently running in demo mode, so I can't process real tasks yet. Once the infrastructure is provisioned, I'll be fully operational!`,
-    `Hello! This is ${name}. I received your message: "${message.slice(0, 50)}${message.length > 50 ? "..." : ""}". In production mode, I'll be able to work on this for you. For now, I'm in demo mode.`,
-    `Hey! ${name} here. Thanks for reaching out. I'm excited to get started once my workstation is fully set up. Right now I'm running in demo mode — provision the infrastructure in Settings to activate me!`,
+    `Hi there! I'm ${name}, your ${title}. I'm currently getting set up and can't process real tasks just yet. I'll be fully up and running shortly!`,
+    `Hello! This is ${name}. I received your message: "${message.slice(0, 50)}${message.length > 50 ? "..." : ""}". I'm still getting started, so I can't work on this just yet. I'll be ready to go soon.`,
+    `Hey! ${name} here. Thanks for reaching out. I'm excited to get started — my workstation is still being set up. I'll be fully operational shortly!`,
   ];
 
   return greetings[Math.floor(Math.random() * greetings.length)];
