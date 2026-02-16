@@ -357,28 +357,19 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     }
 
     try {
-      // Check if WhatsApp is already linked by looking for the "me" field in creds.json.
-      // creds.json is created by Baileys on first run (stores keypair), but the "me"
-      // field only appears AFTER a successful QR scan + device link.
-      const sessionCheck = execSync(
-        `docker exec ${containerTarget} bash -c '
-          for f in /home/node/.openclaw/credentials/whatsapp/creds.json /home/node/.openclaw/whatsapp-sessions/*/creds.json; do
-            [ -f "$f" ] && grep -q "\"me\"" "$f" 2>/dev/null && echo "linked" && exit 0
-          done
-          echo "unlinked"
-        '`,
+      // Wipe any leftover credentials from previous attempts so Baileys starts fresh
+      // and generates a new QR code instead of trying to reconnect with stale keys.
+      const configDir = `/opt/ai-employees/openclaw-configs/${id}`;
+      execSync(
+        `docker exec ${containerTarget} rm -rf /home/node/.openclaw/credentials/whatsapp`,
         { timeout: 5000 },
-      ).toString().trim();
-
-      if (sessionCheck.includes("linked")) {
-        return { status: "linked", qr: null, message: "WhatsApp is already linked to a device." };
-      }
+      );
 
       // Write helper script to the bind-mounted config dir so it's accessible
       // inside the container at /home/node/.openclaw/wa-qr-helper.cjs
-      const configDir = `/opt/ai-employees/openclaw-configs/${id}`;
       const helperScript = `
 const path = require('path');
+const fs = require('fs');
 
 // Resolve Baileys from OpenClaw's node_modules — try common locations
 const searchDirs = ['/app/node_modules', '/usr/local/lib/node_modules/openclaw/node_modules'];
@@ -407,7 +398,7 @@ const { makeWASocket, useMultiFileAuthState, DisconnectReason } = baileys;
 
 (async () => {
   const authDir = '/home/node/.openclaw/credentials/whatsapp';
-  require('fs').mkdirSync(authDir, { recursive: true });
+  fs.mkdirSync(authDir, { recursive: true });
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
   const sock = makeWASocket({ auth: state, printQRInTerminal: false, browser: ['OpenClaw', 'Chrome', '120.0'] });
   sock.ev.on('creds.update', saveCreds);
@@ -422,9 +413,7 @@ const { makeWASocket, useMultiFileAuthState, DisconnectReason } = baileys;
     }
     if (update.connection === 'close') {
       const reason = new Boom(update.lastDisconnect?.error)?.output?.statusCode;
-      if (reason !== DisconnectReason.loggedOut) {
-        console.log(JSON.stringify({ error: 'Connection closed', code: reason }));
-      }
+      console.log(JSON.stringify({ error: 'Connection closed', code: reason }));
       process.exit(1);
     }
   });
@@ -434,16 +423,29 @@ const { makeWASocket, useMultiFileAuthState, DisconnectReason } = baileys;
 `;
       writeFileSync(`${configDir}/wa-qr-helper.cjs`, helperScript);
 
-      // Run the helper script from /app (so standard require paths work as fallback)
+      // Run helper from /app so require() finds OpenClaw's node_modules.
+      // Capture stderr too for debugging — Baileys is noisy but errors are useful.
       const output = execSync(
-        `docker exec ${containerTarget} bash -c 'cd /app && timeout 18 node /home/node/.openclaw/wa-qr-helper.cjs' 2>/dev/null`,
+        `docker exec ${containerTarget} bash -c 'cd /app && timeout 18 node /home/node/.openclaw/wa-qr-helper.cjs 2>&1'`,
         { timeout: 25000 },
       ).toString().trim();
 
-      // Parse the last JSON line from output
+      // Parse the last JSON line from output (skip Baileys debug noise)
       const lines = output.split("\n").filter(Boolean);
-      const lastLine = lines[lines.length - 1];
-      const result = JSON.parse(lastLine);
+      let result: { qr?: string; status?: string; error?: string } | null = null;
+      for (let i = lines.length - 1; i >= 0; i--) {
+        try {
+          result = JSON.parse(lines[i]);
+          break;
+        } catch {
+          // Not JSON — skip Baileys debug output
+        }
+      }
+
+      if (!result) {
+        fastify.log.error(`WhatsApp QR: no JSON output. Raw: ${output.slice(-500)}`);
+        return reply.status(500).send({ error: `WhatsApp QR failed. Raw output: ${output.slice(-300)}` });
+      }
 
       if (result.error) {
         fastify.log.error(`WhatsApp QR script error for ${id}: ${result.error}`);
