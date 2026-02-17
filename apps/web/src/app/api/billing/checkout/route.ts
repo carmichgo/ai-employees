@@ -1,23 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { companies, users } from "@/lib/schema";
+import { companies, users, subscriptions, employees } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
 import {
-  createHireCheckoutSession,
   getOrCreateStripeCustomer,
-  type HireCheckoutParams,
+  createFirstHireCheckout,
+  addEmployeeToSubscription,
+  calculateTotalPriceDollars,
+  type EmployeePricingParams,
 } from "@/lib/stripe";
 import {
   EMPLOYEE_TIERS,
-  calculateAddonTotal,
   type EmployeeTier,
 } from "@ai-employees/shared";
 
 /**
  * POST /api/billing/checkout
- * Creates a Stripe Checkout Session for hiring an employee.
- * Returns { url } — redirect the user there.
+ *
+ * Two modes:
+ * 1) Company has no subscription → creates Stripe Checkout Session, returns { url }
+ * 2) Company has active subscription → adds line item directly, provisions employee, returns { employee }
  */
 export async function POST(request: NextRequest) {
   try {
@@ -79,7 +82,7 @@ export async function POST(request: NextRequest) {
         .where(eq(companies.id, company.id));
     }
 
-    const checkoutParams: HireCheckoutParams = {
+    const pricing: EmployeePricingParams = {
       tier: tier as EmployeeTier,
       employeeName: name,
       channels,
@@ -87,7 +90,6 @@ export async function POST(request: NextRequest) {
       expertise,
     };
 
-    // Full hire payload passed through Stripe metadata → webhook will use it
     const hirePayload = {
       name,
       jobTitle,
@@ -98,12 +100,40 @@ export async function POST(request: NextRequest) {
       ...restPayload,
     };
 
+    // Check if company already has an active subscription
+    const [existingSub] = await db
+      .select()
+      .from(subscriptions)
+      .where(eq(subscriptions.companyId, company.id))
+      .limit(1);
+
+    const hasActiveSubscription =
+      existingSub && (existingSub.status === "active" || existingSub.status === "trialing");
+
+    if (hasActiveSubscription) {
+      // ── Subsequent hire: add line item to existing subscription ──
+      const subscriptionItemId = await addEmployeeToSubscription({
+        stripeSubscriptionId: existingSub.stripeSubscriptionId,
+        pricing,
+      });
+
+      // Provision the employee immediately (same as POST /api/employees)
+      const { provisionAndReturn } = await import("@/lib/hire");
+      const result = await provisionAndReturn(session.companyId, hirePayload, {
+        stripeSubscriptionItemId: subscriptionItemId,
+        priceMonthly: calculateTotalPriceDollars(pricing),
+      });
+
+      return NextResponse.json(result, { status: 201 });
+    }
+
+    // ── First hire: redirect to Stripe Checkout ──
     const origin = request.headers.get("origin") || process.env.PLATFORM_URL || "http://localhost:3000";
 
-    const checkoutSession = await createHireCheckoutSession({
-      companyId: company.id,
+    const checkoutSession = await createFirstHireCheckout({
       stripeCustomerId,
-      params: checkoutParams,
+      companyId: company.id,
+      pricing,
       hirePayload,
       successUrl: `${origin}/dashboard/hire?payment=success&session_id={CHECKOUT_SESSION_ID}`,
       cancelUrl: `${origin}/dashboard/hire?payment=cancelled`,
@@ -113,7 +143,7 @@ export async function POST(request: NextRequest) {
   } catch (err: any) {
     console.error("POST /api/billing/checkout error:", err);
     return NextResponse.json(
-      { error: err.message || "Failed to create checkout session" },
+      { error: err.message || "Failed to process checkout" },
       { status: 500 },
     );
   }

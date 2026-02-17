@@ -58,6 +58,10 @@ export const employees = pgTable("employees", {
   avatar: varchar("avatar", { length: 500 }),
   emoji: varchar("emoji", { length: 10 }).default("🤖"),
   tier: varchar("tier", { length: 20 }).notNull().default("junior"),
+  /** Stripe subscription item ID — links this employee to a line item on the company subscription */
+  stripeSubscriptionItemId: varchar("stripe_subscription_item_id", { length: 255 }),
+  /** Monthly price in dollars for this employee (base + add-ons) */
+  priceMonthly: integer("price_monthly"),
   status: varchar("status", { length: 20 }).notNull().default("provisioning"),
   containerId: varchar("container_id", { length: 100 }),
   containerName: varchar("container_name", { length: 255 }),
@@ -217,22 +221,15 @@ export const usageRecords = pgTable("usage_records", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-// ── Subscriptions (per-employee Stripe subscriptions) ──
+// ── Subscriptions (one per company — employees are line items) ──
 export const subscriptions = pgTable("subscriptions", {
   id: uuid("id").primaryKey().defaultRandom(),
   companyId: uuid("company_id")
     .notNull()
     .references(() => companies.id),
-  employeeId: uuid("employee_id")
-    .references(() => employees.id, { onDelete: "set null" }),
   stripeSubscriptionId: varchar("stripe_subscription_id", { length: 255 }).notNull().unique(),
   stripeCustomerId: varchar("stripe_customer_id", { length: 255 }).notNull(),
   status: varchar("status", { length: 30 }).notNull().default("incomplete"),
-  tier: varchar("tier", { length: 20 }).notNull(),
-  basePriceMonthly: integer("base_price_monthly").notNull(),
-  addonPriceMonthly: integer("addon_price_monthly").notNull().default(0),
-  /** JSON snapshot of selected add-ons at time of checkout */
-  addonItems: jsonb("addon_items").notNull().default([]),
   currentPeriodStart: timestamp("current_period_start", { withTimezone: true }),
   currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
   cancelAtPeriodEnd: boolean("cancel_at_period_end").notNull().default(false),

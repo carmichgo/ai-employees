@@ -496,7 +496,9 @@ class ApiClient {
     personalityConfig?: any;
     authorityConfig?: any;
   }) {
-    return this.request<{ url: string }>("/api/billing/checkout", {
+    // Returns { url } for first hire (redirect to Stripe Checkout)
+    // or { employee, message } for subsequent hires (line item added to existing subscription)
+    return this.request<{ url?: string; employee?: any; message?: string }>("/api/billing/checkout", {
       method: "POST",
       body: JSON.stringify(data),
     });

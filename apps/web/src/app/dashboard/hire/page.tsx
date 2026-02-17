@@ -375,7 +375,9 @@ function HireEmployeeWizard() {
           : undefined,
       };
 
-      // Try Stripe checkout first — if billing is configured, redirect to payment
+      // Try Stripe billing first — if configured:
+      //   - First hire: returns { url } → redirect to Stripe Checkout
+      //   - Subsequent hires: returns { employee } → line item added to existing subscription
       try {
         const checkout = await api.createCheckoutSession({
           ...hireData,
@@ -383,7 +385,13 @@ function HireEmployeeWizard() {
           expertise: form.skills,
         });
         if (checkout.url) {
+          // First hire — redirect to Stripe Checkout for payment
           window.location.href = checkout.url;
+          return;
+        }
+        if ((checkout as any).employee) {
+          // Subsequent hire — employee was created and billed immediately
+          router.push(`/dashboard/employees/${(checkout as any).employee.id}`);
           return;
         }
       } catch (checkoutErr: any) {

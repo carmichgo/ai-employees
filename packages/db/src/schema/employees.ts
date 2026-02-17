@@ -16,6 +16,10 @@ export const employees = pgTable("employees", {
   tier: varchar("tier", { length: 20 }).notNull().default("junior"),
   // junior | senior | expert
 
+  // Stripe billing — links this employee to a line item on the company subscription
+  stripeSubscriptionItemId: varchar("stripe_subscription_item_id", { length: 255 }),
+  priceMonthly: integer("price_monthly"),
+
   // Status & lifecycle
   status: varchar("status", { length: 20 }).notNull().default("provisioning"),
   // provisioning | onboarding | active | paused | terminated | error

@@ -1,30 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import crypto from "node:crypto";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { companies, employees, channelConnections, subscriptions } from "@/lib/schema";
-import { getStripe } from "@/lib/stripe";
-import { getCompanyBackend, createBackendClient } from "@/lib/backend";
-import { createCompanyDroplet, isDropletProvisioningEnabled } from "@/lib/digitalocean";
-import {
-  getJobTemplate,
-  PLAN_LIMITS,
-  type PlanTier,
-  getModelForTier,
-  type EmployeeTier,
-} from "@ai-employees/shared";
+import { companies, employees, subscriptions } from "@/lib/schema";
+import { getStripe, calculateTotalPriceDollars, type EmployeePricingParams } from "@/lib/stripe";
+import { provisionAndReturn } from "@/lib/hire";
+import type { EmployeeTier } from "@ai-employees/shared";
 import type Stripe from "stripe";
 
-// Disable Next.js body parsing — Stripe needs the raw body for signature verification
 export const runtime = "nodejs";
-
-function slugify(name: string) {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-}
 
 /**
  * POST /api/webhooks/stripe
- * Handles Stripe webhook events for subscription lifecycle.
+ * Handles Stripe webhook events for the company subscription lifecycle.
  */
 export async function POST(request: NextRequest) {
   const stripe = getStripe();
@@ -67,7 +54,6 @@ export async function POST(request: NextRequest) {
         break;
 
       default:
-        // Unhandled event type — that's fine
         break;
     }
   } catch (err: any) {
@@ -78,18 +64,15 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({ received: true });
 }
 
-// ── Event Handlers ─────────────────────────────────────
+// ── checkout.session.completed ─────────────────────────
+// First employee hire — Stripe just collected payment and created the subscription.
+// We need to: save the subscription record, then provision the employee.
 
 async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
-  // Only handle subscription checkouts (not one-time payments)
   if (session.mode !== "subscription") return;
 
   const companyId = session.metadata?.companyId;
   const hirePayloadRaw = session.metadata?.hirePayload;
-  const tier = (session.metadata?.tier || "junior") as EmployeeTier;
-  const basePriceMonthly = parseInt(session.metadata?.basePriceMonthly || "0", 10);
-  const addonPriceMonthly = parseInt(session.metadata?.addonPriceMonthly || "0", 10);
-
   if (!companyId || !hirePayloadRaw) {
     console.error("Checkout session missing companyId or hirePayload metadata");
     return;
@@ -99,7 +82,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   const stripeSubscriptionId =
     typeof session.subscription === "string"
       ? session.subscription
-      : session.subscription?.id;
+      : (session.subscription as any)?.id;
 
   if (!stripeSubscriptionId) {
     console.error("Checkout session missing subscription ID");
@@ -109,52 +92,54 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   const stripeCustomerId =
     typeof session.customer === "string"
       ? session.customer
-      : session.customer?.id || "";
+      : (session.customer as any)?.id || "";
 
-  // Fetch the subscription to get period info
+  // Fetch the subscription to get period info and the first item ID
   const stripe = getStripe();
   const sub = await stripe.subscriptions.retrieve(stripeSubscriptionId) as any;
 
-  // 1) Create the subscription record
+  // Save the company-level subscription record
   await db.insert(subscriptions).values({
     companyId,
     stripeSubscriptionId,
     stripeCustomerId,
-    status: sub.status,
+    status: sub.status || "active",
+    currentPeriodStart: sub.current_period_start
+      ? new Date(sub.current_period_start * 1000)
+      : undefined,
+    currentPeriodEnd: sub.current_period_end
+      ? new Date(sub.current_period_end * 1000)
+      : undefined,
+  }).onConflictDoNothing();
+
+  // Get the first subscription item ID (the employee line item)
+  const firstItemId: string | undefined = sub.items?.data?.[0]?.id;
+
+  // Calculate price for the employee
+  const tier = (hirePayload.tier || "junior") as EmployeeTier;
+  const pricing: EmployeePricingParams = {
     tier,
-    basePriceMonthly,
-    addonPriceMonthly,
-    addonItems: {
-      channels: hirePayload.channels || [],
-      capabilities: hirePayload.capabilities || [],
-      expertise: hirePayload.expertise || [],
-    },
-    currentPeriodStart: sub.current_period_start ? new Date(sub.current_period_start * 1000) : undefined,
-    currentPeriodEnd: sub.current_period_end ? new Date(sub.current_period_end * 1000) : undefined,
-  });
+    employeeName: hirePayload.name,
+    channels: hirePayload.channels || [],
+    capabilities: hirePayload.capabilities || [],
+    expertise: hirePayload.expertise || [],
+  };
+  const priceMonthly = calculateTotalPriceDollars(pricing);
 
-  // 2) Provision the employee (same logic as POST /api/employees)
-  const employeeId = await provisionEmployee(companyId, hirePayload, tier);
-
-  // 3) Link subscription to employee
-  if (employeeId) {
-    await db
-      .update(subscriptions)
-      .set({ employeeId, updatedAt: new Date() })
-      .where(eq(subscriptions.stripeSubscriptionId, stripeSubscriptionId));
-
-    // Also update Stripe subscription metadata with the employee ID
-    await stripe.subscriptions.update(stripeSubscriptionId, {
-      metadata: { companyId, tier, employeeId },
-    });
-  }
+  // Provision the employee
+  await provisionAndReturn(companyId, hirePayload, firstItemId ? {
+    stripeSubscriptionItemId: firstItemId,
+    priceMonthly,
+  } : undefined);
 }
+
+// ── customer.subscription.updated ──────────────────────
+// Sync status. If subscription goes past_due/unpaid, pause all employees.
 
 async function handleSubscriptionUpdated(sub: Stripe.Subscription) {
   const stripeSubId = sub.id;
   const subAny = sub as any;
 
-  // Update local subscription record
   await db
     .update(subscriptions)
     .set({
@@ -170,7 +155,7 @@ async function handleSubscriptionUpdated(sub: Stripe.Subscription) {
     })
     .where(eq(subscriptions.stripeSubscriptionId, stripeSubId));
 
-  // If subscription went past_due or unpaid, pause the employee
+  // If payment is failing, pause all employees for this company
   if (sub.status === "past_due" || sub.status === "unpaid") {
     const [record] = await db
       .select()
@@ -178,38 +163,59 @@ async function handleSubscriptionUpdated(sub: Stripe.Subscription) {
       .where(eq(subscriptions.stripeSubscriptionId, stripeSubId))
       .limit(1);
 
-    if (record?.employeeId) {
-      await db
-        .update(employees)
-        .set({ status: "paused", updatedAt: new Date() })
-        .where(eq(employees.id, record.employeeId));
+    if (record) {
+      const companyEmployees = await db
+        .select()
+        .from(employees)
+        .where(eq(employees.companyId, record.companyId));
+
+      for (const emp of companyEmployees) {
+        if (emp.status === "active") {
+          await db
+            .update(employees)
+            .set({ status: "paused", updatedAt: new Date() })
+            .where(eq(employees.id, emp.id));
+        }
+      }
     }
   }
 }
 
+// ── customer.subscription.deleted ──────────────────────
+// Subscription cancelled — terminate all employees for this company.
+
 async function handleSubscriptionDeleted(sub: Stripe.Subscription) {
   const stripeSubId = sub.id;
 
-  // Update local status
   await db
     .update(subscriptions)
     .set({ status: "canceled", updatedAt: new Date() })
     .where(eq(subscriptions.stripeSubscriptionId, stripeSubId));
 
-  // Terminate the employee
   const [record] = await db
     .select()
     .from(subscriptions)
     .where(eq(subscriptions.stripeSubscriptionId, stripeSubId))
     .limit(1);
 
-  if (record?.employeeId) {
-    await db
-      .update(employees)
-      .set({ status: "terminated", updatedAt: new Date() })
-      .where(eq(employees.id, record.employeeId));
+  if (record) {
+    const companyEmployees = await db
+      .select()
+      .from(employees)
+      .where(eq(employees.companyId, record.companyId));
+
+    for (const emp of companyEmployees) {
+      if (emp.status !== "terminated") {
+        await db
+          .update(employees)
+          .set({ status: "terminated", updatedAt: new Date() })
+          .where(eq(employees.id, emp.id));
+      }
+    }
   }
 }
+
+// ── invoice.payment_failed ─────────────────────────────
 
 async function handlePaymentFailed(invoice: Stripe.Invoice) {
   const inv = invoice as any;
@@ -220,143 +226,8 @@ async function handlePaymentFailed(invoice: Stripe.Invoice) {
 
   if (!stripeSubId) return;
 
-  // Mark subscription as past_due
   await db
     .update(subscriptions)
     .set({ status: "past_due", updatedAt: new Date() })
     .where(eq(subscriptions.stripeSubscriptionId, stripeSubId));
 }
-
-// ── Employee Provisioning ──────────────────────────────
-// Same logic as POST /api/employees but called from the webhook.
-
-async function provisionEmployee(
-  companyId: string,
-  input: Record<string, any>,
-  tier: EmployeeTier,
-): Promise<string | null> {
-  const [company] = await db
-    .select()
-    .from(companies)
-    .where(eq(companies.id, companyId))
-    .limit(1);
-
-  if (!company) {
-    console.error(`provisionEmployee: company ${companyId} not found`);
-    return null;
-  }
-
-  let persona = input.persona;
-  let goals = input.goals;
-  let emoji = "🤖";
-
-  if (input.templateId) {
-    const template = getJobTemplate(input.templateId);
-    if (template) {
-      persona = persona || template.persona;
-      goals = goals || template.goals;
-      emoji = template.emoji;
-    }
-  }
-
-  const gatewayToken = crypto.randomBytes(32).toString("hex");
-  const tierModel = getModelForTier(tier);
-
-  // Check if company has an active droplet backend
-  const backendConfig = await getCompanyBackend(companyId);
-
-  if (backendConfig) {
-    try {
-      const backend = createBackendClient(backendConfig);
-      const result = await backend.provisionEmployee({
-        companyId,
-        name: input.name,
-        jobTitle: input.jobTitle,
-        tier,
-        templateId: input.templateId || undefined,
-        persona: persona || undefined,
-        goals: goals || undefined,
-        personalityConfig: input.personalityConfig || undefined,
-        authorityConfig: input.authorityConfig || undefined,
-        channels: input.channels || [],
-        channelCredentials: {},
-        modelConfig: input.modelConfig,
-        toolsAllow: input.toolsAllow || undefined,
-        skills: input.skills || undefined,
-      });
-
-      if (result.employee?.id && input.channels?.length) {
-        await createChannelConnectionRows(result.employee.id, input.channels);
-      }
-
-      return result.employee?.id || null;
-    } catch (err: any) {
-      console.error("provisionEmployee backend error:", err);
-    }
-  }
-
-  // Determine status based on droplet availability
-  let status = "active"; // demo mode
-  if (isDropletProvisioningEnabled()) {
-    if (company.dropletStatus !== "active") {
-      try {
-        await createCompanyDroplet(companyId);
-      } catch (err: any) {
-        console.error("provisionEmployee droplet creation error:", err);
-      }
-      status = "provisioning";
-    }
-  }
-
-  const [employee] = await db
-    .insert(employees)
-    .values({
-      companyId,
-      name: input.name,
-      jobTitle: input.jobTitle,
-      templateId: input.templateId,
-      tier,
-      emoji,
-      persona,
-      goals,
-      personalityConfig: input.personalityConfig || {
-        autonomy: "high",
-        proactivity: "proactive",
-        communication: "concise",
-      },
-      authorityConfig: input.authorityConfig || {
-        defaultRole: "manager",
-        members: [],
-      },
-      modelConfig: input.modelConfig || { primary: tierModel },
-      toolsConfig: input.toolsAllow ? { allow: input.toolsAllow } : {},
-      gatewayToken,
-      status,
-      containerName: `ai-emp-${company.slug}-${slugify(input.name)}-${crypto.randomBytes(3).toString("hex")}`,
-    })
-    .returning();
-
-  if (input.channels?.length) {
-    await createChannelConnectionRows(employee.id, input.channels);
-  }
-
-  return employee.id;
-}
-
-async function createChannelConnectionRows(employeeId: string, channels: string[]) {
-  if (!channels.length) return;
-  const CHANNEL_NAMES: Record<string, string> = {
-    slack: "Slack", email: "Email", telegram: "Telegram",
-    whatsapp: "WhatsApp", discord: "Discord", signal: "Signal",
-    teams: "Microsoft Teams", "google-chat": "Google Chat", matrix: "Matrix",
-  };
-  await db.insert(channelConnections).values(
-    channels.map((ch) => ({
-      employeeId,
-      channelType: ch,
-      name: CHANNEL_NAMES[ch] || ch,
-      status: ch === "slack" ? "connected" : "pending",
-    })),
-  );
-}
-

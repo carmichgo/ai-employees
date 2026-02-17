@@ -1,7 +1,6 @@
 import Stripe from "stripe";
 import {
   EMPLOYEE_TIERS,
-  ADDON_PRICING,
   calculateAddonTotal,
   getAddonPrice,
   type EmployeeTier,
@@ -21,13 +20,9 @@ export function getStripe(): Stripe {
   return _stripe;
 }
 
-// ── Price Building ────────────────────────────────────
-// We use Stripe Checkout with ad-hoc price_data so we don't
-// need to pre-create products/prices in the Stripe Dashboard.
-// Each employee subscription has a single line item with the
-// total monthly cost (base + add-ons) baked in.
+// ── Price Helpers ─────────────────────────────────────
 
-export interface HireCheckoutParams {
+export interface EmployeePricingParams {
   tier: EmployeeTier;
   employeeName: string;
   channels: string[];
@@ -35,8 +30,8 @@ export interface HireCheckoutParams {
   expertise: string[];
 }
 
-/** Build the total monthly price in cents for an employee hire */
-export function calculateTotalPriceCents(params: HireCheckoutParams): number {
+/** Total monthly price in cents for one employee */
+export function calculateTotalPriceCents(params: EmployeePricingParams): number {
   const base = EMPLOYEE_TIERS[params.tier].priceMonthly;
   const addons = calculateAddonTotal(
     params.tier,
@@ -44,15 +39,19 @@ export function calculateTotalPriceCents(params: HireCheckoutParams): number {
     params.capabilities,
     params.expertise,
   );
-  return (base + addons) * 100; // dollars → cents
+  return (base + addons) * 100;
 }
 
-/** Build human-readable line items for the checkout page */
-export function buildLineItemDescription(params: HireCheckoutParams): string {
+/** Total monthly price in dollars for one employee */
+export function calculateTotalPriceDollars(params: EmployeePricingParams): number {
+  return calculateTotalPriceCents(params) / 100;
+}
+
+/** Build description for Stripe line item */
+export function buildLineItemDescription(params: EmployeePricingParams): string {
   const tier = EMPLOYEE_TIERS[params.tier];
   const parts = [`${tier.label} — ${tier.creditsIncluded} credits/mo`];
 
-  // Collect paid add-ons
   const addons: string[] = [];
   const categories: (keyof AddonConfig)[] = ["channels", "capabilities", "expertise"];
   const items = [params.channels, params.capabilities, params.expertise];
@@ -71,60 +70,7 @@ export function buildLineItemDescription(params: HireCheckoutParams): string {
   return parts.join(" | ");
 }
 
-/** Create a Stripe Checkout Session for hiring an employee */
-export async function createHireCheckoutSession(opts: {
-  companyId: string;
-  stripeCustomerId: string;
-  params: HireCheckoutParams;
-  /** Full hiring form payload to persist through checkout */
-  hirePayload: Record<string, unknown>;
-  successUrl: string;
-  cancelUrl: string;
-}): Promise<Stripe.Checkout.Session> {
-  const stripe = getStripe();
-  const priceCents = calculateTotalPriceCents(opts.params);
-  const baseCents = EMPLOYEE_TIERS[opts.params.tier].priceMonthly * 100;
-  const addonCents = priceCents - baseCents;
-
-  const session = await stripe.checkout.sessions.create({
-    customer: opts.stripeCustomerId,
-    mode: "subscription",
-    payment_method_types: ["card"],
-    line_items: [
-      {
-        price_data: {
-          currency: "usd",
-          recurring: { interval: "month" },
-          product_data: {
-            name: `AI Employee: ${opts.params.employeeName}`,
-            description: buildLineItemDescription(opts.params),
-          },
-          unit_amount: priceCents,
-        },
-        quantity: 1,
-      },
-    ],
-    metadata: {
-      companyId: opts.companyId,
-      employeeName: opts.params.employeeName,
-      tier: opts.params.tier,
-      basePriceMonthly: String(EMPLOYEE_TIERS[opts.params.tier].priceMonthly),
-      addonPriceMonthly: String(addonCents / 100),
-      // Store the full hire payload as JSON so the webhook can create the employee
-      hirePayload: JSON.stringify(opts.hirePayload),
-    },
-    subscription_data: {
-      metadata: {
-        companyId: opts.companyId,
-        tier: opts.params.tier,
-      },
-    },
-    success_url: opts.successUrl,
-    cancel_url: opts.cancelUrl,
-  });
-
-  return session;
-}
+// ── Customer Management ───────────────────────────────
 
 /** Get or create a Stripe customer for a company */
 export async function getOrCreateStripeCustomer(
@@ -136,7 +82,6 @@ export async function getOrCreateStripeCustomer(
   const stripe = getStripe();
 
   if (existingStripeId) {
-    // Verify it still exists
     try {
       await stripe.customers.retrieve(existingStripeId);
       return existingStripeId;
@@ -152,6 +97,108 @@ export async function getOrCreateStripeCustomer(
   });
 
   return customer.id;
+}
+
+// ── Single-Subscription Model ─────────────────────────
+// One subscription per company. Each employee is a line item
+// (subscription item) with its own ad-hoc price.
+
+/**
+ * First employee hire — no subscription yet.
+ * Creates a Stripe Checkout Session to collect payment method
+ * and create the subscription with one line item.
+ */
+export async function createFirstHireCheckout(opts: {
+  stripeCustomerId: string;
+  companyId: string;
+  pricing: EmployeePricingParams;
+  hirePayload: Record<string, unknown>;
+  successUrl: string;
+  cancelUrl: string;
+}): Promise<Stripe.Checkout.Session> {
+  const stripe = getStripe();
+  const priceCents = calculateTotalPriceCents(opts.pricing);
+
+  const session = await stripe.checkout.sessions.create({
+    customer: opts.stripeCustomerId,
+    mode: "subscription",
+    payment_method_types: ["card"],
+    line_items: [
+      {
+        price_data: {
+          currency: "usd",
+          recurring: { interval: "month" },
+          product_data: {
+            name: `AI Employee: ${opts.pricing.employeeName}`,
+            description: buildLineItemDescription(opts.pricing),
+          },
+          unit_amount: priceCents,
+        },
+        quantity: 1,
+      },
+    ],
+    metadata: {
+      companyId: opts.companyId,
+      hirePayload: JSON.stringify(opts.hirePayload),
+    },
+    subscription_data: {
+      metadata: { companyId: opts.companyId },
+    },
+    success_url: opts.successUrl,
+    cancel_url: opts.cancelUrl,
+  });
+
+  return session;
+}
+
+/**
+ * Subsequent employee hires — subscription already exists.
+ * Adds a new line item to the existing subscription.
+ * Returns the new subscription item ID.
+ */
+export async function addEmployeeToSubscription(opts: {
+  stripeSubscriptionId: string;
+  pricing: EmployeePricingParams;
+}): Promise<string> {
+  const stripe = getStripe();
+  const priceCents = calculateTotalPriceCents(opts.pricing);
+
+  // Create an ad-hoc price for this employee
+  const price = await stripe.prices.create({
+    currency: "usd",
+    recurring: { interval: "month" },
+    product_data: {
+      name: `AI Employee: ${opts.pricing.employeeName}`,
+      metadata: {
+        employeeName: opts.pricing.employeeName,
+        tier: opts.pricing.tier,
+      },
+    },
+    unit_amount: priceCents,
+  });
+
+  // Add as a new line item — Stripe prorates automatically
+  const item = await stripe.subscriptionItems.create({
+    subscription: opts.stripeSubscriptionId,
+    price: price.id,
+    quantity: 1,
+    proration_behavior: "create_prorations",
+  });
+
+  return item.id;
+}
+
+/**
+ * Remove an employee's line item from the subscription.
+ * Called when an employee is terminated.
+ */
+export async function removeEmployeeFromSubscription(
+  subscriptionItemId: string,
+): Promise<void> {
+  const stripe = getStripe();
+  await stripe.subscriptionItems.del(subscriptionItemId, {
+    proration_behavior: "create_prorations",
+  });
 }
 
 /** Create a Stripe billing portal session */

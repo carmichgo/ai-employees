@@ -112,10 +112,21 @@ export async function DELETE(
     }
   }
 
+  // Remove Stripe subscription item if it exists (prorates the invoice)
+  if (employee.stripeSubscriptionItemId) {
+    try {
+      const { removeEmployeeFromSubscription } = await import("@/lib/stripe");
+      await removeEmployeeFromSubscription(employee.stripeSubscriptionItemId);
+    } catch (err: any) {
+      console.error("Failed to remove Stripe subscription item:", err.message);
+      // Continue — still terminate the employee in DB
+    }
+  }
+
   // Always mark as terminated in the DB
   const [updated] = await db
     .update(employees)
-    .set({ status: "terminated", updatedAt: new Date() })
+    .set({ status: "terminated", stripeSubscriptionItemId: null, updatedAt: new Date() })
     .where(eq(employees.id, id))
     .returning();
 
