@@ -9,8 +9,6 @@ import { createCompanyDroplet, isDropletProvisioningEnabled } from "@/lib/digita
 import {
   createEmployeeSchema,
   getJobTemplate,
-  PLAN_LIMITS,
-  type PlanTier,
   getModelForTier,
   type EmployeeTier,
 } from "@ai-employees/shared";
@@ -135,20 +133,6 @@ export async function POST(request: NextRequest) {
 
       // Create employee record with "provisioning" status — it'll be processed
       // once the droplet is ready (the dashboard will poll)
-      const planLimits = PLAN_LIMITS[company.plan as PlanTier] || PLAN_LIMITS.starter;
-      const current = await db
-        .select()
-        .from(employees)
-        .where(eq(employees.companyId, session.companyId));
-      const activeCount = current.filter((e) => e.status !== "terminated").length;
-
-      if (activeCount >= planLimits.maxEmployees) {
-        return NextResponse.json(
-          { error: `Employee limit reached (${planLimits.maxEmployees} for ${company.plan} plan)` },
-          { status: 403 },
-        );
-      }
-
       let persona = input.persona;
       let goals = input.goals;
       let emoji = "🤖";
@@ -214,20 +198,6 @@ export async function POST(request: NextRequest) {
     .limit(1);
   if (!company) {
     return NextResponse.json({ error: "Company not found" }, { status: 404 });
-  }
-
-  const planLimits = PLAN_LIMITS[company.plan as PlanTier] || PLAN_LIMITS.starter;
-  const current = await db
-    .select()
-    .from(employees)
-    .where(eq(employees.companyId, session.companyId));
-  const activeCount = current.filter((e) => e.status !== "terminated").length;
-
-  if (activeCount >= planLimits.maxEmployees) {
-    return NextResponse.json(
-      { error: `Employee limit reached (${planLimits.maxEmployees} for ${company.plan} plan)` },
-      { status: 403 },
-    );
   }
 
   let persona = input.persona;
