@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import {
@@ -206,6 +206,14 @@ const styles = {
 // ── Component ──────────────────────────────────
 
 export default function HireEmployeePage() {
+  return (
+    <Suspense>
+      <HireEmployeeWizard />
+    </Suspense>
+  );
+}
+
+function HireEmployeeWizard() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [paymentStatus, setPaymentStatus] = useState<"success" | "cancelled" | null>(null);
