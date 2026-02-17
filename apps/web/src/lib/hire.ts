@@ -116,11 +116,13 @@ export async function provisionAndReturn(
   if (isDropletProvisioningEnabled() && company.dropletStatus !== "active") {
     try {
       await createCompanyDroplet(companyId);
+      // Only set provisioning status if droplet was actually created
+      status = "provisioning";
+      dropletStatus = "provisioning";
     } catch (err: any) {
       console.error("provisionAndReturn droplet creation error:", err);
+      // Droplet creation failed — create employee as active (demo mode)
     }
-    status = "provisioning";
-    dropletStatus = "provisioning";
   }
 
   const [employee] = await db

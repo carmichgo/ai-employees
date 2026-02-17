@@ -51,6 +51,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid tier" }, { status: 400 });
     }
 
+    // Fail fast if Stripe is not configured — let the frontend fall through to direct hire
+    if (!process.env.STRIPE_SECRET_KEY) {
+      return NextResponse.json(
+        { error: "Billing is not configured. STRIPE_SECRET_KEY is missing." },
+        { status: 501 },
+      );
+    }
+
     // Get company & user
     const [company] = await db
       .select()
@@ -67,12 +75,23 @@ export async function POST(request: NextRequest) {
     if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
     // Get or create Stripe customer
-    const stripeCustomerId = await getOrCreateStripeCustomer(
-      company.id,
-      company.name,
-      user.email,
-      company.stripeCustomerId,
-    );
+    let stripeCustomerId: string;
+    try {
+      stripeCustomerId = await getOrCreateStripeCustomer(
+        company.id,
+        company.name,
+        user.email,
+        company.stripeCustomerId,
+      );
+    } catch (err: any) {
+      console.error("Stripe customer creation failed:", err.message);
+      // Return a clear error so the user (and frontend) know Stripe is broken
+      const isAuthError = err.type === "StripeAuthenticationError" || err.message?.includes("API key");
+      return NextResponse.json(
+        { error: isAuthError ? "Stripe API key is invalid. Please check STRIPE_SECRET_KEY." : `Stripe error: ${err.message}` },
+        { status: 502 },
+      );
+    }
 
     // Persist stripeCustomerId if new
     if (stripeCustomerId !== company.stripeCustomerId) {
@@ -112,10 +131,19 @@ export async function POST(request: NextRequest) {
 
     if (hasActiveSubscription) {
       // ── Subsequent hire: add line item to existing subscription ──
-      const subscriptionItemId = await addEmployeeToSubscription({
-        stripeSubscriptionId: existingSub.stripeSubscriptionId,
-        pricing,
-      });
+      let subscriptionItemId: string;
+      try {
+        subscriptionItemId = await addEmployeeToSubscription({
+          stripeSubscriptionId: existingSub.stripeSubscriptionId,
+          pricing,
+        });
+      } catch (err: any) {
+        console.error("Stripe addEmployeeToSubscription failed:", err.message, err.type);
+        return NextResponse.json(
+          { error: `Failed to add employee to subscription: ${err.message}` },
+          { status: 502 },
+        );
+      }
 
       // Provision the employee immediately (same as POST /api/employees)
       const { provisionAndReturn } = await import("@/lib/hire");
@@ -128,16 +156,25 @@ export async function POST(request: NextRequest) {
     }
 
     // ── First hire: redirect to Stripe Checkout ──
-    const origin = request.headers.get("origin") || process.env.PLATFORM_URL || "http://localhost:3000";
+    const origin = request.headers.get("origin") || process.env.NEXT_PUBLIC_APP_URL || process.env.PLATFORM_URL || "http://localhost:3000";
 
-    const checkoutSession = await createFirstHireCheckout({
-      stripeCustomerId,
-      companyId: company.id,
-      pricing,
-      hirePayload,
-      successUrl: `${origin}/dashboard/hire?payment=success&session_id={CHECKOUT_SESSION_ID}`,
-      cancelUrl: `${origin}/dashboard/hire?payment=cancelled`,
-    });
+    let checkoutSession;
+    try {
+      checkoutSession = await createFirstHireCheckout({
+        stripeCustomerId,
+        companyId: company.id,
+        pricing,
+        hirePayload,
+        successUrl: `${origin}/dashboard/hire?payment=success&session_id={CHECKOUT_SESSION_ID}`,
+        cancelUrl: `${origin}/dashboard/hire?payment=cancelled`,
+      });
+    } catch (err: any) {
+      console.error("Stripe createFirstHireCheckout failed:", err.message, err.type);
+      return NextResponse.json(
+        { error: `Failed to create checkout session: ${err.message}` },
+        { status: 502 },
+      );
+    }
 
     return NextResponse.json({ url: checkoutSession.url });
   } catch (err: any) {

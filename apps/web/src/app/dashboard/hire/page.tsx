@@ -395,9 +395,12 @@ function HireEmployeeWizard() {
           return;
         }
       } catch (checkoutErr: any) {
-        // Only rethrow client errors (400, 401, 403, etc.)
-        // Let server errors (500+) and network errors fall through to direct hire
+        // Rethrow client errors (400, 401, 403) — these are real validation failures
         if (checkoutErr.status && checkoutErr.status >= 400 && checkoutErr.status < 500) throw checkoutErr;
+        // Rethrow 502 (Stripe API error) — these need user attention (bad API key, etc.)
+        if (checkoutErr.status === 502) throw checkoutErr;
+        // 501 (Stripe not configured) and other server/network errors: fall through to direct hire
+        console.warn("Stripe checkout unavailable, falling back to direct hire:", checkoutErr.message);
       }
 
       // Direct hire (no Stripe or Stripe unavailable)

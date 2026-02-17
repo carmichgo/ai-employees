@@ -20,7 +20,7 @@ const REPO_URL = process.env.REPO_URL || "https://github.com/carmichgo/ai-employ
 const REPO_BRANCH = (process.env.REPO_BRANCH || "main").trim();
 
 export function isDropletProvisioningEnabled(): boolean {
-  return !!DO_API_TOKEN;
+  return !!DO_API_TOKEN && DO_API_TOKEN.length > 10;
 }
 
 async function doFetch(path: string, options: RequestInit = {}): Promise<Response> {
@@ -28,21 +28,36 @@ async function doFetch(path: string, options: RequestInit = {}): Promise<Respons
     throw new Error("DO_API_TOKEN not configured");
   }
 
-  const res = await fetch(`${DO_API}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${DO_API_TOKEN}`,
-      ...options.headers,
-    },
-  });
+  // Use AbortController for timeout to avoid hanging on slow DO API responses
+  // (Vercel serverless functions have a 10s default timeout)
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 25000); // 25s timeout
 
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({ message: res.statusText }));
-    throw new Error(body.message || `DO API error: ${res.status}`);
+  try {
+    const res = await fetch(`${DO_API}${path}`, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${DO_API_TOKEN}`,
+        ...options.headers,
+      },
+    });
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ message: res.statusText }));
+      throw new Error(body.message || `DO API error: ${res.status}`);
+    }
+
+    return res;
+  } catch (err: any) {
+    if (err.name === "AbortError") {
+      throw new Error(`DigitalOcean API timeout on ${path}`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
   }
-
-  return res;
 }
 
 /** Generate the cloud-init user_data script for a company's droplet */
