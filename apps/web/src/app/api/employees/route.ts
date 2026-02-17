@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { employees, companies, channelConnections } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
 import { getCompanyBackend, createBackendClient } from "@/lib/backend";
-
+import { createCompanyDroplet, isDropletProvisioningEnabled } from "@/lib/digitalocean";
 import {
   createEmployeeSchema,
   getJobTemplate,
@@ -104,7 +104,88 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Create employee directly in the database
+  // No active droplet — check if we should auto-provision one
+  if (isDropletProvisioningEnabled()) {
+    const [company] = await db
+      .select()
+      .from(companies)
+      .where(eq(companies.id, session.companyId))
+      .limit(1);
+
+    if (!company) {
+      return NextResponse.json({ error: "Company not found" }, { status: 404 });
+    }
+
+    if (company.dropletStatus === "provisioning") {
+      return NextResponse.json(
+        {
+          error: "Your infrastructure is still being set up. This usually takes 2-3 minutes. Please try again shortly.",
+          dropletStatus: "provisioning",
+        },
+        { status: 503 },
+      );
+    }
+
+    // Auto-provision a droplet for this company
+    try {
+      await createCompanyDroplet(session.companyId);
+
+      let persona = input.persona;
+      let goals = input.goals;
+      let emoji = "🤖";
+
+      if (input.templateId) {
+        const template = getJobTemplate(input.templateId);
+        if (template) {
+          persona = persona || template.persona;
+          goals = goals || template.goals;
+          emoji = template.emoji;
+        }
+      }
+
+      const gatewayToken = crypto.randomBytes(32).toString("hex");
+      const tier = (input.tier || "junior") as EmployeeTier;
+      const tierModel = getModelForTier(tier);
+
+      const [employee] = await db
+        .insert(employees)
+        .values({
+          companyId: session.companyId,
+          name: input.name,
+          jobTitle: input.jobTitle,
+          templateId: input.templateId,
+          tier,
+          emoji,
+          persona,
+          goals,
+          personalityConfig: input.personalityConfig || { autonomy: "high", proactivity: "proactive", communication: "concise" },
+          authorityConfig: input.authorityConfig || { defaultRole: "manager", members: [] },
+          modelConfig: input.modelConfig || { primary: tierModel },
+          toolsConfig: input.toolsAllow ? { allow: input.toolsAllow } : {},
+          gatewayToken,
+          status: "provisioning",
+          containerName: `ai-emp-${company.slug}-${slugify(input.name)}-${crypto.randomBytes(3).toString("hex")}`,
+        })
+        .returning();
+
+      if (input.channels?.length) {
+        await createChannelConnectionRows(employee.id, input.channels);
+      }
+
+      return NextResponse.json(
+        {
+          employee: sanitize(employee),
+          message: `${input.name} is being hired! Setting up dedicated infrastructure — this takes 2-3 minutes.`,
+          dropletStatus: "provisioning",
+        },
+        { status: 201 },
+      );
+    } catch (err: any) {
+      return NextResponse.json({ error: err.message }, { status: 500 });
+    }
+  }
+
+  // Fallback — create employee directly in the database (no droplet)
   const [company] = await db
     .select()
     .from(companies)

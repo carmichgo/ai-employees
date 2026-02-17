@@ -395,9 +395,9 @@ function HireEmployeeWizard() {
           return;
         }
       } catch (checkoutErr: any) {
-        // If billing isn't configured (500 / STRIPE_SECRET_KEY missing),
-        // fall back to direct hire (demo mode)
-        if (checkoutErr.status !== 500) throw checkoutErr;
+        // If billing fails (Stripe not configured, network error, etc.),
+        // fall back to direct hire
+        if (checkoutErr.status && checkoutErr.status !== 500 && checkoutErr.status < 500) throw checkoutErr;
       }
 
       // Fallback: direct hire (no Stripe)
