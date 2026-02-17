@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq, and, desc } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { tasks, employees, taskComments, companies } from "@/lib/schema";
+import { tasks, employees, taskComments } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
 
 async function authenticate(request: NextRequest) {
@@ -94,58 +94,7 @@ export async function POST(request: NextRequest) {
     })
     .returning();
 
-  // Notify the employee about the new task (fire-and-forget)
-  notifyEmployee(session.companyId, employeeId, task).catch(() => {});
-
   return NextResponse.json({ task }, { status: 201 });
-}
-
-/**
- * Send a notification message to an employee's container about a new task.
- * Fire-and-forget — doesn't block the API response.
- */
-async function notifyEmployee(
-  companyId: string,
-  employeeId: string,
-  task: { title: string; description: string | null; priority: string; category: string | null; dueDate: Date | null },
-) {
-  const [company] = await db
-    .select()
-    .from(companies)
-    .where(eq(companies.id, companyId))
-    .limit(1);
-
-  if (!company || company.dropletStatus !== "active" || !company.dropletIp) return;
-
-  const parts = [`[New task assigned to you]`];
-  parts.push(`**${task.title}**`);
-  if (task.description) parts.push(task.description);
-  parts.push(`Priority: ${task.priority}`);
-  if (task.category) parts.push(`Category: ${task.category}`);
-  if (task.dueDate) parts.push(`Due: ${new Date(task.dueDate).toLocaleDateString()}`);
-  parts.push(`\nPlease update the task status on your task board as you work on this. Start by changing status to "in_progress" and add a comment about your approach.`);
-
-  const message = parts.join("\n");
-
-  try {
-    await fetch(
-      `http://${company.dropletIp}:3001/internal/employees/${employeeId}/chat`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-interservice-secret": company.interserviceSecret || "",
-        },
-        body: JSON.stringify({
-          messages: [{ role: "user", content: message }],
-        }),
-        signal: AbortSignal.timeout(60000),
-      },
-    );
-  } catch {
-    // Non-critical — employee will see the task next time they check
-    console.log(`[task-notify] Failed to notify employee ${employeeId} about task "${task.title}"`);
-  }
 }
 
 // PATCH /api/tasks — update a task

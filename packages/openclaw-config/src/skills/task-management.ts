@@ -78,6 +78,17 @@ curl -s -X PATCH "$BLITZ_API_URL/employee/tasks/TASK_ID" \\
 - **Finishing:** Change status to \`completed\` and add a summary of what was done
 - **Starting something new:** Create a self-reported task so your manager sees it on the board
 
+## Periodic Task Checking
+
+Your system will periodically remind you to check your task board. When you receive a task board check message:
+
+1. **Review the listed tasks** — understand what's been assigned
+2. **Pick up tasks** you can start — change their status to \`in_progress\`
+3. **Add a comment** explaining your approach for each task you start
+4. **Don't drop current work** — finish what you're doing first if it's urgent, then pick up new tasks
+
+You should also check your task board proactively between tasks or when you finish something.
+
 ## Best Practices
 
 - **Always check your tasks** when you start working — see if there's anything assigned to you
@@ -85,5 +96,6 @@ curl -s -X PATCH "$BLITZ_API_URL/employee/tasks/TASK_ID" \\
 - **Add meaningful comments** — "Done" is less useful than "Published blog post to /blog/q1-results, 1,200 words"
 - **Self-report substantial work** — if you're doing something that takes more than a few minutes, create a task for it
 - **Use categories** to help organize work (e.g., "marketing", "research", "engineering", "admin")
+- **Prioritize wisely** — if you have multiple pending tasks, start with the highest priority or earliest due date
 `;
 }

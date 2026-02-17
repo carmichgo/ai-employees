@@ -601,7 +601,7 @@ export default function TasksPage() {
                   cursor: (!newTask.employeeId || !newTask.title || creating) ? "not-allowed" : "pointer",
                   opacity: (!newTask.employeeId || !newTask.title || creating) ? 0.4 : 1,
                 }}
-              >{creating ? "Creating..." : "Create & Notify Employee"}</button>
+              >{creating ? "Creating..." : "Create Task"}</button>
             </div>
           </div>
         </div>

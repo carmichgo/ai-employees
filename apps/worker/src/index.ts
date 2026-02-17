@@ -9,6 +9,7 @@ import {
   type ProvisionJobData,
 } from "./workers/provision-employee.js";
 import { pollAllEmployeeHealth } from "./workers/health-poll.js";
+import { checkPendingTasks } from "./workers/task-check.js";
 
 const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
 
@@ -62,10 +63,20 @@ const healthInterval = setInterval(async () => {
   }
 }, 60_000);
 
+// Task checking — runs every 5 minutes, nudges employees about pending tasks
+const taskCheckInterval = setInterval(async () => {
+  try {
+    await checkPendingTasks();
+  } catch (error) {
+    console.error("[task-check] Task checking error:", error);
+  }
+}, 5 * 60_000);
+
 // Graceful shutdown
 async function shutdown() {
   console.log("[worker] Shutting down...");
   clearInterval(healthInterval);
+  clearInterval(taskCheckInterval);
   await provisionWorker.close();
   await connection.quit();
   process.exit(0);
