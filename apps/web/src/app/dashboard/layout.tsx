@@ -121,7 +121,7 @@ export default function DashboardLayout({
                 flexShrink: 0,
               }}
             >
-              AI
+              B
             </div>
             <span
               style={{
@@ -131,7 +131,7 @@ export default function DashboardLayout({
                 color: "var(--text)",
               }}
             >
-              AI Employees
+              Blitzer
             </span>
           </div>
         </div>

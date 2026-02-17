@@ -57,7 +57,7 @@ export default function LoginPage() {
               marginBottom: 20,
             }}
           >
-            AI
+            B
           </div>
           <h1
             style={{
