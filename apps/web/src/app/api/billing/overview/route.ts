@@ -83,7 +83,7 @@ export async function GET(request: NextRequest) {
 
         // Mark default payment method
         if (activeSub?.stripeSubscriptionId) {
-          const sub = await stripe.subscriptions.retrieve(activeSub.stripeSubscriptionId);
+          const sub: any = await stripe.subscriptions.retrieve(activeSub.stripeSubscriptionId);
           stripeSubscription = {
             id: sub.id,
             status: sub.status,
