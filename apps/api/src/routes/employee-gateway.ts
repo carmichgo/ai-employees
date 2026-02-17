@@ -7,8 +7,8 @@
  */
 import type { FastifyInstance } from "fastify";
 import { execSync } from "node:child_process";
-import { eq, and, ne } from "drizzle-orm";
-import { db, employees } from "@ai-employees/db";
+import { eq, and, ne, desc } from "drizzle-orm";
+import { db, employees, tasks, taskComments } from "@ai-employees/db";
 
 /** Authenticate an employee by their gateway token. Returns the employee or sends an error. */
 async function authenticateEmployee(request: { headers: { authorization?: string } }, reply: { status: (code: number) => { send: (body: unknown) => unknown } }) {
@@ -199,5 +199,123 @@ export async function employeeGatewayRoutes(fastify: FastifyInstance) {
       const message = err instanceof Error ? err.message : String(err);
       return reply.status(502).send({ error: `Could not reach ${target.name}: ${message}` });
     }
+  });
+
+  // ─── Task Management ───────────────────────────────────────────────
+
+  // GET /employee/tasks — list this employee's tasks
+  fastify.get("/employee/tasks", async (request, reply) => {
+    const auth = await authenticateEmployee(request, reply);
+    if ("error" in auth) return auth.error;
+    const { employee } = auth;
+
+    const myTasks = await db
+      .select({
+        id: tasks.id,
+        title: tasks.title,
+        description: tasks.description,
+        status: tasks.status,
+        priority: tasks.priority,
+        source: tasks.source,
+        category: tasks.category,
+        dueDate: tasks.dueDate,
+        completedAt: tasks.completedAt,
+        createdAt: tasks.createdAt,
+        updatedAt: tasks.updatedAt,
+      })
+      .from(tasks)
+      .where(eq(tasks.employeeId, employee.id))
+      .orderBy(desc(tasks.createdAt));
+
+    return { tasks: myTasks };
+  });
+
+  // POST /employee/tasks — create a self-reported task
+  fastify.post("/employee/tasks", async (request, reply) => {
+    const auth = await authenticateEmployee(request, reply);
+    if ("error" in auth) return auth.error;
+    const { employee } = auth;
+
+    const body = request.body as {
+      title: string;
+      description?: string;
+      priority?: string;
+      category?: string;
+      status?: string;
+    };
+
+    if (!body.title) {
+      return reply.status(400).send({ error: "title is required" });
+    }
+
+    const [task] = await db
+      .insert(tasks)
+      .values({
+        employeeId: employee.id,
+        companyId: employee.companyId,
+        title: body.title,
+        description: body.description || null,
+        priority: body.priority || "medium",
+        category: body.category || null,
+        status: body.status || "in_progress",
+        source: "employee",
+      })
+      .returning();
+
+    return { task };
+  });
+
+  // PATCH /employee/tasks/:taskId — update own task (status, progress comment)
+  fastify.patch<{ Params: { taskId: string } }>("/employee/tasks/:taskId", async (request, reply) => {
+    const auth = await authenticateEmployee(request, reply);
+    if ("error" in auth) return auth.error;
+    const { employee } = auth;
+
+    const { taskId } = request.params;
+    const body = request.body as {
+      status?: string;
+      title?: string;
+      description?: string;
+      category?: string;
+      comment?: string; // optional progress note
+    };
+
+    // Verify this task belongs to the employee
+    const [existing] = await db
+      .select()
+      .from(tasks)
+      .where(and(eq(tasks.id, taskId), eq(tasks.employeeId, employee.id)))
+      .limit(1);
+
+    if (!existing) {
+      return reply.status(404).send({ error: "Task not found" });
+    }
+
+    const updates: Record<string, unknown> = { updatedAt: new Date() };
+    if (body.status) {
+      updates.status = body.status;
+      if (body.status === "completed") updates.completedAt = new Date();
+    }
+    if (body.title) updates.title = body.title;
+    if (body.description !== undefined) updates.description = body.description;
+    if (body.category !== undefined) updates.category = body.category;
+
+    const [task] = await db
+      .update(tasks)
+      .set(updates)
+      .where(eq(tasks.id, taskId))
+      .returning();
+
+    // Add progress comment if provided
+    if (body.comment) {
+      await db.insert(taskComments).values({
+        taskId,
+        authorType: "employee",
+        authorName: employee.name,
+        content: body.comment,
+      });
+    }
+
+    return { task };
   });
 }

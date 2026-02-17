@@ -178,9 +178,23 @@ export const tasks = pgTable("tasks", {
   status: varchar("status", { length: 20 }).notNull().default("pending"),
   priority: varchar("priority", { length: 20 }).notNull().default("medium"),
   source: varchar("source", { length: 20 }).notNull().default("manager"),
+  category: varchar("category", { length: 100 }),
+  dueDate: timestamp("due_date", { withTimezone: true }),
   completedAt: timestamp("completed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ── Task Comments ──────────────────────────────────────
+export const taskComments = pgTable("task_comments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  taskId: uuid("task_id")
+    .notNull()
+    .references(() => tasks.id, { onDelete: "cascade" }),
+  authorType: varchar("author_type", { length: 20 }).notNull(),
+  authorName: varchar("author_name", { length: 200 }).notNull(),
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 // ── Usage Records ──────────────────────────────────────

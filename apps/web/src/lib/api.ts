@@ -413,6 +413,8 @@ class ApiClient {
         status: string;
         priority: string;
         source: string;
+        category: string | null;
+        dueDate: string | null;
         completedAt: string | null;
         createdAt: string;
         updatedAt: string;
@@ -428,6 +430,8 @@ class ApiClient {
     title: string;
     description?: string;
     priority?: string;
+    category?: string;
+    dueDate?: string;
   }) {
     return this.request<{ task: any }>("/api/tasks", {
       method: "POST",
@@ -440,6 +444,8 @@ class ApiClient {
     description?: string;
     status?: string;
     priority?: string;
+    category?: string;
+    dueDate?: string | null;
   }) {
     return this.request<{ task: any }>(`/api/tasks?taskId=${taskId}`, {
       method: "PATCH",
@@ -450,6 +456,27 @@ class ApiClient {
   async deleteTask(taskId: string) {
     return this.request<{ message: string }>(`/api/tasks?taskId=${taskId}`, {
       method: "DELETE",
+    });
+  }
+
+  // Task Comments
+  async listTaskComments(taskId: string) {
+    return this.request<{
+      comments: Array<{
+        id: string;
+        taskId: string;
+        authorType: string;
+        authorName: string;
+        content: string;
+        createdAt: string;
+      }>;
+    }>(`/api/tasks/comments?taskId=${taskId}`);
+  }
+
+  async addTaskComment(taskId: string, content: string, authorName?: string) {
+    return this.request<{ comment: any }>(`/api/tasks/comments?taskId=${taskId}`, {
+      method: "POST",
+      body: JSON.stringify({ content, authorName }),
     });
   }
 

@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq, and, desc } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { tasks, employees } from "@/lib/schema";
+import { tasks, employees, taskComments, companies } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
-import crypto from "node:crypto";
 
 async function authenticate(request: NextRequest) {
   const token =
@@ -31,6 +30,8 @@ export async function GET(request: NextRequest) {
       status: tasks.status,
       priority: tasks.priority,
       source: tasks.source,
+      category: tasks.category,
+      dueDate: tasks.dueDate,
       completedAt: tasks.completedAt,
       createdAt: tasks.createdAt,
       updatedAt: tasks.updatedAt,
@@ -62,7 +63,7 @@ export async function POST(request: NextRequest) {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await request.json();
-  const { employeeId, title, description, priority } = body;
+  const { employeeId, title, description, priority, category, dueDate, source } = body;
 
   if (!employeeId || !title) {
     return NextResponse.json({ error: "employeeId and title are required" }, { status: 400 });
@@ -87,11 +88,64 @@ export async function POST(request: NextRequest) {
       title,
       description: description || null,
       priority: priority || "medium",
-      source: "manager",
+      source: source || "manager",
+      category: category || null,
+      dueDate: dueDate ? new Date(dueDate) : null,
     })
     .returning();
 
+  // Notify the employee about the new task (fire-and-forget)
+  notifyEmployee(session.companyId, employeeId, task).catch(() => {});
+
   return NextResponse.json({ task }, { status: 201 });
+}
+
+/**
+ * Send a notification message to an employee's container about a new task.
+ * Fire-and-forget — doesn't block the API response.
+ */
+async function notifyEmployee(
+  companyId: string,
+  employeeId: string,
+  task: { title: string; description: string | null; priority: string; category: string | null; dueDate: Date | null },
+) {
+  const [company] = await db
+    .select()
+    .from(companies)
+    .where(eq(companies.id, companyId))
+    .limit(1);
+
+  if (!company || company.dropletStatus !== "active" || !company.dropletIp) return;
+
+  const parts = [`[New task assigned to you]`];
+  parts.push(`**${task.title}**`);
+  if (task.description) parts.push(task.description);
+  parts.push(`Priority: ${task.priority}`);
+  if (task.category) parts.push(`Category: ${task.category}`);
+  if (task.dueDate) parts.push(`Due: ${new Date(task.dueDate).toLocaleDateString()}`);
+  parts.push(`\nPlease update the task status on your task board as you work on this. Start by changing status to "in_progress" and add a comment about your approach.`);
+
+  const message = parts.join("\n");
+
+  try {
+    await fetch(
+      `http://${company.dropletIp}:3001/internal/employees/${employeeId}/chat`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-interservice-secret": company.interserviceSecret || "",
+        },
+        body: JSON.stringify({
+          messages: [{ role: "user", content: message }],
+        }),
+        signal: AbortSignal.timeout(60000),
+      },
+    );
+  } catch {
+    // Non-critical — employee will see the task next time they check
+    console.log(`[task-notify] Failed to notify employee ${employeeId} about task "${task.title}"`);
+  }
 }
 
 // PATCH /api/tasks — update a task
@@ -110,8 +164,11 @@ export async function PATCH(request: NextRequest) {
   if (body.status !== undefined) {
     updates.status = body.status;
     if (body.status === "completed") updates.completedAt = new Date();
+    else updates.completedAt = null;
   }
   if (body.priority !== undefined) updates.priority = body.priority;
+  if (body.category !== undefined) updates.category = body.category || null;
+  if (body.dueDate !== undefined) updates.dueDate = body.dueDate ? new Date(body.dueDate) : null;
 
   const [task] = await db
     .update(tasks)
