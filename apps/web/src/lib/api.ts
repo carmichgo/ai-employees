@@ -480,6 +480,38 @@ class ApiClient {
     });
   }
 
+  // Billing
+  async createCheckoutSession(data: {
+    name: string;
+    jobTitle: string;
+    tier: string;
+    channels: string[];
+    capabilities: string[];
+    expertise: string[];
+    templateId?: string;
+    persona?: string;
+    goals?: string;
+    toolsAllow?: string[];
+    skills?: string[];
+    personalityConfig?: any;
+    authorityConfig?: any;
+  }) {
+    return this.request<{ url: string }>("/api/billing/checkout", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async createPortalSession() {
+    return this.request<{ url: string }>("/api/billing/portal", {
+      method: "POST",
+    });
+  }
+
+  async listSubscriptions() {
+    return this.request<{ subscriptions: any[] }>("/api/billing/subscriptions");
+  }
+
   getSlackInstallUrl(): string {
     const token = this.getToken();
     // The install route is a redirect, so we navigate to it directly

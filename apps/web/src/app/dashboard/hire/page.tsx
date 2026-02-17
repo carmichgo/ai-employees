@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useCallback, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import {
   JOB_TEMPLATES,
@@ -207,6 +207,8 @@ const styles = {
 
 export default function HireEmployeePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const [paymentStatus, setPaymentStatus] = useState<"success" | "cancelled" | null>(null);
   const [stepIndex, setStepIndex] = useState(0);
   const [direction, setDirection] = useState<"forward" | "back">("forward");
   const [animKey, setAnimKey] = useState(0);
@@ -233,6 +235,20 @@ export default function HireEmployeePage() {
   const step = STEPS[stepIndex];
   const template = selectedTemplate ? getJobTemplate(selectedTemplate) : null;
   const categories = getJobTemplateCategories();
+
+  // ── Handle Stripe return ───────────────────
+  useEffect(() => {
+    const payment = searchParams.get("payment");
+    if (payment === "success") {
+      setPaymentStatus("success");
+      // Redirect to employees list after a brief pause
+      const timer = setTimeout(() => router.push("/dashboard/employees"), 3000);
+      return () => clearTimeout(timer);
+    }
+    if (payment === "cancelled") {
+      setPaymentStatus("cancelled");
+    }
+  }, [searchParams, router]);
 
   // ── Navigation ─────────────────────────────
 
@@ -335,7 +351,7 @@ export default function HireEmployeePage() {
       const toolsAllow = expandCapabilities(form.capabilities);
       const skillSlugs = expandExpertise(form.skills);
 
-      const result = await api.hireEmployee({
+      const hireData = {
         name: form.name,
         jobTitle: form.jobTitle,
         tier: form.tier,
@@ -349,7 +365,27 @@ export default function HireEmployeePage() {
         authorityConfig: form.authority.members.length > 0 || form.authority.defaultRole !== "manager"
           ? form.authority
           : undefined,
-      });
+      };
+
+      // Try Stripe checkout first — if billing is configured, redirect to payment
+      try {
+        const checkout = await api.createCheckoutSession({
+          ...hireData,
+          capabilities: form.capabilities,
+          expertise: form.skills,
+        });
+        if (checkout.url) {
+          window.location.href = checkout.url;
+          return;
+        }
+      } catch (checkoutErr: any) {
+        // If billing isn't configured (500 / STRIPE_SECRET_KEY missing),
+        // fall back to direct hire (demo mode)
+        if (checkoutErr.status !== 500) throw checkoutErr;
+      }
+
+      // Fallback: direct hire (no Stripe)
+      const result = await api.hireEmployee(hireData);
       router.push(`/dashboard/employees/${result.employee.id}`);
     } catch (err: any) {
       setError(err.message || "Failed to hire employee");
@@ -671,8 +707,61 @@ export default function HireEmployeePage() {
         padding: "40px 0",
       }}
     >
+      {/* ═══ Payment Return Status ═══ */}
+      {paymentStatus === "success" && (
+        <div style={{
+          textAlign: "center",
+          padding: "80px 20px",
+        }}>
+          <div style={{
+            width: 64, height: 64, borderRadius: "50%",
+            background: "rgba(22, 163, 74, 0.1)", margin: "0 auto 20px",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <Check size={32} style={{ color: "#16a34a" }} />
+          </div>
+          <h1 style={styles.heading}>Payment confirmed!</h1>
+          <p style={styles.subtitle}>
+            Your new employee is being set up. Redirecting to your team...
+          </p>
+          <div style={{ marginTop: 24 }}>
+            <Loader2 size={20} className="spin" style={{ color: "var(--text-secondary)" }} />
+          </div>
+        </div>
+      )}
+      {paymentStatus === "cancelled" && (
+        <div style={{
+          background: "rgba(217, 119, 6, 0.06)",
+          border: "1px solid rgba(217, 119, 6, 0.15)",
+          borderRadius: "var(--radius-lg)",
+          padding: "14px 18px",
+          marginBottom: 24,
+          fontSize: 13,
+          color: "#d97706",
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+        }}>
+          Payment was cancelled. You can try again when you&apos;re ready.
+          <button
+            onClick={() => setPaymentStatus(null)}
+            style={{
+              marginLeft: "auto",
+              background: "none",
+              border: "none",
+              color: "#d97706",
+              fontWeight: 600,
+              cursor: "pointer",
+              fontSize: 13,
+            }}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* ═══ Step 1: Role Selection ═══ */}
-      {step === "role" && (
+      {step === "role" && paymentStatus !== "success" && (
         <div key={animKey} className={animClass}>
           <h1 style={styles.heading}>What role should they fill?</h1>
           <p style={styles.subtitle}>

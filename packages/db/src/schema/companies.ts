@@ -8,6 +8,8 @@ export const companies = pgTable("companies", {
   maxEmployees: integer("max_employees").notNull().default(5),
   status: varchar("status", { length: 20 }).notNull().default("active"),
   settings: jsonb("settings").notNull().default({}),
+  // Stripe billing
+  stripeCustomerId: varchar("stripe_customer_id", { length: 255 }),
   // Per-company DigitalOcean droplet
   dropletId: varchar("droplet_id", { length: 50 }),
   dropletIp: varchar("droplet_ip", { length: 45 }),
