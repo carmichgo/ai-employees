@@ -354,7 +354,7 @@ function EmployeeCard({ emp }: { emp: any }) {
   return (
     <Link
       href={`/dashboard/employees/${emp.id}`}
-      style={{ textDecoration: "none", color: "inherit", display: "flex" }}
+      style={{ textDecoration: "none", color: "inherit", display: "flex", minWidth: 0 }}
     >
       <div
         onMouseEnter={() => setHovered(true)}
@@ -362,7 +362,7 @@ function EmployeeCard({ emp }: { emp: any }) {
         style={{
           padding: 16,
           display: "flex", flexDirection: "column",
-          flex: 1,
+          flex: 1, overflow: "hidden",
           background: hovered ? "var(--bg-secondary, #fafafa)" : "#fff",
           border: `1px solid ${hovered ? "var(--text-tertiary, #c5c5c5)" : "var(--border, #e5e5e5)"}`,
           borderRadius: "var(--radius-lg, 10px)",
