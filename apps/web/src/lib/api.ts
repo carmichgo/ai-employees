@@ -531,6 +531,16 @@ class ApiClient {
     return this.request<{ subscriptions: any[] }>("/api/billing/subscriptions");
   }
 
+  async getBillingOverview() {
+    return this.request<{
+      subscription: any;
+      employees: any[];
+      monthlyTotal: number;
+      paymentMethods: any[];
+      invoices: any[];
+    }>("/api/billing/overview");
+  }
+
   getSlackInstallUrl(): string {
     const token = this.getToken();
     // The install route is a redirect, so we navigate to it directly

@@ -16,6 +16,7 @@ import {
   Server,
   Link2,
   Inbox,
+  CreditCard,
 } from "lucide-react";
 
 const NAV_SECTIONS = [
@@ -37,6 +38,7 @@ const NAV_SECTIONS = [
   {
     label: "Settings",
     items: [
+      { href: "/dashboard/billing", label: "Billing", icon: CreditCard },
       { href: "/dashboard/settings", label: "Settings", icon: Settings },
     ],
   },
