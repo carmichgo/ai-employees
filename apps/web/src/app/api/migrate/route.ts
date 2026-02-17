@@ -28,6 +28,10 @@ export async function POST(request: NextRequest) {
     await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS tier VARCHAR(20) NOT NULL DEFAULT 'junior'`;
     results.push("0002: employee tier column — OK");
 
+    // Migration 0003: Add employee authority_config column
+    await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS authority_config JSONB NOT NULL DEFAULT '{"defaultRole":"manager","members":[]}'`;
+    results.push("0003: employee authority_config column — OK");
+
     // Check current employees columns
     const cols = await sql`
       SELECT column_name FROM information_schema.columns
