@@ -617,7 +617,7 @@ html {
   transform: translateX(-50%);
   width: 800px;
   height: 600px;
-  background: radial-gradient(ellipse at center, rgba(99, 102, 241, 0.08) 0%, rgba(168, 85, 247, 0.04) 40%, transparent 70%);
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.04) 0%, rgba(0, 0, 0, 0.02) 40%, transparent 70%);
   pointer-events: none;
   animation: lp-glow-pulse 8s ease-in-out infinite;
 }
@@ -674,14 +674,12 @@ html {
 }
 
 .lp-gradient-text {
-  background: linear-gradient(135deg, #6366f1, #a855f7, #ec4899);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--text);
+  -webkit-text-fill-color: var(--text);
 }
 
 .lp-cursor {
-  -webkit-text-fill-color: #6366f1;
+  -webkit-text-fill-color: var(--text);
   animation: lp-blink-cursor 1s step-end infinite;
 }
 
@@ -826,7 +824,7 @@ html {
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #6366f1;
+  color: var(--text-tertiary);
   margin-bottom: 12px;
 }
 
@@ -863,10 +861,7 @@ html {
   font-size: 48px;
   font-weight: 800;
   letter-spacing: -0.04em;
-  background: linear-gradient(135deg, #6366f1, #a855f7);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--text);
   margin-bottom: 20px;
   line-height: 1;
 }
@@ -1153,7 +1148,7 @@ html {
   position: absolute;
   inset: -20px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(99, 102, 241, 0.06) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(0, 0, 0, 0.03) 0%, transparent 70%);
   animation: lp-glow-pulse 4s ease-in-out infinite;
 }
 
@@ -1185,7 +1180,7 @@ html {
 
 .lp-clock-value span {
   font-size: 28px;
-  color: #6366f1;
+  color: var(--text-secondary);
 }
 
 .lp-clock-label {
@@ -1261,7 +1256,7 @@ html {
   left: 50%;
   transform: translateX(-50%);
   padding: 4px 16px;
-  background: #6366f1;
+  background: var(--text);
   color: #fff;
   font-size: 11px;
   font-weight: 600;
@@ -1406,6 +1401,81 @@ html {
   color: #28c840;
 }
 
+/* ── Add-ons ─────────────────────────────── */
+.lp-addons {
+  max-width: 1000px;
+  margin: 64px auto 0;
+}
+
+.lp-addons-title {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.lp-addons-subtitle {
+  font-size: 14px;
+  color: var(--text-secondary);
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.lp-addons-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.lp-addon-group {
+  background: #fafafa;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 24px;
+}
+
+.lp-addon-group-title {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  margin-bottom: 16px;
+}
+
+.lp-addon-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+}
+
+.lp-addon-item + .lp-addon-item {
+  border-top: 1px solid rgba(0, 0, 0, 0.04);
+}
+
+.lp-addon-name {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.lp-addon-price {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.lp-addon-free {
+  color: var(--green);
+}
+
+@media (max-width: 900px) {
+  .lp-addons-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ── CTA ──────────────────────────────────── */
 .lp-cta {
   position: relative;
@@ -1421,7 +1491,7 @@ html {
   transform: translate(-50%, -50%);
   width: 600px;
   height: 400px;
-  background: radial-gradient(ellipse at center, rgba(99, 102, 241, 0.06) 0%, transparent 70%);
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.03) 0%, transparent 70%);
   pointer-events: none;
 }
 

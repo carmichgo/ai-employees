@@ -177,8 +177,8 @@ export default function LandingPage() {
       <nav className={`lp-nav ${navScrolled ? "lp-nav-scrolled" : ""}`}>
         <div className="lp-nav-inner">
           <Link href="/" className="lp-logo">
-            <div className="lp-logo-mark">AI</div>
-            <span className="lp-logo-text">AI Employees</span>
+            <div className="lp-logo-mark">B</div>
+            <span className="lp-logo-text">Blitzer</span>
           </Link>
           <div className="lp-nav-links">
             <a href="#roles" className="lp-nav-link">Roles</a>
@@ -374,7 +374,7 @@ export default function LandingPage() {
                 <span className="lp-terminal-dot lp-dot-red" />
                 <span className="lp-terminal-dot lp-dot-yellow" />
                 <span className="lp-terminal-dot lp-dot-green" />
-                <span className="lp-terminal-title">marketing-manager@ai-employees</span>
+                <span className="lp-terminal-title">marketing-manager@blitzer</span>
               </div>
               <div className="lp-terminal-body">
                 <div className="lp-terminal-line"><span className="lp-t-prompt">$</span> checking inbox...</div>
@@ -469,6 +469,58 @@ export default function LandingPage() {
             </Reveal>
           ))}
         </div>
+
+        {/* Add-ons */}
+        <Reveal>
+          <div className="lp-addons">
+            <div className="lp-addons-title">Customize with add-ons</div>
+            <div className="lp-addons-subtitle">Extend any employee with extra channels, capabilities, and expertise. Higher tiers include more for free.</div>
+            <div className="lp-addons-grid">
+              <div className="lp-addon-group">
+                <div className="lp-addon-group-title">Channels</div>
+                {[
+                  { name: "Slack & Email", price: "Included" },
+                  { name: "Telegram & Discord", price: "Free w/ Senior+" },
+                  { name: "WhatsApp & Teams", price: "From $19/mo" },
+                  { name: "Signal & Matrix", price: "From $19/mo" },
+                ].map((a) => (
+                  <div key={a.name} className="lp-addon-item">
+                    <span className="lp-addon-name">{a.name}</span>
+                    <span className={`lp-addon-price ${a.price === "Included" ? "lp-addon-free" : ""}`}>{a.price}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="lp-addon-group">
+                <div className="lp-addon-group-title">Capabilities</div>
+                {[
+                  { name: "Web, Search & Files", price: "Included" },
+                  { name: "Code Execution & PDFs", price: "Free w/ Senior+" },
+                  { name: "Image Generation", price: "From $19/mo" },
+                  { name: "Video & Phone Calls", price: "From $29/mo" },
+                ].map((a) => (
+                  <div key={a.name} className="lp-addon-item">
+                    <span className="lp-addon-name">{a.name}</span>
+                    <span className={`lp-addon-price ${a.price === "Included" ? "lp-addon-free" : ""}`}>{a.price}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="lp-addon-group">
+                <div className="lp-addon-group-title">Expertise</div>
+                {[
+                  { name: "Research & Writing", price: "Included" },
+                  { name: "Data & Support", price: "Free w/ Senior+" },
+                  { name: "Code & Social Media", price: "From $19/mo" },
+                  { name: "Sales, Design & Ops", price: "From $19/mo" },
+                ].map((a) => (
+                  <div key={a.name} className="lp-addon-item">
+                    <span className="lp-addon-name">{a.name}</span>
+                    <span className={`lp-addon-price ${a.price === "Included" ? "lp-addon-free" : ""}`}>{a.price}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </Reveal>
       </section>
 
       {/* ── Final CTA ─────────────────────────── */}
@@ -497,8 +549,8 @@ export default function LandingPage() {
         <div className="lp-footer-inner">
           <div className="lp-footer-brand">
             <div className="lp-logo">
-              <div className="lp-logo-mark">AI</div>
-              <span className="lp-logo-text">AI Employees</span>
+              <div className="lp-logo-mark">B</div>
+              <span className="lp-logo-text">Blitzer</span>
             </div>
             <p className="lp-footer-tagline">The AI workforce platform.<br />Powered by OpenClaw.</p>
           </div>
@@ -517,7 +569,7 @@ export default function LandingPage() {
           </div>
         </div>
         <div className="lp-footer-bottom">
-          <p>&copy; {new Date().getFullYear()} AI Employees. All rights reserved.</p>
+          <p>&copy; {new Date().getFullYear()} Blitzer. All rights reserved.</p>
         </div>
       </footer>
     </div>
