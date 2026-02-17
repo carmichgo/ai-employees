@@ -6,6 +6,8 @@ import { verifyToken } from "@/lib/auth";
 import { updateEmployeeSchema } from "@ai-employees/shared";
 import { getCompanyBackend, createBackendClient } from "@/lib/backend";
 
+export const maxDuration = 60;
+
 async function authenticate(request: NextRequest) {
   const token =
     request.cookies.get("token")?.value ||

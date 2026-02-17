@@ -8,6 +8,7 @@ import type { EmployeeTier } from "@ai-employees/shared";
 import type Stripe from "stripe";
 
 export const runtime = "nodejs";
+export const maxDuration = 60; // Webhook needs time for Stripe + DB + DO provisioning
 
 /**
  * POST /api/webhooks/stripe

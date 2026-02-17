@@ -8,6 +8,8 @@
  * survive page refreshes.
  */
 import { NextRequest, NextResponse } from "next/server";
+
+export const maxDuration = 120; // Chat responses from AI can take time
 import { eq, and, desc } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { employees, companies, chatMessages } from "@/lib/schema";

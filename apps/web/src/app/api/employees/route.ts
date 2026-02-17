@@ -3,6 +3,8 @@ import crypto from "node:crypto";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { employees, companies, channelConnections } from "@/lib/schema";
+
+export const maxDuration = 60; // Allow up to 60s for DO droplet provisioning API calls
 import { verifyToken } from "@/lib/auth";
 import { getCompanyBackend, createBackendClient } from "@/lib/backend";
 import { createCompanyDroplet, isDropletProvisioningEnabled } from "@/lib/digitalocean";

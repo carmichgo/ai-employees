@@ -3,6 +3,8 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { companies, users, subscriptions, employees } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
+
+export const maxDuration = 60; // Allow up to 60s for Stripe + DO API calls
 import {
   getOrCreateStripeCustomer,
   createFirstHireCheckout,

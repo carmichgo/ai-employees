@@ -3,6 +3,9 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { companies } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
+
+export const maxDuration = 60;
+
 import {
   pollDropletStatus,
   destroyCompanyDroplet,
