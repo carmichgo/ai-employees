@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
-import { Plus, Users, MessageCircle, Search, Mail, Cpu, Calendar } from "lucide-react";
+import { Plus, Users, MessageCircle, Search, Mail, Cpu, Calendar, LayoutGrid, List, ChevronRight } from "lucide-react";
 
 const STATUS_OPTIONS = [
   { value: "all", label: "All" },
@@ -47,12 +47,22 @@ function timeAgo(dateStr: string): string {
   return d.toLocaleDateString();
 }
 
+function getStatusStyle(status: string) {
+  if (status === "active") return { color: "#16a34a", bg: "rgba(22, 163, 74, 0.06)", border: "rgba(22, 163, 74, 0.14)" };
+  if (status === "provisioning" || status === "onboarding") return { color: "#d97706", bg: "rgba(217, 119, 6, 0.06)", border: "rgba(217, 119, 6, 0.14)" };
+  if (status === "error") return { color: "#dc2626", bg: "rgba(220, 38, 38, 0.06)", border: "rgba(220, 38, 38, 0.14)" };
+  return { color: "#a3a3a3", bg: "#f5f5f5", border: "#e5e5e5" };
+}
+
+type ViewMode = "grid" | "list";
+
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [viewMode, setViewMode] = useState<ViewMode>("grid");
 
   const fetchEmployees = () => {
     setLoading(true);
@@ -206,8 +216,8 @@ export default function EmployeesPage() {
         </div>
       ) : (
         <>
-          {/* Search + Filters */}
-          <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+          {/* Search + Filters + View Toggle */}
+          <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
             {/* Search */}
             <div style={{ position: "relative", flex: "1 1 200px", minWidth: 200 }}>
               <Search
@@ -263,6 +273,27 @@ export default function EmployeesPage() {
                 );
               })}
             </div>
+
+            {/* View toggle */}
+            <div style={{
+              display: "flex", border: "1px solid var(--border, #e5e5e5)",
+              borderRadius: "var(--radius-sm, 6px)", overflow: "hidden", flexShrink: 0,
+            }}>
+              {([["grid", LayoutGrid], ["list", List]] as const).map(([mode, Icon]) => (
+                <button
+                  key={mode}
+                  onClick={() => setViewMode(mode as ViewMode)}
+                  style={{
+                    width: 32, height: 30, display: "flex", alignItems: "center", justifyContent: "center",
+                    border: "none", cursor: "pointer", transition: "all 0.12s ease",
+                    background: viewMode === mode ? "var(--text, #0a0a0a)" : "#fff",
+                    color: viewMode === mode ? "#fff" : "var(--text-tertiary, #a3a3a3)",
+                  }}
+                >
+                  <Icon size={14} strokeWidth={2} />
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Results count when filtering */}
@@ -273,7 +304,7 @@ export default function EmployeesPage() {
             </p>
           )}
 
-          {/* Employee Cards Grid */}
+          {/* Employee list */}
           {filtered.length === 0 ? (
             <div style={{
               padding: "40px 20px", textAlign: "center",
@@ -284,7 +315,7 @@ export default function EmployeesPage() {
                 No employees match your filters
               </p>
             </div>
-          ) : (
+          ) : viewMode === "grid" ? (
             <div style={{
               display: "grid",
               gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
@@ -294,6 +325,17 @@ export default function EmployeesPage() {
                 <EmployeeCard key={emp.id} emp={emp} />
               ))}
             </div>
+          ) : (
+            <div style={{
+              border: "1px solid var(--border, #e5e5e5)",
+              borderRadius: "var(--radius-lg, 10px)",
+              background: "#fff", overflow: "hidden",
+              boxShadow: "var(--shadow-sm, 0 1px 3px rgba(0,0,0,0.06))",
+            }}>
+              {filtered.map((emp, i) => (
+                <EmployeeRow key={emp.id} emp={emp} isLast={i === filtered.length - 1} />
+              ))}
+            </div>
           )}
         </>
       )}
@@ -301,29 +343,26 @@ export default function EmployeesPage() {
   );
 }
 
+/* ── Grid Card ──────────────────────────────────────────── */
+
 function EmployeeCard({ emp }: { emp: any }) {
   const [hovered, setHovered] = useState(false);
   const model = getModelLabel(emp.modelConfig);
   const tier = TIER_LABELS[emp.tier] || emp.tier;
-
-  const statusStyle = emp.status === "active"
-    ? { color: "#16a34a", bg: "rgba(22, 163, 74, 0.06)", border: "rgba(22, 163, 74, 0.14)" }
-    : emp.status === "provisioning" || emp.status === "onboarding"
-      ? { color: "#d97706", bg: "rgba(217, 119, 6, 0.06)", border: "rgba(217, 119, 6, 0.14)" }
-      : emp.status === "error"
-        ? { color: "#dc2626", bg: "rgba(220, 38, 38, 0.06)", border: "rgba(220, 38, 38, 0.14)" }
-        : { color: "#a3a3a3", bg: "#f5f5f5", border: "#e5e5e5" };
+  const statusStyle = getStatusStyle(emp.status);
 
   return (
     <Link
       href={`/dashboard/employees/${emp.id}`}
-      style={{ textDecoration: "none", color: "inherit", display: "block" }}
+      style={{ textDecoration: "none", color: "inherit", display: "flex" }}
     >
       <div
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         style={{
           padding: 16,
+          display: "flex", flexDirection: "column",
+          flex: 1,
           background: hovered ? "var(--bg-secondary, #fafafa)" : "#fff",
           border: `1px solid ${hovered ? "var(--text-tertiary, #c5c5c5)" : "var(--border, #e5e5e5)"}`,
           borderRadius: "var(--radius-lg, 10px)",
@@ -362,45 +401,36 @@ function EmployeeCard({ emp }: { emp: any }) {
               {emp.jobTitle}
             </div>
           </div>
-          {/* Status badge */}
-          <span
-            style={{
-              display: "inline-flex", alignItems: "center", gap: 4,
-              height: 22, padding: "0 7px", fontSize: 11, fontWeight: 500,
-              borderRadius: "var(--radius-sm, 6px)", textTransform: "capitalize",
-              color: statusStyle.color, background: statusStyle.bg,
-              border: `1px solid ${statusStyle.border}`, flexShrink: 0, whiteSpace: "nowrap",
-            }}
-          >
-            <span style={{ width: 5, height: 5, borderRadius: "50%", background: "currentColor", flexShrink: 0 }} />
-            {emp.status}
-          </span>
+          <StatusBadge status={emp.status} />
         </div>
 
-        {/* Info row */}
+        {/* Info rows — fixed 3 lines so all cards are same height */}
         <div style={{
-          display: "flex", flexWrap: "wrap", gap: "6px 14px",
+          display: "flex", flexDirection: "column", gap: 4, flex: 1,
           fontSize: 12, color: "var(--text-tertiary, #a3a3a3)", lineHeight: 1.4,
         }}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-            <Cpu size={12} strokeWidth={1.5} />
+            <Cpu size={12} strokeWidth={1.5} style={{ flexShrink: 0 }} />
             {tier} &middot; {model}
           </span>
-          {emp.emailAddress && (
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-              <Mail size={12} strokeWidth={1.5} />
-              {emp.emailAddress}
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, minHeight: 17 }}>
+            <Mail size={12} strokeWidth={1.5} style={{ flexShrink: 0, opacity: emp.emailAddress ? 1 : 0.35 }} />
+            <span style={{
+              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+              opacity: emp.emailAddress ? 1 : 0.5,
+            }}>
+              {emp.emailAddress || "No email"}
             </span>
-          )}
+          </span>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-            <Calendar size={12} strokeWidth={1.5} />
+            <Calendar size={12} strokeWidth={1.5} style={{ flexShrink: 0 }} />
             Hired {timeAgo(emp.createdAt)}
           </span>
         </div>
 
-        {/* Actions row */}
-        {emp.status === "active" && (
-          <div style={{ display: "flex", gap: 6, marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--border, #e5e5e5)" }}>
+        {/* Actions row — always rendered for consistent height */}
+        <div style={{ display: "flex", gap: 6, marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--border, #e5e5e5)" }}>
+          {emp.status === "active" ? (
             <Link
               href={`/dashboard/employees/${emp.id}/chat`}
               onClick={(e) => e.stopPropagation()}
@@ -416,9 +446,138 @@ function EmployeeCard({ emp }: { emp: any }) {
               <MessageCircle size={12} />
               Chat
             </Link>
-          </div>
-        )}
+          ) : (
+            <span style={{ height: 28, display: "flex", alignItems: "center", fontSize: 12, color: "var(--text-tertiary, #a3a3a3)" }}>
+              {emp.status === "provisioning" ? "Setting up..." : emp.status === "paused" ? "Paused" : emp.status === "error" ? "Needs attention" : "Offline"}
+            </span>
+          )}
+        </div>
       </div>
     </Link>
+  );
+}
+
+/* ── List Row ──────────────────────────────────────────── */
+
+function EmployeeRow({ emp, isLast }: { emp: any; isLast: boolean }) {
+  const [hovered, setHovered] = useState(false);
+  const model = getModelLabel(emp.modelConfig);
+  const tier = TIER_LABELS[emp.tier] || emp.tier;
+
+  return (
+    <Link
+      href={`/dashboard/employees/${emp.id}`}
+      style={{ textDecoration: "none", color: "inherit", display: "block" }}
+    >
+      <div
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        style={{
+          padding: "10px 16px",
+          display: "flex", alignItems: "center", gap: 16,
+          borderBottom: isLast ? "none" : "1px solid var(--border, #e5e5e5)",
+          background: hovered ? "var(--bg-secondary, #f5f5f5)" : "transparent",
+          transition: "background 0.12s ease",
+          cursor: "pointer",
+        }}
+      >
+        {/* Avatar */}
+        <div style={{
+          width: 34, height: 34, borderRadius: "var(--radius-md, 8px)",
+          background: "var(--bg-secondary, #f5f5f5)",
+          border: "1px solid var(--border, #e5e5e5)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 16, flexShrink: 0,
+        }}>
+          {emp.emoji || "A"}
+        </div>
+
+        {/* Name + role */}
+        <div style={{ flex: "1 1 160px", minWidth: 0 }}>
+          <div style={{
+            fontWeight: 500, fontSize: 13, color: "var(--text, #0a0a0a)",
+            lineHeight: 1.3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+          }}>
+            {emp.name}
+          </div>
+          <div style={{
+            fontSize: 12, color: "var(--text-secondary, #525252)", lineHeight: 1.3, marginTop: 1,
+            whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+          }}>
+            {emp.jobTitle}
+          </div>
+        </div>
+
+        {/* Tier + Model */}
+        <div style={{
+          flex: "0 0 auto", fontSize: 12, color: "var(--text-tertiary, #a3a3a3)",
+          display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap",
+        }}>
+          <Cpu size={11} strokeWidth={1.5} />
+          {tier} &middot; {model}
+        </div>
+
+        {/* Email */}
+        <div style={{
+          flex: "0 1 180px", fontSize: 12, color: "var(--text-tertiary, #a3a3a3)",
+          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+          display: "flex", alignItems: "center", gap: 4,
+          minWidth: 0,
+        }}>
+          {emp.emailAddress ? (
+            <>
+              <Mail size={11} strokeWidth={1.5} style={{ flexShrink: 0 }} />
+              {emp.emailAddress}
+            </>
+          ) : (
+            <span style={{ opacity: 0.5 }}>&mdash;</span>
+          )}
+        </div>
+
+        {/* Status */}
+        <StatusBadge status={emp.status} />
+
+        {/* Chat + Chevron */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+          {emp.status === "active" && (
+            <Link
+              href={`/dashboard/employees/${emp.id}/chat`}
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "center",
+                width: 28, height: 28,
+                borderRadius: "var(--radius-sm, 6px)", textDecoration: "none",
+                color: "var(--blue, #2563eb)", background: "rgba(37, 99, 235, 0.06)",
+                border: "1px solid rgba(37, 99, 235, 0.12)",
+                transition: "all 0.12s ease",
+              }}
+            >
+              <MessageCircle size={12} />
+            </Link>
+          )}
+          <ChevronRight size={14} strokeWidth={1.5} style={{ color: "var(--text-tertiary, #a3a3a3)" }} />
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+/* ── Shared Status Badge ──────────────────────────────── */
+
+function StatusBadge({ status }: { status: string }) {
+  const s = getStatusStyle(status);
+  return (
+    <span
+      style={{
+        display: "inline-flex", alignItems: "center", gap: 4,
+        height: 22, padding: "0 7px", fontSize: 11, fontWeight: 500,
+        borderRadius: "var(--radius-sm, 6px)", textTransform: "capitalize",
+        color: s.color, background: s.bg,
+        border: `1px solid ${s.border}`, flexShrink: 0, whiteSpace: "nowrap",
+      }}
+    >
+      <span style={{ width: 5, height: 5, borderRadius: "50%", background: "currentColor", flexShrink: 0 }} />
+      {status}
+    </span>
   );
 }
