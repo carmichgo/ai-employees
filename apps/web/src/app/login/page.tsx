@@ -125,6 +125,20 @@ export default function LoginPage() {
               />
             </div>
 
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: -4 }}>
+              <Link
+                href="/forgot-password"
+                style={{
+                  color: "var(--text-tertiary)",
+                  fontSize: 12,
+                  textDecoration: "none",
+                  fontWeight: 500,
+                }}
+              >
+                Forgot password?
+              </Link>
+            </div>
+
             <button
               type="submit"
               className="btn-primary"

@@ -82,6 +82,20 @@ class ApiClient {
     return this.request<{ user: any; company: any }>("/api/auth/me");
   }
 
+  async forgotPassword(email: string) {
+    return this.request<{ message: string; resetUrl?: string }>(
+      "/api/auth/forgot-password",
+      { method: "POST", body: JSON.stringify({ email }) },
+    );
+  }
+
+  async resetPassword(token: string, password: string) {
+    return this.request<{ message: string }>(
+      "/api/auth/reset-password",
+      { method: "POST", body: JSON.stringify({ token, password }) },
+    );
+  }
+
   // Employees
   async listEmployees() {
     return this.request<{ employees: any[] }>("/api/employees");
