@@ -60,52 +60,58 @@ export async function GET(request: NextRequest) {
 
 // POST /api/employees — hire
 export async function POST(request: NextRequest) {
-  const session = await authenticate(request);
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    const session = await authenticate(request);
+    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const body = await request.json();
-  const input = createEmployeeSchema.parse(body);
+    const body = await request.json();
+    const input = createEmployeeSchema.parse(body);
 
-  // Check if company has an active droplet backend
-  const backendConfig = await getCompanyBackend(session.companyId);
-
-  if (backendConfig) {
-    // Droplet is active — delegate provisioning to it
+    // Check if company has an active droplet backend
+    let backendConfig: Awaited<ReturnType<typeof getCompanyBackend>> = null;
     try {
-      // Pull channel credentials from company settings for connected integrations
-      const channelCredentials = await getChannelCredentials(session.companyId, input.channels || []);
-
-      const backend = createBackendClient(backendConfig);
-      const result = await backend.provisionEmployee({
-        companyId: session.companyId,
-        name: input.name,
-        jobTitle: input.jobTitle,
-        tier: input.tier || "junior",
-        templateId: input.templateId || undefined,
-        persona: input.persona || undefined,
-        goals: input.goals || undefined,
-        personalityConfig: input.personalityConfig || undefined,
-        authorityConfig: input.authorityConfig || undefined,
-        channels: input.channels || [],
-        channelCredentials,
-        modelConfig: input.modelConfig,
-        toolsAllow: input.toolsAllow || undefined,
-        skills: input.skills || undefined,
-      });
-
-      // Create channel connection rows for tracking
-      if (result.employee?.id && input.channels?.length) {
-        await createChannelConnectionRows(result.employee.id, input.channels);
-      }
-
-      return NextResponse.json(result, { status: 201 });
+      backendConfig = await getCompanyBackend(session.companyId);
     } catch (err: any) {
-      return NextResponse.json({ error: err.message }, { status: 500 });
+      console.error("getCompanyBackend failed, continuing without backend:", err.message);
     }
-  }
 
-  // No active droplet — check if we should auto-provision one
-  if (isDropletProvisioningEnabled()) {
+    if (backendConfig) {
+      // Droplet is active — delegate provisioning to it
+      try {
+        // Pull channel credentials from company settings for connected integrations
+        const channelCredentials = await getChannelCredentials(session.companyId, input.channels || []);
+
+        const backend = createBackendClient(backendConfig);
+        const result = await backend.provisionEmployee({
+          companyId: session.companyId,
+          name: input.name,
+          jobTitle: input.jobTitle,
+          tier: input.tier || "junior",
+          templateId: input.templateId || undefined,
+          persona: input.persona || undefined,
+          goals: input.goals || undefined,
+          personalityConfig: input.personalityConfig || undefined,
+          authorityConfig: input.authorityConfig || undefined,
+          channels: input.channels || [],
+          channelCredentials,
+          modelConfig: input.modelConfig,
+          toolsAllow: input.toolsAllow || undefined,
+          skills: input.skills || undefined,
+        });
+
+        // Create channel connection rows for tracking
+        if (result.employee?.id && input.channels?.length) {
+          await createChannelConnectionRows(result.employee.id, input.channels);
+        }
+
+        return NextResponse.json(result, { status: 201 });
+      } catch (err: any) {
+        console.error("Backend provisioning failed, falling through to local create:", err.message);
+        // Fall through to create employee locally instead of returning 500
+      }
+    }
+
+    // Look up company (used by both droplet-provisioning and fallback paths)
     const [company] = await db
       .select()
       .from(companies)
@@ -116,135 +122,90 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Company not found" }, { status: 404 });
     }
 
-    if (company.dropletStatus === "provisioning") {
-      return NextResponse.json(
-        {
-          error: "Your infrastructure is still being set up. This usually takes 2-3 minutes. Please try again shortly.",
-          dropletStatus: "provisioning",
-        },
-        { status: 503 },
-      );
-    }
-
-    // Auto-provision a droplet for this company
-    try {
-      await createCompanyDroplet(session.companyId);
-
-      let persona = input.persona;
-      let goals = input.goals;
-      let emoji = "🤖";
-
-      if (input.templateId) {
-        const template = getJobTemplate(input.templateId);
-        if (template) {
-          persona = persona || template.persona;
-          goals = goals || template.goals;
-          emoji = template.emoji;
-        }
+    // No active droplet — check if we should auto-provision one
+    let dropletProvisioned = false;
+    if (isDropletProvisioningEnabled()) {
+      if (company.dropletStatus === "provisioning") {
+        return NextResponse.json(
+          {
+            error: "Your infrastructure is still being set up. This usually takes 2-3 minutes. Please try again shortly.",
+            dropletStatus: "provisioning",
+          },
+          { status: 503 },
+        );
       }
 
-      const gatewayToken = crypto.randomBytes(32).toString("hex");
-      const tier = (input.tier || "junior") as EmployeeTier;
-      const tierModel = getModelForTier(tier);
-
-      const [employee] = await db
-        .insert(employees)
-        .values({
-          companyId: session.companyId,
-          name: input.name,
-          jobTitle: input.jobTitle,
-          templateId: input.templateId,
-          tier,
-          emoji,
-          persona,
-          goals,
-          personalityConfig: input.personalityConfig || { autonomy: "high", proactivity: "proactive", communication: "concise" },
-          authorityConfig: input.authorityConfig || { defaultRole: "manager", members: [] },
-          modelConfig: input.modelConfig || { primary: tierModel },
-          toolsConfig: input.toolsAllow ? { allow: input.toolsAllow } : {},
-          gatewayToken,
-          status: "provisioning",
-          containerName: `ai-emp-${company.slug}-${slugify(input.name)}-${crypto.randomBytes(3).toString("hex")}`,
-        })
-        .returning();
-
-      if (input.channels?.length) {
-        await createChannelConnectionRows(employee.id, input.channels);
+      // Auto-provision a droplet for this company
+      try {
+        await createCompanyDroplet(session.companyId);
+        dropletProvisioned = true;
+      } catch (err: any) {
+        console.error("Droplet provisioning failed, creating employee without droplet:", err.message);
+        // Fall through — create the employee anyway without a droplet
       }
-
-      return NextResponse.json(
-        {
-          employee: sanitize(employee),
-          message: `${input.name} is being hired! Setting up dedicated infrastructure — this takes 2-3 minutes.`,
-          dropletStatus: "provisioning",
-        },
-        { status: 201 },
-      );
-    } catch (err: any) {
-      return NextResponse.json({ error: err.message }, { status: 500 });
     }
-  }
 
-  // Fallback — create employee directly in the database (no droplet)
-  const [company] = await db
-    .select()
-    .from(companies)
-    .where(eq(companies.id, session.companyId))
-    .limit(1);
-  if (!company) {
-    return NextResponse.json({ error: "Company not found" }, { status: 404 });
-  }
+    let persona = input.persona;
+    let goals = input.goals;
+    let emoji = "🤖";
 
-  let persona = input.persona;
-  let goals = input.goals;
-  let emoji = "🤖";
-
-  if (input.templateId) {
-    const template = getJobTemplate(input.templateId);
-    if (template) {
-      persona = persona || template.persona;
-      goals = goals || template.goals;
-      emoji = template.emoji;
+    if (input.templateId) {
+      const template = getJobTemplate(input.templateId);
+      if (template) {
+        persona = persona || template.persona;
+        goals = goals || template.goals;
+        emoji = template.emoji;
+      }
     }
+
+    const gatewayToken = crypto.randomBytes(32).toString("hex");
+    const tier = (input.tier || "junior") as EmployeeTier;
+    const tierModel = getModelForTier(tier);
+
+    const [employee] = await db
+      .insert(employees)
+      .values({
+        companyId: session.companyId,
+        name: input.name,
+        jobTitle: input.jobTitle,
+        templateId: input.templateId,
+        tier,
+        emoji,
+        persona,
+        goals,
+        personalityConfig: input.personalityConfig || { autonomy: "high", proactivity: "proactive", communication: "concise" },
+        authorityConfig: input.authorityConfig || { defaultRole: "manager", members: [] },
+        modelConfig: input.modelConfig || { primary: tierModel },
+        toolsConfig: input.toolsAllow ? { allow: input.toolsAllow } : {},
+        gatewayToken,
+        status: dropletProvisioned ? "provisioning" : "active",
+        containerName: `ai-emp-${company.slug}-${slugify(input.name)}-${crypto.randomBytes(3).toString("hex")}`,
+      })
+      .returning();
+
+    if (input.channels?.length) {
+      await createChannelConnectionRows(employee.id, input.channels);
+    }
+
+    const message = dropletProvisioned
+      ? `${input.name} is being hired! Setting up dedicated infrastructure — this takes 2-3 minutes.`
+      : `${input.name} has been hired!`;
+
+    return NextResponse.json(
+      {
+        employee: sanitize(employee),
+        message,
+        ...(dropletProvisioned ? { dropletStatus: "provisioning" } : {}),
+      },
+      { status: 201 },
+    );
+  } catch (err: any) {
+    console.error("POST /api/employees error:", err);
+    return NextResponse.json(
+      { error: err.message || "Failed to hire employee" },
+      { status: 500 },
+    );
   }
-
-  const gatewayToken = crypto.randomBytes(32).toString("hex");
-  const tier = (input.tier || "junior") as EmployeeTier;
-  const tierModel = getModelForTier(tier);
-
-  const [employee] = await db
-    .insert(employees)
-    .values({
-      companyId: session.companyId,
-      name: input.name,
-      jobTitle: input.jobTitle,
-      templateId: input.templateId,
-      tier,
-      emoji,
-      persona,
-      goals,
-      personalityConfig: input.personalityConfig || { autonomy: "high", proactivity: "proactive", communication: "concise" },
-      authorityConfig: input.authorityConfig || { defaultRole: "manager", members: [] },
-      modelConfig: input.modelConfig || { primary: tierModel },
-      toolsConfig: input.toolsAllow ? { allow: input.toolsAllow } : {},
-      gatewayToken,
-      status: "active",
-      containerName: `ai-emp-${company.slug}-${slugify(input.name)}-${crypto.randomBytes(3).toString("hex")}`,
-    })
-    .returning();
-
-  // Create channel connection rows for tracking
-  if (input.channels?.length) {
-    await createChannelConnectionRows(employee.id, input.channels);
-  }
-
-  return NextResponse.json(
-    {
-      employee: sanitize(employee),
-      message: `${input.name} has been hired!`,
-    },
-    { status: 201 },
-  );
 }
 
 /** Create channelConnections rows for selected channels */

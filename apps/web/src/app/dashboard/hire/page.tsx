@@ -395,12 +395,12 @@ function HireEmployeeWizard() {
           return;
         }
       } catch (checkoutErr: any) {
-        // If billing fails (Stripe not configured, network error, etc.),
-        // fall back to direct hire
-        if (checkoutErr.status && checkoutErr.status !== 500 && checkoutErr.status < 500) throw checkoutErr;
+        // Only rethrow client errors (400, 401, 403, etc.)
+        // Let server errors (500+) and network errors fall through to direct hire
+        if (checkoutErr.status && checkoutErr.status >= 400 && checkoutErr.status < 500) throw checkoutErr;
       }
 
-      // Fallback: direct hire (no Stripe)
+      // Direct hire (no Stripe or Stripe unavailable)
       const result = await api.hireEmployee(hireData);
       router.push(`/dashboard/employees/${result.employee.id}`);
     } catch (err: any) {
