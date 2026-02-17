@@ -74,6 +74,10 @@ export const employees = pgTable("employees", {
   }),
   toolsConfig: jsonb("tools_config").notNull().default({}),
   sandboxConfig: jsonb("sandbox_config").notNull().default({}),
+  authorityConfig: jsonb("authority_config").notNull().default({
+    defaultRole: "manager",
+    members: [],
+  }),
   emailAddress: varchar("email_address", { length: 255 }),
   provisionedAccounts: jsonb("provisioned_accounts").notNull().default({}),
   credentials: jsonb("credentials").notNull().default([]),
