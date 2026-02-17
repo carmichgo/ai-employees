@@ -17,6 +17,8 @@ import {
   EXPERTISE_OPTIONS,
   EMPLOYEE_TIERS,
   EMPLOYEE_TIER_OPTIONS,
+  getAddonPrice,
+  calculateAddonTotal,
   type PersonalityConfig,
   type EmployeeTier,
 } from "@ai-employees/shared";
@@ -371,12 +373,14 @@ export default function HireEmployeePage() {
     icon,
     label,
     desc,
+    priceBadge,
   }: {
     selected: boolean;
     onClick: () => void;
     icon: React.ReactNode;
     label: string;
     desc?: string;
+    priceBadge?: "free" | number;
   }) => (
     <button
       onClick={onClick}
@@ -409,15 +413,33 @@ export default function HireEmployeePage() {
     >
       {icon && <div style={{ fontSize: 20, lineHeight: 1, flexShrink: 0, marginTop: 1 }}>{icon}</div>}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div
-          style={{
-            fontSize: 14,
-            fontWeight: 600,
-            color: "var(--text)",
-            letterSpacing: "-0.01em",
-          }}
-        >
-          {label}
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <div
+            style={{
+              fontSize: 14,
+              fontWeight: 600,
+              color: "var(--text)",
+              letterSpacing: "-0.01em",
+            }}
+          >
+            {label}
+          </div>
+          {priceBadge !== undefined && (
+            <span
+              style={{
+                fontSize: 10,
+                fontWeight: 600,
+                padding: "2px 6px",
+                borderRadius: 4,
+                whiteSpace: "nowrap",
+                ...(priceBadge === "free"
+                  ? { color: "#16a34a", background: "rgba(22, 163, 74, 0.08)" }
+                  : { color: "#d97706", background: "rgba(217, 119, 6, 0.08)" }),
+              }}
+            >
+              {priceBadge === "free" ? "Included" : `+$${priceBadge}/mo`}
+            </span>
+          )}
         </div>
         {desc && (
           <div
@@ -1364,6 +1386,7 @@ export default function HireEmployeePage() {
           >
             {CHANNEL_OPTIONS.map((ch) => {
               const selected = form.channels.includes(ch.id);
+              const price = getAddonPrice("channels", ch.id, form.tier);
               return (
                 <div key={ch.id} style={{ height: "100%" }}>
                   {renderSelectionCard({
@@ -1372,6 +1395,7 @@ export default function HireEmployeePage() {
                     icon: <ch.Icon size={20} style={{ color: selected ? "var(--text)" : "var(--text-secondary)" }} />,
                     label: ch.label,
                     desc: ch.desc,
+                    priceBadge: price,
                   })}
                 </div>
               );
@@ -1402,6 +1426,7 @@ export default function HireEmployeePage() {
             {CAPABILITY_OPTIONS.map((cap) => {
               const selected = form.capabilities.includes(cap.id);
               const Icon = CAPABILITY_ICONS[cap.id] || Sparkles;
+              const price = getAddonPrice("capabilities", cap.id, form.tier);
               return (
                 <div key={cap.id} style={{ height: "100%" }}>
                   {renderSelectionCard({
@@ -1410,6 +1435,7 @@ export default function HireEmployeePage() {
                     icon: <Icon size={20} style={{ color: selected ? "var(--text)" : "var(--text-secondary)" }} />,
                     label: cap.label,
                     desc: cap.desc,
+                    priceBadge: price,
                   })}
                 </div>
               );
@@ -1440,6 +1466,7 @@ export default function HireEmployeePage() {
             {EXPERTISE_OPTIONS.map((skill) => {
               const selected = form.skills.includes(skill.id);
               const Icon = EXPERTISE_ICONS[skill.id] || Sparkles;
+              const price = getAddonPrice("expertise", skill.id, form.tier);
               return (
                 <button
                   key={skill.id}
@@ -1488,10 +1515,27 @@ export default function HireEmployeePage() {
                       <Check size={11} style={{ color: "#ffffff" }} />
                     </div>
                   )}
-                  <Icon
-                    size={20}
-                    style={{ color: selected ? "var(--text)" : "var(--text-secondary)" }}
-                  />
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <Icon
+                      size={20}
+                      style={{ color: selected ? "var(--text)" : "var(--text-secondary)" }}
+                    />
+                    {price !== "free" && (
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 600,
+                          padding: "2px 6px",
+                          borderRadius: 4,
+                          whiteSpace: "nowrap",
+                          color: "#d97706",
+                          background: "rgba(217, 119, 6, 0.08)",
+                        }}
+                      >
+                        +${price}/mo
+                      </span>
+                    )}
+                  </div>
                   <div>
                     <div
                       style={{
@@ -1593,22 +1637,79 @@ export default function HireEmployeePage() {
             <div className="divider" style={{ marginBottom: 20 }} />
 
             {/* Tier & Pricing */}
-            <div style={{ marginBottom: 20 }}>
-              <div style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>
-                Employee Tier
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={pillStyle}>
-                  {EMPLOYEE_TIERS[form.tier].label}
-                </span>
-                <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>
-                  ${EMPLOYEE_TIERS[form.tier].priceMonthly}/mo
-                </span>
-                <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
-                  &middot; {EMPLOYEE_TIERS[form.tier].creditsIncluded} credits included
-                </span>
-              </div>
-            </div>
+            {(() => {
+              const baseCost = EMPLOYEE_TIERS[form.tier].priceMonthly;
+              const addonCost = calculateAddonTotal(form.tier, form.channels, form.capabilities, form.skills);
+              const totalCost = baseCost + addonCost;
+
+              // Collect paid add-on line items
+              const addonLines: { label: string; price: number }[] = [];
+              for (const ch of form.channels) {
+                const p = getAddonPrice("channels", ch, form.tier);
+                if (p !== "free") {
+                  const opt = CHANNEL_OPTIONS.find((c) => c.id === ch);
+                  addonLines.push({ label: opt?.label || ch, price: p });
+                }
+              }
+              for (const cap of form.capabilities) {
+                const p = getAddonPrice("capabilities", cap, form.tier);
+                if (p !== "free") {
+                  const opt = CAPABILITY_OPTIONS.find((c) => c.id === cap);
+                  addonLines.push({ label: opt?.label || cap, price: p });
+                }
+              }
+              for (const sk of form.skills) {
+                const p = getAddonPrice("expertise", sk, form.tier);
+                if (p !== "free") {
+                  const opt = EXPERTISE_OPTIONS.find((s) => s.id === sk);
+                  addonLines.push({ label: opt?.label || sk, price: p });
+                }
+              }
+
+              return (
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>
+                    Pricing
+                  </div>
+                  {/* Base tier */}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={pillStyle}>{EMPLOYEE_TIERS[form.tier].label}</span>
+                      <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
+                        {EMPLOYEE_TIERS[form.tier].creditsIncluded} credits included
+                      </span>
+                    </div>
+                    <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text)" }}>
+                      ${baseCost}/mo
+                    </span>
+                  </div>
+                  {/* Add-on line items */}
+                  {addonLines.length > 0 && (
+                    <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border)" }}>
+                      {addonLines.map((item, i) => (
+                        <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "3px 0" }}>
+                          <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>{item.label}</span>
+                          <span style={{ fontSize: 13, color: "#d97706", fontWeight: 500 }}>+${item.price}/mo</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {/* Total */}
+                  <div style={{
+                    marginTop: 10, paddingTop: 10,
+                    borderTop: "1.5px solid var(--text)",
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                  }}>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>
+                      Total
+                    </span>
+                    <span style={{ fontSize: 18, fontWeight: 700, color: "var(--text)", letterSpacing: "-0.02em" }}>
+                      ${totalCost}/mo
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Personality */}
             <div style={{ marginBottom: 20 }}>
@@ -1658,10 +1759,12 @@ export default function HireEmployeePage() {
                 {form.channels.length > 0 ? (
                   form.channels.map((ch) => {
                     const channel = CHANNEL_OPTIONS.find((c) => c.id === ch);
+                    const price = getAddonPrice("channels", ch, form.tier);
                     return (
                       <span key={ch} style={pillStyle}>
                         {channel && <channel.Icon size={12} />}
                         {channel?.label || ch}
+                        {price !== "free" && <span style={{ color: "#d97706", fontSize: 10, fontWeight: 600 }}>+${price}</span>}
                       </span>
                     );
                   })
@@ -1684,8 +1787,12 @@ export default function HireEmployeePage() {
                 ) : form.capabilities.length > 0 ? (
                   form.capabilities.map((capId) => {
                     const cap = CAPABILITY_OPTIONS.find((c) => c.id === capId);
+                    const price = getAddonPrice("capabilities", capId, form.tier);
                     return (
-                      <span key={capId} style={pillStyle}>{cap?.label || capId}</span>
+                      <span key={capId} style={pillStyle}>
+                        {cap?.label || capId}
+                        {price !== "free" && <span style={{ color: "#d97706", fontSize: 10, fontWeight: 600 }}>+${price}</span>}
+                      </span>
                     );
                   })
                 ) : (
@@ -1706,10 +1813,12 @@ export default function HireEmployeePage() {
                   form.skills.map((sk) => {
                     const skill = EXPERTISE_OPTIONS.find((s) => s.id === sk);
                     const Icon = EXPERTISE_ICONS[sk];
+                    const price = getAddonPrice("expertise", sk, form.tier);
                     return (
                       <span key={sk} style={pillStyle}>
                         {Icon && <Icon size={12} />}
                         {skill?.label || sk}
+                        {price !== "free" && <span style={{ color: "#d97706", fontSize: 10, fontWeight: 600 }}>+${price}</span>}
                       </span>
                     );
                   })
