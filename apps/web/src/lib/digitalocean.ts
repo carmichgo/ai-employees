@@ -12,7 +12,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { companies } from "@/lib/schema";
 
-const DO_API_TOKEN = process.env.DO_API_TOKEN;
+const DO_API_TOKEN = process.env.DO_API_TOKEN?.trim();
 const DO_API = "https://api.digitalocean.com/v2";
 
 // The GitHub repo URL for cloning on the droplet
@@ -458,7 +458,7 @@ export async function createCompanyDroplet(companyId: string): Promise<{
   }
 
   const interserviceSecret = crypto.randomBytes(32).toString("hex");
-  const databaseUrl = process.env.DATABASE_URL;
+  const databaseUrl = process.env.DATABASE_URL?.trim();
   if (!databaseUrl) throw new Error("DATABASE_URL not set");
 
   const region = company.dropletRegion || "nyc3";
