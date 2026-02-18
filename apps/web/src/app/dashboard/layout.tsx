@@ -80,7 +80,7 @@ export default function DashboardLayout({
   const isFullWidth = pathname.startsWith("/dashboard/inbox");
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh" }}>
+    <div style={{ display: "flex", minHeight: "100vh", position: "relative", isolation: "isolate" }}>
       {/* Sidebar */}
       <aside
         style={{
@@ -289,6 +289,8 @@ export default function DashboardLayout({
           flex: 1,
           marginLeft: 220,
           minHeight: "100vh",
+          position: "relative",
+          zIndex: 1,
         }}
       >
         <div
