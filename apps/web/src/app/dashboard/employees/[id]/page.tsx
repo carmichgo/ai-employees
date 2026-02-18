@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import {
   ArrowLeft, Pause, Play, Trash2, Loader2, Server, Mail, Cpu, Clock, Calendar,
@@ -123,9 +123,11 @@ function formatFileSize(bytes: number): string {
 export default function EmployeeDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [employee, setEmployee] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [hireBanner, setHireBanner] = useState<{ billed: boolean; price: string } | null>(null);
 
   // Email config state
   const [emailConfig, setEmailConfig] = useState<any>(null);
@@ -176,6 +178,18 @@ export default function EmployeeDetailPage() {
   const [credNotice, setCredNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   const employeeId = params.id as string;
+
+  // Show hire confirmation banner from URL params
+  useEffect(() => {
+    if (searchParams.get("hired") === "true") {
+      setHireBanner({
+        billed: searchParams.get("billed") === "true",
+        price: searchParams.get("price") || "",
+      });
+      // Clean URL params without full reload
+      window.history.replaceState({}, "", `/dashboard/employees/${employeeId}`);
+    }
+  }, [searchParams, employeeId]);
 
   useEffect(() => {
     api.getEmployee(employeeId).then((res) => {
@@ -450,6 +464,32 @@ export default function EmployeeDetailPage() {
       <Link href="/dashboard/employees" style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "var(--text-secondary)", textDecoration: "none", fontSize: 13, marginBottom: 24, transition: "color 0.15s" }}>
         <ArrowLeft size={14} /> Back to Employees
       </Link>
+
+      {/* Hire confirmation banner */}
+      {hireBanner && (
+        <div style={{
+          background: "var(--green-muted)",
+          border: "1px solid var(--green)",
+          borderRadius: "var(--radius-md)",
+          padding: "12px 16px",
+          marginBottom: 24,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--green)" }}>
+            <Check size={16} />
+            <span style={{ fontWeight: 500 }}>
+              {employee?.name || "Employee"} has been hired!
+              {hireBanner.billed && hireBanner.price && ` Added to your subscription — $${hireBanner.price}/mo.`}
+              {hireBanner.billed && !hireBanner.price && " Added to your subscription."}
+            </span>
+          </div>
+          <button onClick={() => setHireBanner(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--green)", padding: 4 }}>
+            <X size={14} />
+          </button>
+        </div>
+      )}
 
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 32 }}>

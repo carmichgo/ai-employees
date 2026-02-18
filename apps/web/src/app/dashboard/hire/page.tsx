@@ -408,7 +408,10 @@ function HireEmployeeWizard() {
         }
         if ((checkout as any).employee) {
           // Subsequent hire — employee was created and billed immediately
-          router.push(`/dashboard/employees/${(checkout as any).employee.id}`);
+          const billingMsg = (checkout as any).billingAdded
+            ? `&billed=true&price=${(checkout as any).priceMonthly || ""}`
+            : "";
+          router.push(`/dashboard/employees/${(checkout as any).employee.id}?hired=true${billingMsg}`);
           return;
         }
       } catch (checkoutErr: any) {

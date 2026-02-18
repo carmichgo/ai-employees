@@ -113,15 +113,40 @@ export async function provisionAndReturn(
   let status = "active"; // demo mode
   let dropletStatus: string | undefined;
 
-  if (isDropletProvisioningEnabled() && company.dropletStatus !== "active") {
-    try {
-      await createCompanyDroplet(companyId);
-      // Only set provisioning status if droplet was actually created
+  if (isDropletProvisioningEnabled()) {
+    // Handle stale "provisioning" state — if the droplet has been provisioning
+    // for more than 15 minutes, reset so we can try again
+    if (company.dropletStatus === "provisioning" && company.updatedAt) {
+      const staleMins = (Date.now() - new Date(company.updatedAt).getTime()) / 60000;
+      if (staleMins > 15) {
+        console.warn(`Company ${companyId} droplet stuck in provisioning for ${Math.round(staleMins)}min, resetting`);
+        await db.update(companies).set({
+          dropletStatus: "error",
+          updatedAt: new Date(),
+        }).where(eq(companies.id, companyId));
+        // Refresh company data
+        company.dropletStatus = "error";
+      }
+    }
+
+    if (company.dropletStatus !== "active") {
+      try {
+        await createCompanyDroplet(companyId);
+        status = "provisioning";
+        dropletStatus = "provisioning";
+      } catch (err: any) {
+        console.error("provisionAndReturn droplet creation error:", err);
+        // Still set status to provisioning if there's a droplet in progress
+        if (company.dropletStatus === "provisioning") {
+          status = "provisioning";
+          dropletStatus = "provisioning";
+        }
+      }
+    } else {
+      // Company has an "active" droplet but backend was unreachable (fell through above).
+      // Create the employee as "provisioning" so it can be picked up when the backend recovers.
       status = "provisioning";
       dropletStatus = "provisioning";
-    } catch (err: any) {
-      console.error("provisionAndReturn droplet creation error:", err);
-      // Droplet creation failed — create employee as active (demo mode)
     }
   }
 

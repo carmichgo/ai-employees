@@ -127,14 +127,25 @@ export async function POST(request: NextRequest) {
     // No active droplet — check if we should auto-provision one
     let dropletProvisioned = false;
     if (isDropletProvisioningEnabled()) {
-      if (company.dropletStatus === "provisioning") {
-        return NextResponse.json(
-          {
-            error: "Your infrastructure is still being set up. This usually takes 2-3 minutes. Please try again shortly.",
-            dropletStatus: "provisioning",
-          },
-          { status: 503 },
-        );
+      // Handle stale "provisioning" state — if stuck for more than 15 minutes, reset
+      if (company.dropletStatus === "provisioning" && company.updatedAt) {
+        const staleMins = (Date.now() - new Date(company.updatedAt).getTime()) / 60000;
+        if (staleMins > 15) {
+          console.warn(`Company ${session.companyId} droplet stuck in provisioning for ${Math.round(staleMins)}min, resetting`);
+          await db.update(companies).set({
+            dropletStatus: "error",
+            updatedAt: new Date(),
+          }).where(eq(companies.id, session.companyId));
+          company.dropletStatus = "error";
+        } else {
+          return NextResponse.json(
+            {
+              error: "Your infrastructure is still being set up. This usually takes 2-3 minutes. Please try again shortly.",
+              dropletStatus: "provisioning",
+            },
+            { status: 503 },
+          );
+        }
       }
 
       // Auto-provision a droplet for this company
@@ -143,7 +154,10 @@ export async function POST(request: NextRequest) {
         dropletProvisioned = true;
       } catch (err: any) {
         console.error("Droplet provisioning failed, creating employee without droplet:", err.message);
-        // Fall through — create the employee anyway without a droplet
+        // If there's a droplet in some state, still mark as provisioning
+        if (company.dropletStatus === "provisioning" || company.dropletStatus === "active") {
+          dropletProvisioned = true;
+        }
       }
     }
 

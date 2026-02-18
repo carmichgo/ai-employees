@@ -148,13 +148,18 @@ export async function POST(request: NextRequest) {
       }
 
       // Provision the employee immediately (same as POST /api/employees)
+      const priceMonthly = calculateTotalPriceDollars(pricing);
       const { provisionAndReturn } = await import("@/lib/hire");
       const result = await provisionAndReturn(session.companyId, hirePayload, {
         stripeSubscriptionItemId: subscriptionItemId,
-        priceMonthly: calculateTotalPriceDollars(pricing),
+        priceMonthly,
       });
 
-      return NextResponse.json(result, { status: 201 });
+      return NextResponse.json({
+        ...result,
+        billingAdded: true,
+        priceMonthly,
+      }, { status: 201 });
     }
 
     // ── First hire: redirect to Stripe Checkout ──
