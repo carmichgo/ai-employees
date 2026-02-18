@@ -247,9 +247,26 @@ function HireEmployeeWizard() {
   // ── Handle Stripe return ───────────────────
   useEffect(() => {
     const payment = searchParams.get("payment");
-    if (payment === "success") {
+    const sessionId = searchParams.get("session_id");
+    if (payment === "success" && sessionId) {
       setPaymentStatus("success");
-      // Redirect to employees list after a brief pause
+      // Confirm the checkout and provision the employee
+      api.confirmCheckout(sessionId)
+        .then((result) => {
+          if (result.employee?.id) {
+            router.push(`/dashboard/employees/${result.employee.id}`);
+          } else {
+            // Already completed by webhook or no employee ID — go to list
+            router.push("/dashboard/employees");
+          }
+        })
+        .catch((err) => {
+          console.error("Checkout confirm failed:", err);
+          // Still redirect — webhook may have handled it
+          router.push("/dashboard/employees");
+        });
+    } else if (payment === "success") {
+      setPaymentStatus("success");
       const timer = setTimeout(() => router.push("/dashboard/employees"), 3000);
       return () => clearTimeout(timer);
     }

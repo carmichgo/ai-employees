@@ -521,6 +521,16 @@ class ApiClient {
     });
   }
 
+  async confirmCheckout(sessionId: string) {
+    return this.request<{ employee?: any; message?: string; alreadyCompleted?: boolean }>(
+      "/api/billing/checkout/confirm",
+      {
+        method: "POST",
+        body: JSON.stringify({ sessionId }),
+      },
+    );
+  }
+
   async createPortalSession() {
     return this.request<{ url: string }>("/api/billing/portal", {
       method: "POST",
