@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { companies, employees, subscriptions } from "@/lib/schema";
+import { companies, employees, subscriptions, pendingHires } from "@/lib/schema";
 import { getStripe, calculateTotalPriceDollars, type EmployeePricingParams } from "@/lib/stripe";
 import { provisionAndReturn } from "@/lib/hire";
 import type { EmployeeTier } from "@ai-employees/shared";
@@ -73,13 +73,31 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   if (session.mode !== "subscription") return;
 
   const companyId = session.metadata?.companyId;
-  const hirePayloadRaw = session.metadata?.hirePayload;
-  if (!companyId || !hirePayloadRaw) {
-    console.error("Checkout session missing companyId or hirePayload metadata");
+  const pendingHireId = session.metadata?.pendingHireId;
+  if (!companyId || !pendingHireId) {
+    console.error("Checkout session missing companyId or pendingHireId metadata");
     return;
   }
 
-  const hirePayload = JSON.parse(hirePayloadRaw);
+  // Retrieve the hire payload from the pending_hires table
+  const [pendingHire] = await db
+    .select()
+    .from(pendingHires)
+    .where(eq(pendingHires.id, pendingHireId))
+    .limit(1);
+
+  if (!pendingHire) {
+    console.error("Pending hire not found:", pendingHireId);
+    return;
+  }
+
+  const hirePayload = pendingHire.payload as Record<string, any>;
+
+  // Mark the pending hire as completed
+  await db
+    .update(pendingHires)
+    .set({ status: "completed" })
+    .where(eq(pendingHires.id, pendingHireId));
   const stripeSubscriptionId =
     typeof session.subscription === "string"
       ? session.subscription

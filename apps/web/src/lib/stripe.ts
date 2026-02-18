@@ -116,7 +116,7 @@ export async function createFirstHireCheckout(opts: {
   stripeCustomerId: string;
   companyId: string;
   pricing: EmployeePricingParams;
-  hirePayload: Record<string, unknown>;
+  pendingHireId: string;
   successUrl: string;
   cancelUrl: string;
 }): Promise<Stripe.Checkout.Session> {
@@ -143,7 +143,7 @@ export async function createFirstHireCheckout(opts: {
     ],
     metadata: {
       companyId: opts.companyId,
-      hirePayload: JSON.stringify(opts.hirePayload),
+      pendingHireId: opts.pendingHireId,
     },
     subscription_data: {
       metadata: { companyId: opts.companyId },

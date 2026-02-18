@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { companies, users, subscriptions, employees } from "@/lib/schema";
+import { companies, users, subscriptions, employees, pendingHires } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
 
 export const maxDuration = 60; // Allow up to 60s for Stripe + DO API calls
@@ -158,6 +158,12 @@ export async function POST(request: NextRequest) {
     }
 
     // ── First hire: redirect to Stripe Checkout ──
+    // Store the hire payload in the DB to avoid Stripe's 500-char metadata limit
+    const [pendingHire] = await db.insert(pendingHires).values({
+      companyId: company.id,
+      payload: hirePayload,
+    }).returning();
+
     const origin = request.headers.get("origin") || process.env.NEXT_PUBLIC_APP_URL || process.env.PLATFORM_URL || "http://localhost:3000";
 
     let checkoutSession;
@@ -166,7 +172,7 @@ export async function POST(request: NextRequest) {
         stripeCustomerId,
         companyId: company.id,
         pricing,
-        hirePayload,
+        pendingHireId: pendingHire.id,
         successUrl: `${origin}/dashboard/hire?payment=success&session_id={CHECKOUT_SESSION_ID}`,
         cancelUrl: `${origin}/dashboard/hire?payment=cancelled`,
       });

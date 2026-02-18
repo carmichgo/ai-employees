@@ -32,6 +32,18 @@ export async function POST(request: NextRequest) {
     await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS authority_config JSONB NOT NULL DEFAULT '{"defaultRole":"manager","members":[]}'`;
     results.push("0003: employee authority_config column — OK");
 
+    // Migration 0004: Add pending_hires table
+    await sql`
+      CREATE TABLE IF NOT EXISTS pending_hires (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        company_id UUID NOT NULL REFERENCES companies(id),
+        payload JSONB NOT NULL,
+        status VARCHAR(20) NOT NULL DEFAULT 'pending',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `;
+    results.push("0004: pending_hires table — OK");
+
     // Check current employees columns
     const cols = await sql`
       SELECT column_name FROM information_schema.columns

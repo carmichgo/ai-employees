@@ -221,6 +221,17 @@ export const usageRecords = pgTable("usage_records", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// ── Pending Hires (stores hire payload while Stripe Checkout is in progress) ──
+export const pendingHires = pgTable("pending_hires", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  companyId: uuid("company_id")
+    .notNull()
+    .references(() => companies.id),
+  payload: jsonb("payload").notNull(),
+  status: varchar("status", { length: 20 }).notNull().default("pending"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // ── Subscriptions (one per company — employees are line items) ──
 export const subscriptions = pgTable("subscriptions", {
   id: uuid("id").primaryKey().defaultRandom(),
