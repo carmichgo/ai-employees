@@ -213,13 +213,34 @@ export default function EmployeeDetailPage() {
     api.listChannels(employeeId).then((res) => setChannelsList(res.channels || [])).catch(() => {});
   }, [employeeId]);
 
-  // Auto-poll while provisioning
+  // Auto-poll while provisioning, with auto-reprovision for stuck employees
+  const reprovisionAttempted = useRef(false);
+  const provisioningStartRef = useRef<number | null>(null);
   useEffect(() => {
-    if (!employee || (employee.status !== "provisioning" && employee.status !== "onboarding")) return;
-    const interval = setInterval(() => {
-      api.getEmployee(employeeId).then((res) => {
+    if (!employee || (employee.status !== "provisioning" && employee.status !== "onboarding")) {
+      provisioningStartRef.current = null;
+      reprovisionAttempted.current = false;
+      return;
+    }
+    if (!provisioningStartRef.current) provisioningStartRef.current = Date.now();
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await api.getEmployee(employeeId);
         setEmployee(res.employee);
-      }).catch(() => {});
+
+        // If still provisioning after 2 minutes, try reprovision once
+        if (
+          res.employee.status === "provisioning" &&
+          !reprovisionAttempted.current &&
+          provisioningStartRef.current &&
+          Date.now() - provisioningStartRef.current > 120000
+        ) {
+          reprovisionAttempted.current = true;
+          console.log("[auto-reprovision] Attempting reprovision for stuck employee", employeeId);
+          fetch(`/api/employees/${employeeId}/reprovision`, { method: "POST" }).catch(() => {});
+        }
+      } catch {}
     }, 4000);
     return () => clearInterval(interval);
   }, [employee?.status, employeeId]);
@@ -540,6 +561,20 @@ export default function EmployeeDetailPage() {
           <div style={{ marginTop: 24, height: 3, background: "var(--border)", borderRadius: 2, overflow: "hidden", maxWidth: 300, margin: "24px auto 0" }}>
             <div style={{ height: "100%", width: "60%", background: "var(--blue)", borderRadius: 2, animation: "shimmer 2s ease-in-out infinite" }} />
           </div>
+          <button
+            className="btn-secondary btn-sm"
+            onClick={async () => {
+              setActionLoading(true);
+              try {
+                await fetch(`/api/employees/${employeeId}/reprovision`, { method: "POST" });
+              } catch {}
+              setActionLoading(false);
+            }}
+            disabled={actionLoading}
+            style={{ marginTop: 20, fontSize: 12 }}
+          >
+            {actionLoading ? "Retrying..." : "Retry Provisioning"}
+          </button>
         </div>
       )}
 

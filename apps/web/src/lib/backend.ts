@@ -54,21 +54,35 @@ async function backendFetch(
 ): Promise<Response> {
   const url = `${config.url}${path}`;
 
-  const res = await fetch(url, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      "x-interservice-secret": config.secret,
-      ...options.headers,
-    },
-  });
+  // Add timeout to prevent hanging Vercel functions
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
 
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(body.error || `Backend error: ${res.status}`);
+  try {
+    const res = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        "x-interservice-secret": config.secret,
+        ...options.headers,
+      },
+    });
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(body.error || `Backend error: ${res.status}`);
+    }
+
+    return res;
+  } catch (err: any) {
+    if (err.name === "AbortError") {
+      throw new Error(`Backend timeout on ${path}`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
   }
-
-  return res;
 }
 
 /** Create a backend client bound to a specific company's droplet */
@@ -93,6 +107,13 @@ export function createBackendClient(config: CompanyBackendConfig) {
       const res = await backendFetch(config, "/internal/employees/provision", {
         method: "POST",
         body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+
+    async reprovisionEmployee(id: string) {
+      const res = await backendFetch(config, `/internal/employees/${id}/reprovision`, {
+        method: "POST",
       });
       return res.json();
     },
