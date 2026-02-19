@@ -63,6 +63,13 @@ export const employees = pgTable("employees", {
   /** Monthly price in dollars for this employee (base + add-ons) */
   priceMonthly: integer("price_monthly"),
   status: varchar("status", { length: 20 }).notNull().default("provisioning"),
+  // Per-employee DigitalOcean droplet
+  dropletId: varchar("droplet_id", { length: 50 }),
+  dropletIp: varchar("droplet_ip", { length: 45 }),
+  dropletRegion: varchar("droplet_region", { length: 20 }),
+  dropletSize: varchar("droplet_size", { length: 50 }),
+  dropletStatus: varchar("droplet_status", { length: 20 }).default("none"),
+  interserviceSecret: varchar("interservice_secret", { length: 255 }),
   containerId: varchar("container_id", { length: 100 }),
   containerName: varchar("container_name", { length: 255 }),
   containerHost: varchar("container_host", { length: 255 }),

@@ -7,7 +7,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { employees, companies } from "@/lib/schema";
+import { employees } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
 
 export async function GET(
@@ -40,24 +40,17 @@ export async function GET(
     return NextResponse.json({ error: "Employee not found" }, { status: 404 });
   }
 
-  // Get company for droplet info
-  const [company] = await db
-    .select()
-    .from(companies)
-    .where(eq(companies.id, session.companyId))
-    .limit(1);
-
-  if (!company?.dropletIp || company.dropletStatus !== "active") {
+  if (!employee.dropletIp || employee.dropletStatus !== "active") {
     return NextResponse.json({ error: "Infrastructure not available" }, { status: 503 });
   }
 
-  // Proxy to droplet
+  // Proxy to the employee's dedicated droplet
   try {
     const res = await fetch(
-      `http://${company.dropletIp}:3001/internal/employees/${id}/workspace/${filePath}`,
+      `http://${employee.dropletIp}:3001/internal/employees/${id}/workspace/${filePath}`,
       {
         headers: {
-          "x-interservice-secret": company.interserviceSecret || "",
+          "x-interservice-secret": employee.interserviceSecret || "",
         },
       },
     );

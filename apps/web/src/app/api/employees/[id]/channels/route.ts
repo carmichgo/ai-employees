@@ -8,7 +8,7 @@ import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { employees, channelConnections } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
-import { getCompanyBackend, createBackendClient } from "@/lib/backend";
+import { getEmployeeBackend, createBackendClient } from "@/lib/backend";
 
 async function authenticate(request: NextRequest) {
   const token =
@@ -144,7 +144,7 @@ export async function POST(
     }));
 
   // Forward to droplet API to update the running container
-  const backendConfig = await getCompanyBackend(session.companyId);
+  const backendConfig = await getEmployeeBackend(id);
   if (backendConfig) {
     try {
       const backend = createBackendClient(backendConfig);
@@ -215,7 +215,7 @@ export async function DELETE(
       config: (c.config as Record<string, unknown>) || {},
     }));
 
-  const backendConfig = await getCompanyBackend(session.companyId);
+  const backendConfig = await getEmployeeBackend(id);
   if (backendConfig) {
     try {
       const backend = createBackendClient(backendConfig);

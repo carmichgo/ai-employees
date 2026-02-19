@@ -10,7 +10,7 @@
 import crypto from "node:crypto";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { companies } from "@/lib/schema";
+import { companies, employees } from "@/lib/schema";
 
 const DO_API_TOKEN = process.env.DO_API_TOKEN?.trim();
 const DO_API = "https://api.digitalocean.com/v2";
@@ -530,6 +530,200 @@ export async function createCompanyDroplet(companyId: string): Promise<{
     .where(eq(companies.id, companyId));
 
   return { dropletId, interserviceSecret };
+}
+
+function slugifyName(name: string) {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+/** Create a new droplet for a specific employee */
+export async function createEmployeeDroplet(employeeId: string): Promise<{
+  dropletId: string;
+  interserviceSecret: string;
+}> {
+  const [employee] = await db
+    .select()
+    .from(employees)
+    .where(eq(employees.id, employeeId))
+    .limit(1);
+
+  if (!employee) throw new Error("Employee not found");
+  if (employee.dropletStatus === "provisioning") throw new Error("Droplet is already being provisioned");
+
+  // If there's a stale "active" droplet, verify it actually exists on DO
+  if (employee.dropletStatus === "active" && employee.dropletId) {
+    try {
+      await doFetch(`/droplets/${employee.dropletId}`);
+      throw new Error("Employee already has an active droplet");
+    } catch (err: any) {
+      if (!err.message.includes("already has an active droplet")) {
+        await db
+          .update(employees)
+          .set({ dropletId: null, dropletIp: null, dropletStatus: "destroyed", interserviceSecret: null, updatedAt: new Date() })
+          .where(eq(employees.id, employeeId));
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  // Get company for slug and plan
+  const [company] = await db
+    .select()
+    .from(companies)
+    .where(eq(companies.id, employee.companyId))
+    .limit(1);
+
+  if (!company) throw new Error("Company not found");
+
+  const interserviceSecret = crypto.randomBytes(32).toString("hex");
+  const databaseUrl = process.env.DATABASE_URL?.trim();
+  if (!databaseUrl) throw new Error("DATABASE_URL not set");
+
+  const region = "nyc3";
+  const size = PLAN_DROPLET_SIZES[company.plan] || PLAN_DROPLET_SIZES.starter;
+
+  const userData = generateCloudInit({
+    companySlug: company.slug,
+    databaseUrl,
+    interserviceSecret,
+    platformUrl: process.env.NEXT_PUBLIC_APP_URL || "https://ai-employees-ten.vercel.app",
+    repoUrl: REPO_URL,
+    repoBranch: REPO_BRANCH,
+    anthropicApiKey: process.env.ANTHROPIC_API_KEY || "",
+    geminiApiKey: process.env.GEMINI_API_KEY || "",
+    braveApiKey: process.env.BRAVE_API_KEY || "",
+    twilioAccountSid: process.env.TWILIO_ACCOUNT_SID || "",
+    twilioAuthToken: process.env.TWILIO_AUTH_TOKEN || "",
+    slackAppToken: (process.env.SLACK_APP_TOKEN || "").trim(),
+    slackSigningSecret: (process.env.SLACK_SIGNING_SECRET || "").trim(),
+  });
+
+  let sshKeys: number[] = [];
+  try {
+    const keysRes = await doFetch("/account/keys");
+    const keysData = await keysRes.json();
+    sshKeys = (keysData.ssh_keys || []).map((k: { id: number }) => k.id);
+  } catch {}
+
+  const dropletName = `ai-emp-${company.slug}-${slugifyName(employee.name)}`;
+
+  const res = await doFetch("/droplets", {
+    method: "POST",
+    body: JSON.stringify({
+      name: dropletName,
+      region,
+      size,
+      image: "ubuntu-24-04-x64",
+      user_data: userData,
+      tags: ["ai-employees", `company:${company.slug}`, `employee:${slugifyName(employee.name)}`],
+      monitoring: true,
+      ...(sshKeys.length > 0 ? { ssh_keys: sshKeys } : {}),
+    }),
+  });
+
+  const data = await res.json();
+  const dropletId = String(data.droplet.id);
+
+  // Store on the employee record
+  await db
+    .update(employees)
+    .set({
+      dropletId,
+      dropletSize: size,
+      dropletRegion: region,
+      dropletStatus: "provisioning",
+      interserviceSecret,
+      updatedAt: new Date(),
+    })
+    .where(eq(employees.id, employeeId));
+
+  return { dropletId, interserviceSecret };
+}
+
+/** Poll DO API for an employee's droplet IP and readiness */
+export async function pollEmployeeDropletStatus(employeeId: string): Promise<{
+  status: string;
+  ip: string | null;
+  phase: string | null;
+}> {
+  const [employee] = await db
+    .select()
+    .from(employees)
+    .where(eq(employees.id, employeeId))
+    .limit(1);
+
+  if (!employee || !employee.dropletId) {
+    return { status: "none", ip: null, phase: null };
+  }
+
+  // If we already have an IP, just check health
+  if ((employee.dropletStatus === "active" || employee.dropletStatus === "error") && employee.dropletIp) {
+    const apiCheck = await checkDropletApi(employee.dropletIp, employee.interserviceSecret || "");
+    if (apiCheck.ok) {
+      if (employee.dropletStatus === "error") {
+        await db.update(employees).set({ dropletStatus: "active", updatedAt: new Date() }).where(eq(employees.id, employeeId));
+      }
+      return { status: "active", ip: employee.dropletIp, phase: apiCheck.phase };
+    }
+    return { status: employee.dropletStatus || "error", ip: employee.dropletIp, phase: null };
+  }
+
+  // Query DO API for the droplet's IP
+  try {
+    const res = await doFetch(`/droplets/${employee.dropletId}`);
+    const data = await res.json();
+    const droplet = data.droplet;
+
+    const publicNet = droplet.networks?.v4?.find((n: { type: string }) => n.type === "public");
+    const ip = publicNet?.ip_address || null;
+
+    if (droplet.status === "active" && ip) {
+      const apiCheck = await checkDropletApi(ip, employee.interserviceSecret || "");
+
+      if (apiCheck.ok) {
+        await db.update(employees).set({ dropletIp: ip, dropletStatus: "active", updatedAt: new Date() }).where(eq(employees.id, employeeId));
+        return { status: "active", ip, phase: apiCheck.phase };
+      }
+
+      // Droplet running but API not ready yet
+      await db.update(employees).set({ dropletIp: ip, updatedAt: new Date() }).where(eq(employees.id, employeeId));
+      return { status: "booting", ip, phase: null };
+    }
+
+    return { status: "provisioning", ip, phase: null };
+  } catch {
+    await db.update(employees).set({ dropletStatus: "error", updatedAt: new Date() }).where(eq(employees.id, employeeId));
+    return { status: "error", ip: null, phase: null };
+  }
+}
+
+/** Destroy an employee's droplet */
+export async function destroyEmployeeDroplet(employeeId: string): Promise<void> {
+  const [employee] = await db
+    .select()
+    .from(employees)
+    .where(eq(employees.id, employeeId))
+    .limit(1);
+
+  if (!employee || !employee.dropletId) return;
+
+  try {
+    await doFetch(`/droplets/${employee.dropletId}`, { method: "DELETE" });
+  } catch {
+    // Droplet may already be destroyed
+  }
+
+  await db
+    .update(employees)
+    .set({
+      dropletId: null,
+      dropletIp: null,
+      dropletStatus: "destroyed",
+      interserviceSecret: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(employees.id, employeeId));
 }
 
 /** Poll DO API for droplet IP and readiness */

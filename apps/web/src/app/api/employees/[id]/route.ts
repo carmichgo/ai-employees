@@ -4,7 +4,8 @@ import { db } from "@/lib/db";
 import { employees } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
 import { updateEmployeeSchema } from "@ai-employees/shared";
-import { getCompanyBackend, createBackendClient } from "@/lib/backend";
+import { getEmployeeBackend, createBackendClient } from "@/lib/backend";
+import { destroyEmployeeDroplet } from "@/lib/digitalocean";
 
 export const maxDuration = 60;
 
@@ -103,14 +104,23 @@ export async function DELETE(
     return NextResponse.json({ error: "Employee not found" }, { status: 404 });
   }
 
-  // Try backend teardown if droplet is active (best-effort — don't block on failure)
-  const backendConfig = await getCompanyBackend(session.companyId);
+  // Try backend teardown if employee has an active droplet (best-effort)
+  const backendConfig = await getEmployeeBackend(id);
   if (backendConfig) {
     try {
       const backend = createBackendClient(backendConfig);
       await backend.terminateEmployee(id);
     } catch {
       // Backend teardown failed — still mark as terminated in DB
+    }
+  }
+
+  // Destroy the employee's dedicated droplet
+  if (employee.dropletId) {
+    try {
+      await destroyEmployeeDroplet(id);
+    } catch (err: any) {
+      console.error("Failed to destroy employee droplet:", err.message);
     }
   }
 

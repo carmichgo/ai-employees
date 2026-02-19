@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { employees, companies } from "@/lib/schema";
+import { employees } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
-import { getCompanyBackend, createBackendClient } from "@/lib/backend";
-import { pollDropletStatus } from "@/lib/digitalocean";
+import { getEmployeeBackend, createBackendClient } from "@/lib/backend";
+import { pollEmployeeDropletStatus, createEmployeeDroplet } from "@/lib/digitalocean";
 
 export const maxDuration = 60;
 
@@ -12,6 +12,8 @@ export const maxDuration = 60;
  * POST /api/employees/[id]/reprovision
  * Re-queue provisioning for an employee stuck in "provisioning" status.
  * This is called by the frontend when an employee has been provisioning too long.
+ *
+ * Per-employee model: each employee has their own dedicated droplet.
  */
 export async function POST(
   request: NextRequest,
@@ -37,38 +39,47 @@ export async function POST(
     return NextResponse.json({ error: "Employee not found" }, { status: 404 });
   }
 
-  if (employee.status !== "provisioning") {
+  if (employee.status !== "provisioning" && employee.status !== "error") {
     return NextResponse.json(
-      { error: `Employee is ${employee.status}, not provisioning` },
+      { error: `Employee is ${employee.status}, not provisioning/error` },
       { status: 400 },
     );
   }
 
-  // Get backend config (try auto-discovery if IP is missing)
-  let backendConfig = await getCompanyBackend(session.companyId);
+  // If employee has no droplet at all, create one
+  if (!employee.dropletId) {
+    try {
+      await createEmployeeDroplet(id);
+      return NextResponse.json({
+        message: "Droplet creation started — this takes 2-3 minutes.",
+        dropletStatus: "provisioning",
+      });
+    } catch (err: any) {
+      console.error("[reprovision] createEmployeeDroplet failed:", err.message);
+      return NextResponse.json(
+        { error: `Failed to create droplet: ${err.message}` },
+        { status: 502 },
+      );
+    }
+  }
 
-  if (!backendConfig) {
-    const [company] = await db
-      .select()
-      .from(companies)
-      .where(eq(companies.id, session.companyId))
-      .limit(1);
+  // If employee has a droplet but no IP, try polling for it
+  let backendConfig = await getEmployeeBackend(id);
 
-    if (company?.dropletStatus === "active" && company.dropletId && !company.dropletIp) {
-      try {
-        const pollResult = await pollDropletStatus(session.companyId);
-        if (pollResult.status === "active" && pollResult.ip) {
-          backendConfig = await getCompanyBackend(session.companyId);
-        }
-      } catch (err: any) {
-        console.error("[reprovision] pollDropletStatus failed:", err.message);
+  if (!backendConfig && employee.dropletId && !employee.dropletIp) {
+    try {
+      const pollResult = await pollEmployeeDropletStatus(id);
+      if (pollResult.status === "active" && pollResult.ip) {
+        backendConfig = await getEmployeeBackend(id);
       }
+    } catch (err: any) {
+      console.error("[reprovision] pollEmployeeDropletStatus failed:", err.message);
     }
   }
 
   if (!backendConfig) {
     return NextResponse.json(
-      { error: "Backend not available — droplet may not be ready" },
+      { error: "Backend not available — droplet may not be ready yet" },
       { status: 503 },
     );
   }

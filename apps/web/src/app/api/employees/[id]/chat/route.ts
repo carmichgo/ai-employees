@@ -12,7 +12,7 @@ import { NextRequest, NextResponse } from "next/server";
 export const maxDuration = 120; // Chat responses from AI can take time
 import { eq, and, desc } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { employees, companies, chatMessages } from "@/lib/schema";
+import { employees, chatMessages } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
 
 async function authenticate(request: NextRequest) {
@@ -111,14 +111,8 @@ export async function POST(
     content: message,
   });
 
-  // Get company for droplet info
-  const [company] = await db
-    .select()
-    .from(companies)
-    .where(eq(companies.id, session.companyId))
-    .limit(1);
-
-  if (!company || company.dropletStatus !== "active" || !company.dropletIp) {
+  // Check if employee has an active droplet
+  if (employee.dropletStatus !== "active" || !employee.dropletIp || !employee.interserviceSecret) {
     const reply = generateDemoReply(employee, message);
     await db.insert(chatMessages).values({
       employeeId: id,
@@ -130,7 +124,7 @@ export async function POST(
     return NextResponse.json({ reply, mode: "demo" });
   }
 
-  // Route to OpenClaw container via the company's droplet
+  // Route to OpenClaw container via the employee's dedicated droplet
   try {
     const messages = [
       ...(conversationHistory || []),
@@ -138,12 +132,12 @@ export async function POST(
     ];
 
     const res = await fetch(
-      `http://${company.dropletIp}:3001/internal/employees/${id}/chat`,
+      `http://${employee.dropletIp}:3001/internal/employees/${id}/chat`,
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-interservice-secret": company.interserviceSecret || "",
+          "x-interservice-secret": employee.interserviceSecret,
         },
         body: JSON.stringify({ messages }),
       },
