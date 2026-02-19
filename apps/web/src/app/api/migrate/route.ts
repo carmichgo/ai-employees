@@ -44,6 +44,15 @@ export async function POST(request: NextRequest) {
     `;
     results.push("0004: pending_hires table — OK");
 
+    // Migration 0005: Add per-employee droplet fields
+    await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS droplet_id VARCHAR(50)`;
+    await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS droplet_ip VARCHAR(45)`;
+    await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS droplet_region VARCHAR(20)`;
+    await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS droplet_size VARCHAR(50)`;
+    await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS droplet_status VARCHAR(20) DEFAULT 'none'`;
+    await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS interservice_secret VARCHAR(255)`;
+    results.push("0005: employee droplet fields — OK");
+
     // Check current employees columns
     const cols = await sql`
       SELECT column_name FROM information_schema.columns
