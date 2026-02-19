@@ -7,7 +7,7 @@ import { employees, companies, channelConnections } from "@/lib/schema";
 export const maxDuration = 60; // Allow up to 60s for DO droplet provisioning API calls
 import { verifyToken } from "@/lib/auth";
 import { getCompanyBackend, createBackendClient } from "@/lib/backend";
-import { createCompanyDroplet, isDropletProvisioningEnabled } from "@/lib/digitalocean";
+import { createCompanyDroplet, isDropletProvisioningEnabled, pollDropletStatus } from "@/lib/digitalocean";
 import {
   createEmployeeSchema,
   getJobTemplate,
@@ -75,6 +75,22 @@ export async function POST(request: NextRequest) {
       backendConfig = await getCompanyBackend(session.companyId);
     } catch (err: any) {
       console.error("getCompanyBackend failed, continuing without backend:", err.message);
+    }
+
+    // If company has an active droplet but no IP stored, try to discover it
+    if (!backendConfig) {
+      const [comp] = await db.select().from(companies).where(eq(companies.id, session.companyId)).limit(1);
+      if (comp?.dropletStatus === "active" && comp.dropletId && !comp.dropletIp) {
+        console.log(`Company ${session.companyId} has active droplet but no IP, polling DO...`);
+        try {
+          const pollResult = await pollDropletStatus(session.companyId);
+          if (pollResult.status === "active" && pollResult.ip) {
+            backendConfig = await getCompanyBackend(session.companyId);
+          }
+        } catch (err: any) {
+          console.error("pollDropletStatus failed:", err.message);
+        }
+      }
     }
 
     if (backendConfig) {

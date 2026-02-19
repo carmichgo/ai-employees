@@ -10,7 +10,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { employees, companies, channelConnections } from "@/lib/schema";
 import { getCompanyBackend, createBackendClient } from "@/lib/backend";
-import { createCompanyDroplet, isDropletProvisioningEnabled } from "@/lib/digitalocean";
+import { createCompanyDroplet, isDropletProvisioningEnabled, pollDropletStatus } from "@/lib/digitalocean";
 import {
   getJobTemplate,
   getModelForTier,
@@ -66,7 +66,22 @@ export async function provisionAndReturn(
   const tierModel = getModelForTier(tier);
 
   // Check if company has an active droplet backend
-  const backendConfig = await getCompanyBackend(companyId);
+  let backendConfig = await getCompanyBackend(companyId);
+
+  // If the company has an active droplet but no IP stored, try to discover it
+  if (!backendConfig && company.dropletStatus === "active" && company.dropletId && !company.dropletIp) {
+    console.log(`Company ${companyId} has active droplet but no IP stored, polling DO for IP...`);
+    try {
+      const pollResult = await pollDropletStatus(companyId);
+      if (pollResult.status === "active" && pollResult.ip) {
+        console.log(`Discovered droplet IP: ${pollResult.ip}`);
+        // Retry getting backend config now that IP is stored
+        backendConfig = await getCompanyBackend(companyId);
+      }
+    } catch (err: any) {
+      console.error("pollDropletStatus failed:", err.message);
+    }
+  }
 
   if (backendConfig) {
     try {
