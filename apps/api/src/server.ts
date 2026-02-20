@@ -71,7 +71,7 @@ export async function buildServer(config: Env) {
     // Check config files inside the container
     try { checks.configFiles = execSync("docker exec $(docker ps -q --latest) ls -la /home/node/.openclaw/ 2>&1", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.configFiles = `error: ${e.message}`; }
     try { checks.soulMdHead = execSync("docker exec $(docker ps -q --latest) head -20 /home/node/.openclaw/SOUL.md 2>&1", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.soulMdHead = `error: ${e.message}`; }
-    try { checks.openclawJson = execSync("docker exec $(docker ps -q --latest) cat /home/node/.openclaw/openclaw.json 2>&1 | head -50", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.openclawJson = `error: ${e.message}`; }
+    try { checks.openclawJson = execSync("docker exec $(docker ps -q --latest) cat /home/node/.openclaw/openclaw.json 2>&1", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.openclawJson = `error: ${e.message}`; }
     try { checks.workspaceSoulMd = execSync("docker exec $(docker ps -q --latest) head -10 /home/node/.openclaw/workspace/SOUL.md 2>&1", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.workspaceSoulMd = `error: ${e.message}`; }
     try { checks.containerEnv = execSync("docker exec $(docker ps -q --latest) env 2>&1 | grep -E 'EMPLOYEE_|OPENCLAW_|ANTHROPIC_API_KEY=' | sed 's/=.\\{8\\}.*/=...REDACTED/'", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.containerEnv = `error: ${e.message}`; }
     return checks;

@@ -113,8 +113,8 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
       channels: channelInputs,
     };
 
+    const config = generateOpenClawConfig(employeeInput, employee.gatewayToken!);
     const soulMd = generateSoulMd(employeeInput);
-    const config = generateOpenClawConfig(employeeInput, employee.gatewayToken!, soulMd);
 
     const resources = getResourcesForTier(tier);
 
