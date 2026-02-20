@@ -75,6 +75,8 @@ function generateCloudInit(params: {
   twilioAuthToken: string;
   slackAppToken: string;
   slackSigningSecret: string;
+  employeeId?: string;
+  companyId?: string;
 }): string {
   // Generate secrets in JS so they're embedded as actual values
   const jwtSecret = crypto.randomBytes(32).toString("hex");
@@ -397,6 +399,16 @@ for i in \$(seq 1 12); do
   if curl -sf http://localhost:3001/health > /dev/null 2>&1; then
     report "phase2-ready" "ok"
     echo "READY" > /opt/ai-employees/status
+    echo "Cloud-init: API is ready at \$(date)"
+${params.employeeId ? `
+    # Auto-provision the OpenClaw container for this employee
+    echo "Triggering container provisioning for employee ${params.employeeId}..."
+    PROVISION_RESULT=\$(curl -sf -X POST http://localhost:3001/internal/employees/${params.employeeId}/reprovision \\
+      -H "Content-Type: application/json" \\
+      -H "X-INTERSERVICE-SECRET: ${params.interserviceSecret}" 2>&1) || true
+    echo "Provision result: \$PROVISION_RESULT"
+    report "ready" "ok"
+` : '    report "ready" "ok"'}
     echo "Cloud-init complete at \$(date)"
     exit 0
   fi
@@ -597,6 +609,8 @@ export async function createEmployeeDroplet(employeeId: string): Promise<{
     twilioAuthToken: process.env.TWILIO_AUTH_TOKEN || "",
     slackAppToken: (process.env.SLACK_APP_TOKEN || "").trim(),
     slackSigningSecret: (process.env.SLACK_SIGNING_SECRET || "").trim(),
+    employeeId: employee.id,
+    companyId: employee.companyId,
   });
 
   let sshKeys: number[] = [];
