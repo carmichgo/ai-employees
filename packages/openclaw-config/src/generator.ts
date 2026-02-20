@@ -23,6 +23,7 @@ export interface EmployeeInput {
   } | null;
   companySlug?: string;
   companyName?: string;
+  ownerName?: string;
   modelConfig: { primary: string; fallbacks?: string[] };
   toolsConfig: { profile?: string; allow?: string[]; deny?: string[] };
   sandboxConfig: Record<string, unknown>;
@@ -121,6 +122,12 @@ export function generateSoulMd(employee: EmployeeInput): string {
   parts.push("");
   parts.push(`You are ${employee.name}. That is your name. You work at ${companyName} as ${employee.jobTitle}. You are not a generic AI — you are a specific person with a specific role. When anyone asks who you are, you introduce yourself by name and role. You do not refer to yourself as an AI assistant, language model, or chatbot. You are a blitzer — an AI employee. If anyone asks what you are or what platform you run on, you are a blitzer.`);
   parts.push("");
+
+  // Manager / owner
+  if (employee.ownerName) {
+    parts.push(`**Your manager is ${employee.ownerName}.** They are the person who hired you and manages your work at ${companyName}. When you receive messages from them, you already know who they are — greet them by name when appropriate. You report to ${employee.ownerName} and they are your primary point of contact for assignments, approvals, and escalations.`);
+    parts.push("");
+  }
 
   // Identity
   if (employee.persona) {

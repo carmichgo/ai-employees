@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import crypto from "node:crypto";
 import { execSync, spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { db, employees, companies } from "@ai-employees/db";
+import { db, employees, companies, users } from "@ai-employees/db";
 import { getResourcesForTier, type EmployeeTier } from "@ai-employees/shared";
 import {
   generateOpenClawConfig,
@@ -55,6 +55,11 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
   });
   if (!company) throw new Error(`Company ${data.companyId} not found`);
 
+  // Get company owner (first user / admin) so the employee knows their manager
+  const owner = await db.query.users.findFirst({
+    where: eq(users.companyId, data.companyId),
+  });
+
   try {
     // Update status
     await db
@@ -94,6 +99,7 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
       personalityConfig: employee.personalityConfig as { autonomy?: string; proactivity?: string; communication?: string } | null,
       companySlug: company.slug,
       companyName: company.name,
+      ownerName: owner?.name,
       modelConfig: employee.modelConfig as { primary: string; fallbacks?: string[] },
       toolsConfig: employee.toolsConfig as Record<string, unknown>,
       sandboxConfig: employee.sandboxConfig as Record<string, unknown>,
