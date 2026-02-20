@@ -59,6 +59,7 @@ const OPUS_MODEL = "anthropic/claude-opus-4-6";
 export function generateOpenClawConfig(
   employee: EmployeeInput,
   gatewayToken: string,
+  soulMd?: string,
 ): OpenClawConfig {
   const agentId = slugify(employee.name);
   const isExpertTier = employee.tier === "expert" || employee.modelConfig.primary === OPUS_MODEL;
@@ -75,6 +76,9 @@ export function generateOpenClawConfig(
   const toolsAllow = buildToolAllow(employee.toolsConfig);
   const agentsList: Record<string, unknown>[] = [];
 
+  // Build instructions from SOUL.md content — this is the agent's system prompt
+  const instructions = soulMd || undefined;
+
   if (isExpertTier) {
     // Main orchestrator — runs on Opus, chats with user, decides task routing
     agentsList.push({
@@ -86,6 +90,7 @@ export function generateOpenClawConfig(
         name: employee.name,
         emoji: employee.emoji || "🤖",
       },
+      ...(instructions ? { instructions } : {}),
       tools: { allow: toolsAllow },
     });
 
@@ -98,6 +103,7 @@ export function generateOpenClawConfig(
         name: `${employee.name} (Fast)`,
         emoji: "⚡",
       },
+      ...(instructions ? { instructions } : {}),
       tools: { allow: toolsAllow },
     });
   } else {
@@ -111,6 +117,7 @@ export function generateOpenClawConfig(
         name: employee.name,
         emoji: employee.emoji || "🤖",
       },
+      ...(instructions ? { instructions } : {}),
       tools: { allow: toolsAllow },
     });
   }
