@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { eq, and, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { employees } from "@/lib/schema";
 
@@ -30,10 +30,17 @@ export async function GET(request: NextRequest) {
     const session = await authenticate(request);
     if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+    // By default, hide terminated employees. Pass ?include=terminated to include them.
+    const includeTerminated = request.nextUrl.searchParams.get("include") === "terminated";
+
     const result = await db
       .select()
       .from(employees)
-      .where(eq(employees.companyId, session.companyId))
+      .where(
+        includeTerminated
+          ? eq(employees.companyId, session.companyId)
+          : and(eq(employees.companyId, session.companyId), ne(employees.status, "terminated")),
+      )
       .orderBy(employees.createdAt);
 
     return NextResponse.json({ employees: result.map(sanitize) });

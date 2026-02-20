@@ -97,8 +97,9 @@ class ApiClient {
   }
 
   // Employees
-  async listEmployees() {
-    return this.request<{ employees: any[] }>("/api/employees");
+  async listEmployees(opts?: { includeTerminated?: boolean }) {
+    const params = opts?.includeTerminated ? "?include=terminated" : "";
+    return this.request<{ employees: any[] }>(`/api/employees${params}`);
   }
 
   async getEmployee(id: string) {

@@ -64,11 +64,11 @@ export default function EmployeesPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
 
-  const fetchEmployees = () => {
+  const fetchEmployees = (includeTerminated = false) => {
     setLoading(true);
     setError(null);
     api
-      .listEmployees()
+      .listEmployees({ includeTerminated })
       .then((res) => {
         setEmployees(res.employees);
         setLoading(false);
@@ -80,20 +80,20 @@ export default function EmployeesPage() {
   };
 
   useEffect(() => {
-    fetchEmployees();
-  }, []);
+    fetchEmployees(statusFilter === "terminated");
+  }, [statusFilter]);
 
   // Auto-poll while any employee is provisioning
   useEffect(() => {
     const hasProvisioning = employees.some((e) => e.status === "provisioning" || e.status === "onboarding");
     if (!hasProvisioning) return;
     const interval = setInterval(() => {
-      api.listEmployees().then((res) => {
+      api.listEmployees({ includeTerminated: statusFilter === "terminated" }).then((res) => {
         setEmployees(res.employees);
       }).catch(() => {});
     }, 5000);
     return () => clearInterval(interval);
-  }, [employees]);
+  }, [employees, statusFilter]);
 
   // Filter employees
   const filtered = employees.filter((emp) => {
@@ -137,7 +137,7 @@ export default function EmployeesPage() {
       <div style={{ textAlign: "center", paddingTop: 80 }}>
         <p style={{ color: "#dc2626", marginBottom: 16, fontSize: 14 }}>{error}</p>
         <button
-          onClick={fetchEmployees}
+          onClick={() => fetchEmployees(statusFilter === "terminated")}
           style={{
             height: 36, padding: "0 16px", fontSize: 13, fontWeight: 500,
             color: "#fff", background: "var(--text, #0a0a0a)",
@@ -243,7 +243,8 @@ export default function EmployeesPage() {
             <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
               {STATUS_OPTIONS.map((opt) => {
                 const count = opt.value === "all" ? employees.length : (statusCounts[opt.value] || 0);
-                if (opt.value !== "all" && count === 0) return null;
+                // Always show "Terminated" tab so users can find fired employees
+                if (opt.value !== "all" && opt.value !== "terminated" && count === 0) return null;
                 const active = statusFilter === opt.value;
                 return (
                   <button
