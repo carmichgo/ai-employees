@@ -64,11 +64,11 @@ export default function EmployeesPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
 
-  const fetchEmployees = (includeTerminated = false) => {
+  const fetchEmployees = () => {
     setLoading(true);
     setError(null);
     api
-      .listEmployees({ includeTerminated })
+      .listEmployees()
       .then((res) => {
         setEmployees(res.employees);
         setLoading(false);
@@ -80,23 +80,24 @@ export default function EmployeesPage() {
   };
 
   useEffect(() => {
-    fetchEmployees(statusFilter === "terminated");
-  }, [statusFilter]);
+    fetchEmployees();
+  }, []);
 
   // Auto-poll while any employee is provisioning
   useEffect(() => {
     const hasProvisioning = employees.some((e) => e.status === "provisioning" || e.status === "onboarding");
     if (!hasProvisioning) return;
     const interval = setInterval(() => {
-      api.listEmployees({ includeTerminated: statusFilter === "terminated" }).then((res) => {
+      api.listEmployees().then((res) => {
         setEmployees(res.employees);
       }).catch(() => {});
     }, 5000);
     return () => clearInterval(interval);
-  }, [employees, statusFilter]);
+  }, [employees]);
 
-  // Filter employees
+  // Filter employees — "All" hides terminated so they don't clutter the main view
   const filtered = employees.filter((emp) => {
+    if (statusFilter === "all" && emp.status === "terminated") return false;
     if (statusFilter !== "all" && emp.status !== statusFilter) return false;
     if (search) {
       const q = search.toLowerCase();
@@ -137,7 +138,7 @@ export default function EmployeesPage() {
       <div style={{ textAlign: "center", paddingTop: 80 }}>
         <p style={{ color: "#dc2626", marginBottom: 16, fontSize: 14 }}>{error}</p>
         <button
-          onClick={() => fetchEmployees(statusFilter === "terminated")}
+          onClick={() => fetchEmployees()}
           style={{
             height: 36, padding: "0 16px", fontSize: 13, fontWeight: 500,
             color: "#fff", background: "var(--text, #0a0a0a)",
@@ -159,7 +160,7 @@ export default function EmployeesPage() {
             Employees
           </h1>
           <p style={{ fontSize: 13, color: "var(--text-tertiary, #a3a3a3)", margin: "4px 0 0 0" }}>
-            {employees.length} team member{employees.length !== 1 ? "s" : ""}
+            {employees.filter((e) => e.status !== "terminated").length} team member{employees.filter((e) => e.status !== "terminated").length !== 1 ? "s" : ""}
             {statusCounts.active ? ` \u00b7 ${statusCounts.active} active` : ""}
           </p>
         </div>
@@ -242,7 +243,9 @@ export default function EmployeesPage() {
             {/* Status filter pills */}
             <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
               {STATUS_OPTIONS.map((opt) => {
-                const count = opt.value === "all" ? employees.length : (statusCounts[opt.value] || 0);
+                const count = opt.value === "all"
+                  ? employees.filter((e) => e.status !== "terminated").length
+                  : (statusCounts[opt.value] || 0);
                 // Always show "Terminated" tab so users can find fired employees
                 if (opt.value !== "all" && opt.value !== "terminated" && count === 0) return null;
                 const active = statusFilter === opt.value;

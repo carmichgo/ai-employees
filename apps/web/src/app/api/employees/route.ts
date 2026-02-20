@@ -30,17 +30,10 @@ export async function GET(request: NextRequest) {
     const session = await authenticate(request);
     if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    // By default, hide terminated employees. Pass ?include=terminated to include them.
-    const includeTerminated = request.nextUrl.searchParams.get("include") === "terminated";
-
     const result = await db
       .select()
       .from(employees)
-      .where(
-        includeTerminated
-          ? eq(employees.companyId, session.companyId)
-          : and(eq(employees.companyId, session.companyId), ne(employees.status, "terminated")),
-      )
+      .where(eq(employees.companyId, session.companyId))
       .orderBy(employees.createdAt);
 
     return NextResponse.json({ employees: result.map(sanitize) });
