@@ -91,6 +91,9 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
       config: {},
     }));
 
+    // Determine resource limits based on employee tier
+    const tier = (employee.tier as EmployeeTier) || "junior";
+
     // Generate OpenClaw config
     const employeeInput: EmployeeInput = {
       id: employee.id,
@@ -113,8 +116,6 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     const config = generateOpenClawConfig(employeeInput, employee.gatewayToken!);
     const soulMd = generateSoulMd(employeeInput);
 
-    // Determine resource limits based on employee tier
-    const tier = (employee.tier as EmployeeTier) || "junior";
     const resources = getResourcesForTier(tier);
 
     // Write OpenClaw config + soul.md + skills to a host directory that gets bind-mounted

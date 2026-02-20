@@ -6,3 +6,4 @@ export { generateAccountCreationSkill } from "./skills/account-creation.js";
 export { generateRestartGatewaySkill } from "./skills/restart-gateway.js";
 export { generateTeamCommunicationSkill } from "./skills/team-communication.js";
 export { generateTaskManagementSkill } from "./skills/task-management.js";
+export { generateMediaGenerationSkill, generateImageScript, generateVideoScript } from "./skills/media-generation.js";
