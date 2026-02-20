@@ -405,7 +405,8 @@ ${params.employeeId ? `
     echo "Triggering container provisioning for employee ${params.employeeId}..."
     PROVISION_RESULT=\$(curl -sf -X POST http://localhost:3001/internal/employees/${params.employeeId}/reprovision \\
       -H "Content-Type: application/json" \\
-      -H "X-INTERSERVICE-SECRET: ${params.interserviceSecret}" 2>&1) || true
+      -H "X-INTERSERVICE-SECRET: ${params.interserviceSecret}" \\
+      -d '{}' 2>&1) || true
     echo "Provision result: \$PROVISION_RESULT"
     report "ready" "ok"
 ` : '    report "ready" "ok"'}
