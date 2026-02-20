@@ -85,6 +85,35 @@ export async function POST(request: NextRequest) {
       results.push(`reset-stuck: ${stuck.length} employees reset: ${stuck.map((r: any) => r.name).join(", ")}`);
     }
 
+    // Admin action: trigger container provision on existing droplet
+    if (action === "trigger-provision") {
+      const empId = request.nextUrl.searchParams.get("employeeId");
+      if (!empId) {
+        return NextResponse.json({ error: "employeeId required" }, { status: 400 });
+      }
+      const [emp] = await sql`SELECT id, name, droplet_ip, interservice_secret, status FROM employees WHERE id = ${empId}`;
+      if (!emp || !emp.droplet_ip || !emp.interservice_secret) {
+        results.push(`trigger-provision: employee not found or no droplet`);
+      } else {
+        // First set status to provisioning so the reprovision endpoint accepts it
+        await sql`UPDATE employees SET status = 'provisioning' WHERE id = ${empId} AND status = 'active'`;
+        try {
+          const provRes = await fetch(`http://${emp.droplet_ip}:3001/internal/employees/${empId}/reprovision`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-INTERSERVICE-SECRET": emp.interservice_secret,
+            },
+            signal: AbortSignal.timeout(15000),
+          });
+          const provData = await provRes.json().catch(() => ({}));
+          results.push(`trigger-provision: ${provRes.status} ${JSON.stringify(provData)}`);
+        } catch (err: any) {
+          results.push(`trigger-provision: FAILED — ${err.message}`);
+        }
+      }
+    }
+
     // Always include employee diagnostics
     const empRows = await sql`
       SELECT id, name, status, droplet_id, droplet_ip, droplet_status, interservice_secret IS NOT NULL as has_secret, created_at, updated_at
