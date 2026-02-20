@@ -287,7 +287,11 @@ export async function startEmployee(employeeId: string): Promise<void> {
 
   if (ip) {
     await db.update(employees).set({ containerHost: ip, updatedAt: new Date() }).where(eq(employees.id, employeeId));
-    await waitForGateway(ip, 18789, 30_000);
+    try {
+      await waitForGateway(ip, 18789, 30_000);
+    } catch {
+      console.log(`[start] Gateway not ready for ${employeeId} after restart, marking active anyway (container is running)`);
+    }
   }
 
   await db
@@ -391,7 +395,7 @@ export async function cleanupOrphanedContainers(): Promise<void> {
   }
 }
 
-/** Poll the gateway until it responds or timeout is reached */
+/** Poll the gateway until it responds or timeout is reached. Throws on timeout. */
 async function waitForGateway(host: string, port: number, timeoutMs: number): Promise<void> {
   const start = Date.now();
   const interval = 2000;
@@ -409,9 +413,7 @@ async function waitForGateway(host: string, port: number, timeoutMs: number): Pr
     }
     await new Promise((r) => setTimeout(r, interval));
   }
-  // Timed out — mark active anyway so the user isn't stuck in provisioning forever.
-  // The chat proxy will retry with IP refresh if needed.
-  console.log(`[provision] Gateway health check timed out after ${timeoutMs}ms, marking active anyway`);
+  throw new Error(`Gateway at ${host}:${port} did not respond within ${timeoutMs}ms`);
 }
 
 function parseMemory(mem: string): number {
@@ -552,8 +554,12 @@ CREDEOF
             .set({ containerHost: newIp, updatedAt: new Date() })
             .where(eq(employees.id, employeeId));
           console.log(`[cli-tools] Updated container IP for ${containerName}: ${newIp}`);
-          // Wait for gateway to be ready after restart
-          await waitForGateway(newIp, 18789, 30_000);
+          // Wait for gateway to be ready after restart (non-critical — container is already active)
+          try {
+            await waitForGateway(newIp, 18789, 30_000);
+          } catch {
+            console.log(`[cli-tools] Gateway not ready after restart for ${containerName}, will recover on next request`);
+          }
         }
       } catch (err) {
         console.error(`[cli-tools] Failed to update container IP after restart:`, err);

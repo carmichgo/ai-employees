@@ -41,11 +41,12 @@ export async function POST(request: NextRequest) {
       const forwardedFor = request.headers.get("x-forwarded-for");
       const sourceIp = forwardedFor?.split(",")[0]?.trim() || null;
 
+      // Only set dropletStatus=active here. Employee status stays "provisioning"
+      // until the worker confirms the OpenClaw container + gateway are actually running.
       await db
         .update(employees)
         .set({
           dropletStatus: "active",
-          status: "active",
           ...(sourceIp && !employee.dropletIp ? { dropletIp: sourceIp } : {}),
           updatedAt: new Date(),
         })
