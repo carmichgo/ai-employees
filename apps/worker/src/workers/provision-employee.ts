@@ -450,36 +450,58 @@ function installCliTools(containerName: string): void {
       cmd: `docker exec -u root ${containerName} bash -c '
         apt-get update -qq &&
         apt-get install -y -qq --no-install-recommends \
-          jq tmux ffmpeg python3-pip ca-certificates gnupg sudo \
-          2>/dev/null &&
+          jq tmux ffmpeg python3-pip ca-certificates gnupg sudo &&
         echo "node ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
       '`,
       timeout: 120_000,
     },
     {
-      name: "Chromium dependencies",
+      // Single robust step: try playwright first, fall back to apt
+      name: "Chromium browser",
       cmd: `docker exec -u root ${containerName} bash -c '
-        cd /app && npx playwright-core install-deps chromium 2>/dev/null
-      '`,
-      timeout: 120_000,
-    },
-    {
-      name: "Chromium browser binary",
-      cmd: `docker exec ${containerName} bash -c '
-        cd /app && npx playwright-core install chromium 2>/dev/null
-      '`,
-      timeout: 120_000,
-    },
-    {
-      name: "Chromium symlink",
-      cmd: `docker exec -u root ${containerName} bash -c '
-        CHROME_BIN=$(find /home/node/.cache/ms-playwright -name chrome -path "*/chrome-linux64/*" 2>/dev/null | head -1) &&
-        if [ -n "$CHROME_BIN" ]; then
-          ln -sf "$CHROME_BIN" /usr/local/bin/chromium &&
-          echo "Chromium linked: $CHROME_BIN -> /usr/local/bin/chromium"
+        INSTALLED=0
+
+        # Method 1: playwright-core (preferred — matches OpenClaw browser config)
+        if command -v npx >/dev/null 2>&1; then
+          echo "[chromium] Trying playwright-core install..."
+          cd /app
+          npx playwright-core install-deps chromium 2>&1 || echo "[chromium] install-deps had warnings"
+          su -s /bin/bash node -c "cd /app && npx playwright-core install chromium 2>&1" || echo "[chromium] binary install had warnings"
+          CHROME_BIN=$(find /home/node/.cache/ms-playwright -name chrome -path "*/chrome-linux64/*" 2>/dev/null | head -1)
+          if [ -n "$CHROME_BIN" ] && [ -x "$CHROME_BIN" ]; then
+            ln -sf "$CHROME_BIN" /usr/local/bin/chromium
+            echo "[chromium] Installed via playwright: $CHROME_BIN"
+            INSTALLED=1
+          else
+            echo "[chromium] playwright install did not produce a working binary"
+          fi
+        else
+          echo "[chromium] npx not found, skipping playwright method"
+        fi
+
+        # Method 2: apt fallback
+        if [ "$INSTALLED" = "0" ]; then
+          echo "[chromium] Trying apt install fallback..."
+          apt-get install -y -qq chromium 2>&1 || apt-get install -y -qq chromium-browser 2>&1 || true
+          for bin in /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$bin" ]; then
+              ln -sf "$bin" /usr/local/bin/chromium
+              echo "[chromium] Installed via apt: $bin"
+              INSTALLED=1
+              break
+            fi
+          done
+        fi
+
+        # Verify
+        if [ -x /usr/local/bin/chromium ]; then
+          echo "[chromium] Ready at /usr/local/bin/chromium"
+        else
+          echo "[chromium] ERROR: All installation methods failed"
+          exit 1
         fi
       '`,
-      timeout: 15_000,
+      timeout: 180_000,
     },
     {
       name: "GitHub CLI (gh)",
@@ -529,12 +551,17 @@ CREDEOF
 
   for (const step of steps) {
     try {
-      execSync(step.cmd, { timeout: step.timeout, stdio: "pipe" });
+      const output = execSync(step.cmd, { timeout: step.timeout, stdio: "pipe" });
+      const out = output.toString().trim();
+      if (out) console.log(`[cli-tools] ${out.split("\n").pop()}`);
       console.log(`[cli-tools] ✓ ${step.name}`);
-    } catch (err) {
-      // Log but don't fail — individual tool install failures are non-fatal
-      const msg = err instanceof Error ? err.message : String(err);
-      console.log(`[cli-tools] ✗ ${step.name} failed (non-fatal): ${msg.slice(0, 200)}`);
+    } catch (err: unknown) {
+      // Log stderr so we can diagnose failures — but don't abort provisioning
+      const execErr = err as { stderr?: Buffer; message?: string };
+      const stderr = execErr.stderr?.toString().trim().slice(0, 300) || "";
+      const msg = execErr.message?.slice(0, 200) || String(err).slice(0, 200);
+      console.log(`[cli-tools] ✗ ${step.name} failed: ${msg}`);
+      if (stderr) console.log(`[cli-tools]   stderr: ${stderr}`);
     }
   }
 
