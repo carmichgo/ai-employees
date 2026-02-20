@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import crypto from "node:crypto";
-import { execSync, spawn } from "node:child_process";
+import { execSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { db, employees, companies, users } from "@ai-employees/db";
 import { getResourcesForTier, type EmployeeTier } from "@ai-employees/shared";
@@ -194,7 +194,7 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
 
     // Get container info for host/port
     const info = await container.inspect();
-    const containerIp = info.NetworkSettings.Networks?.[OPENCLAW_NETWORK]?.IPAddress || null;
+    let containerIp = info.NetworkSettings.Networks?.[OPENCLAW_NETWORK]?.IPAddress || null;
 
     // Update DB with container details + email (still provisioning until gateway ready)
     await db
@@ -207,6 +207,29 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
         updatedAt: new Date(),
       })
       .where(eq(employees.id, employeeId));
+
+    // Install CLI tools synchronously BEFORE marking active.
+    // This installs Chromium, GitHub CLI, himalaya, credential manager, etc.
+    // The container is restarted at the end to pick up Chromium, so we need
+    // to re-fetch the IP and wait for the gateway after this step.
+    console.log(`[provision] Installing CLI tools for ${employee.name}...`);
+    installCliTools(employee.containerName!);
+
+    // After installCliTools restarts the container, get the new IP address
+    try {
+      const refreshedInfo = await container.inspect();
+      const newIp = refreshedInfo.NetworkSettings.Networks?.[OPENCLAW_NETWORK]?.IPAddress || null;
+      if (newIp && newIp !== containerIp) {
+        containerIp = newIp;
+        await db
+          .update(employees)
+          .set({ containerHost: newIp, updatedAt: new Date() })
+          .where(eq(employees.id, employeeId));
+        console.log(`[provision] Updated container IP after CLI install: ${newIp}`);
+      }
+    } catch {
+      console.log(`[provision] Could not refresh container IP after CLI install (non-critical)`);
+    }
 
     // Wait for the OpenClaw gateway to be ready before marking active
     if (containerIp) {
@@ -226,9 +249,6 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     if (data.channels.includes("slack")) {
       createSlackChannel(employeeId);
     }
-
-    // Install CLI tools in background (doesn't block provisioning)
-    installCliTools(employee.containerName!, employeeId);
   } catch (error) {
     console.error(`[provision] Failed to provision employee ${employeeId}:`, error);
 
@@ -416,121 +436,117 @@ function parseCpus(cpus: string): number {
 }
 
 /**
- * Install CLI tools into the container in the background.
- * Skills like github, himalaya, nano-pdf etc. are bundled as SKILL.md files
- * but need their CLI binaries to actually work.
+ * Install CLI tools into the container synchronously.
+ * This MUST complete before the employee is marked "active" so that
+ * all tools (Chromium, gh, himalaya, etc.) are available immediately.
+ *
+ * The container is restarted at the end so the gateway picks up Chromium.
+ * The caller is responsible for re-fetching the container IP after this.
  */
-function installCliTools(containerName: string, employeeId: string): void {
-  const script = `
-    set -e
-
-    # Install system packages + sudo access (as root)
-    docker exec -u root ${containerName} bash -c '
-      apt-get update -qq &&
-      apt-get install -y -qq --no-install-recommends \
-        jq tmux ffmpeg python3-pip ca-certificates gnupg sudo \
-        2>/dev/null &&
-      echo "node ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers &&
-      echo "Sudo access granted to node user"
-    '
-
-    # Install Chromium browser dependencies (for OpenClaw browser tool)
-    # Uses playwright-core's install-deps to get the right system libraries
-    docker exec -u root ${containerName} bash -c '
-      cd /app && npx playwright-core install-deps chromium 2>/dev/null
-    '
-
-    # Install Chromium browser binary via playwright-core (as node user)
-    docker exec ${containerName} bash -c '
-      cd /app && npx playwright-core install chromium 2>/dev/null
-    '
-
-    # Create symlink so OpenClaw auto-detects the browser
-    docker exec -u root ${containerName} bash -c '
-      CHROME_BIN=$(find /home/node/.cache/ms-playwright -name chrome -path "*/chrome-linux64/*" 2>/dev/null | head -1) &&
-      if [ -n "$CHROME_BIN" ]; then
-        ln -sf "$CHROME_BIN" /usr/local/bin/chromium &&
-        echo "Chromium linked: $CHROME_BIN -> /usr/local/bin/chromium"
-      fi
-    '
-
-    # Install GitHub CLI (gh)
-    docker exec -u root ${containerName} bash -c '
-      curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg &&
-      echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list &&
-      apt-get update -qq &&
-      apt-get install -y -qq gh
-    '
-
-    # Install himalaya email CLI
-    docker exec -u root ${containerName} bash -c '
-      curl -fsSL https://raw.githubusercontent.com/pimalaya/himalaya/master/install.sh | sh 2>/dev/null &&
-      mv /root/.local/bin/himalaya /usr/local/bin/himalaya 2>/dev/null || true
-    '
-
-    # Install credential manager CLI (cred) — symlink the script as a global command
-    docker exec -u root ${containerName} bash -c '
-      cat > /usr/local/bin/cred << "CREDEOF"
+function installCliTools(containerName: string): void {
+  const steps: Array<{ name: string; cmd: string; timeout: number }> = [
+    {
+      name: "system packages + sudo",
+      cmd: `docker exec -u root ${containerName} bash -c '
+        apt-get update -qq &&
+        apt-get install -y -qq --no-install-recommends \
+          jq tmux ffmpeg python3-pip ca-certificates gnupg sudo \
+          2>/dev/null &&
+        echo "node ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+      '`,
+      timeout: 120_000,
+    },
+    {
+      name: "Chromium dependencies",
+      cmd: `docker exec -u root ${containerName} bash -c '
+        cd /app && npx playwright-core install-deps chromium 2>/dev/null
+      '`,
+      timeout: 120_000,
+    },
+    {
+      name: "Chromium browser binary",
+      cmd: `docker exec ${containerName} bash -c '
+        cd /app && npx playwright-core install chromium 2>/dev/null
+      '`,
+      timeout: 120_000,
+    },
+    {
+      name: "Chromium symlink",
+      cmd: `docker exec -u root ${containerName} bash -c '
+        CHROME_BIN=$(find /home/node/.cache/ms-playwright -name chrome -path "*/chrome-linux64/*" 2>/dev/null | head -1) &&
+        if [ -n "$CHROME_BIN" ]; then
+          ln -sf "$CHROME_BIN" /usr/local/bin/chromium &&
+          echo "Chromium linked: $CHROME_BIN -> /usr/local/bin/chromium"
+        fi
+      '`,
+      timeout: 15_000,
+    },
+    {
+      name: "GitHub CLI (gh)",
+      cmd: `docker exec -u root ${containerName} bash -c '
+        curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg 2>/dev/null &&
+        echo "deb [arch=\$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list &&
+        apt-get update -qq &&
+        apt-get install -y -qq gh
+      '`,
+      timeout: 60_000,
+    },
+    {
+      name: "himalaya email CLI",
+      cmd: `docker exec -u root ${containerName} bash -c '
+        curl -fsSL https://raw.githubusercontent.com/pimalaya/himalaya/master/install.sh | sh 2>/dev/null &&
+        mv /root/.local/bin/himalaya /usr/local/bin/himalaya 2>/dev/null || true
+      '`,
+      timeout: 60_000,
+    },
+    {
+      name: "credential manager (cred)",
+      cmd: `docker exec -u root ${containerName} bash -c '
+        cat > /usr/local/bin/cred << "CREDEOF"
 #!/bin/bash
 exec node /home/node/.openclaw/cred.js "$@"
 CREDEOF
-      chmod +x /usr/local/bin/cred &&
-      echo "Credential manager (cred) installed"
-    '
+        chmod +x /usr/local/bin/cred
+      '`,
+      timeout: 10_000,
+    },
+    {
+      name: "2captcha CLI (solve-captcha)",
+      cmd: `docker exec -u root ${containerName} bash -c '
+        curl -fsSL https://github.com/2captcha/cli/releases/latest/download/solve-captcha-linux-amd64 -o /usr/local/bin/solve-captcha 2>/dev/null &&
+        chmod +x /usr/local/bin/solve-captcha || true
+      '`,
+      timeout: 30_000,
+    },
+    {
+      name: "oathtool (TOTP 2FA)",
+      cmd: `docker exec -u root ${containerName} bash -c '
+        apt-get install -y -qq oathtool 2>/dev/null || true
+      '`,
+      timeout: 30_000,
+    },
+  ];
 
-    # Install 2captcha CLI solver
-    docker exec -u root ${containerName} bash -c '
-      curl -fsSL https://github.com/2captcha/cli/releases/latest/download/solve-captcha-linux-amd64 -o /usr/local/bin/solve-captcha 2>/dev/null &&
-      chmod +x /usr/local/bin/solve-captcha &&
-      echo "2captcha CLI (solve-captcha) installed" ||
-      echo "2captcha CLI install skipped (non-critical)"
-    '
-
-    # Install oathtool for TOTP 2FA code generation
-    docker exec -u root ${containerName} bash -c '
-      apt-get install -y -qq oathtool 2>/dev/null &&
-      echo "oathtool installed" || true
-    '
-
-    # Restart container so gateway picks up newly installed Chromium browser
-    echo "[cli-tools] Restarting container to pick up Chromium..."
-    docker restart ${containerName}
-
-    echo "[cli-tools] Installation complete for ${containerName}"
-  `;
-
-  const child = spawn("bash", ["-c", script], {
-    detached: true,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-
-  child.stdout?.on("data", (d: Buffer) => console.log(`[cli-tools] ${d.toString().trim()}`));
-  child.stderr?.on("data", (d: Buffer) => console.log(`[cli-tools:err] ${d.toString().trim()}`));
-  child.on("close", async (code) => {
-    console.log(`[cli-tools] Finished for ${containerName} (exit ${code})`);
-
-    // After docker restart, the container gets a new IP address.
-    // Update the DB so the chat proxy uses the correct IP, and wait for gateway.
-    if (code === 0) {
-      try {
-        const container = docker.getContainer(containerName);
-        const info = await container.inspect();
-        const newIp = info.NetworkSettings.Networks?.[OPENCLAW_NETWORK]?.IPAddress || null;
-        if (newIp) {
-          await db
-            .update(employees)
-            .set({ containerHost: newIp, updatedAt: new Date() })
-            .where(eq(employees.id, employeeId));
-          console.log(`[cli-tools] Updated container IP for ${containerName}: ${newIp}`);
-          // Wait for gateway to be ready after restart
-          await waitForGateway(newIp, 18789, 30_000);
-        }
-      } catch (err) {
-        console.error(`[cli-tools] Failed to update container IP after restart:`, err);
-      }
+  for (const step of steps) {
+    try {
+      execSync(step.cmd, { timeout: step.timeout, stdio: "pipe" });
+      console.log(`[cli-tools] ✓ ${step.name}`);
+    } catch (err) {
+      // Log but don't fail — individual tool install failures are non-fatal
+      const msg = err instanceof Error ? err.message : String(err);
+      console.log(`[cli-tools] ✗ ${step.name} failed (non-fatal): ${msg.slice(0, 200)}`);
     }
-  });
-  child.unref();
+  }
+
+  // Restart container so the gateway picks up Chromium and other new binaries
+  try {
+    console.log(`[cli-tools] Restarting container to pick up installed tools...`);
+    execSync(`docker restart ${containerName}`, { timeout: 30_000 });
+    console.log(`[cli-tools] Container restarted successfully`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.log(`[cli-tools] Container restart failed: ${msg.slice(0, 200)}`);
+  }
 }
 
 /**
