@@ -53,8 +53,25 @@ export async function POST(request: NextRequest) {
     await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS interservice_secret VARCHAR(255)`;
     results.push("0005: employee droplet fields — OK");
 
-    // Admin action: reset stuck employees for reprovisioning
+    // Admin actions
     const action = request.nextUrl.searchParams.get("action");
+
+    // Provision a specific employee's droplet
+    if (action === "provision-employee") {
+      const empId = request.nextUrl.searchParams.get("employeeId");
+      if (!empId) {
+        return NextResponse.json({ error: "employeeId required" }, { status: 400 });
+      }
+      try {
+        const { createEmployeeDroplet } = await import("@/lib/digitalocean");
+        const result = await createEmployeeDroplet(empId);
+        results.push(`provision: started droplet ${result.dropletId} for employee ${empId}`);
+      } catch (err: any) {
+        results.push(`provision: FAILED — ${err.message}`);
+      }
+    }
+
+    // Reset stuck employees
     if (action === "reset-stuck-employees") {
       const stuck = await sql`
         UPDATE employees
