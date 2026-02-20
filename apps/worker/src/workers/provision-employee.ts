@@ -226,7 +226,7 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
 
     // Wait for the OpenClaw gateway to be ready before marking active
     if (containerIp) {
-      await waitForGateway(containerIp, 18789, 60_000);
+      await waitForGateway(containerIp, 18789, 120_000);
     }
 
     await db
