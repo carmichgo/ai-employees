@@ -824,6 +824,12 @@ async function checkDropletApi(ip: string, _secret: string): Promise<{ ok: boole
     const body = await res.json().catch(() => ({}));
     // Placeholder returns { phase: "provisioning" }, real API returns { status: "ok", timestamp: "..." }
     const phase = body.phase || (body.timestamp ? "ready" : "unknown");
+
+    // If the phase indicates a download/setup failure, the droplet is NOT ready
+    if (typeof phase === "string" && phase.startsWith("PHASE2_FAILED")) {
+      return { ok: false, phase };
+    }
+
     return { ok: true, phase };
   } catch {
     return { ok: false, phase: null };
