@@ -5,7 +5,7 @@ import { employees } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
 import { updateEmployeeSchema } from "@ai-employees/shared";
 import { getEmployeeBackend, createBackendClient } from "@/lib/backend";
-import { destroyEmployeeDroplet } from "@/lib/digitalocean";
+import { destroyEmployeeDroplet, pollEmployeeDropletStatus } from "@/lib/digitalocean";
 
 export const maxDuration = 60;
 
@@ -18,10 +18,10 @@ async function authenticate(request: NextRequest) {
 }
 
 function sanitize(emp: Record<string, unknown>) {
-  const { gatewayToken, ...safe } = emp as { gatewayToken?: string } & Record<
-    string,
-    unknown
-  >;
+  const { gatewayToken, interserviceSecret, ...safe } = emp as {
+    gatewayToken?: string;
+    interserviceSecret?: string;
+  } & Record<string, unknown>;
   return safe;
 }
 
@@ -43,6 +43,26 @@ export async function GET(
 
   if (!employee) {
     return NextResponse.json({ error: "Employee not found" }, { status: 404 });
+  }
+
+  // If employee is provisioning and has a droplet, poll DO for IP/status updates
+  if (employee.status === "provisioning" && employee.dropletId) {
+    try {
+      const pollResult = await pollEmployeeDropletStatus(id);
+      if (pollResult.status === "active" && pollResult.ip) {
+        // Re-fetch the updated employee record
+        const [updated] = await db
+          .select()
+          .from(employees)
+          .where(eq(employees.id, id))
+          .limit(1);
+        if (updated) {
+          return NextResponse.json({ employee: sanitize(updated) });
+        }
+      }
+    } catch (err: any) {
+      console.error("[employee-get] pollEmployeeDropletStatus failed:", err.message);
+    }
   }
 
   return NextResponse.json({ employee: sanitize(employee) });
