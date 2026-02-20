@@ -11,6 +11,7 @@ import {
   generateCredentialManagerScript,
   generateCaptchaSolvingSkill,
   generateAccountCreationSkill,
+  generateTaskLoggingSkill,
   type EmployeeInput,
 } from "@ai-employees/openclaw-config";
 import { docker, ensureNetwork, ensureImage } from "../docker/client.js";
@@ -113,6 +114,7 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     mkdirSync(`${configDir}/credentials`, { recursive: true, mode: 0o700 });
     mkdirSync(`${configDir}/skills/captcha-solving`, { recursive: true });
     mkdirSync(`${configDir}/skills/account-creation`, { recursive: true });
+    mkdirSync(`${configDir}/skills/task-logging`, { recursive: true });
     writeFileSync(`${configDir}/openclaw.json`, JSON.stringify(config, null, 2));
     writeFileSync(`${configDir}/SOUL.md`, soulMd);
     writeFileSync(`${configDir}/workspace/SOUL.md`, soulMd);
@@ -123,6 +125,7 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     // Write skill files
     writeFileSync(`${configDir}/skills/captcha-solving/SKILL.md`, generateCaptchaSolvingSkill());
     writeFileSync(`${configDir}/skills/account-creation/SKILL.md`, generateAccountCreationSkill());
+    writeFileSync(`${configDir}/skills/task-logging/SKILL.md`, generateTaskLoggingSkill());
 
     // Fix permissions for the node user (uid 1000) inside the container
     execSync(`chown -R 1000:1000 ${configDir}`);
@@ -142,6 +145,10 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
         `EMPLOYEE_EMAIL=${emailAddress}`,
         `EMPLOYEE_NAME=${employee.name}`,
         `EMPLOYEE_JOB_TITLE=${employee.jobTitle}`,
+        // Task API — internal endpoint for employees to log tasks
+        `EMPLOYEE_ID=${employeeId}`,
+        `COMPANY_ID=${data.companyId}`,
+        `TASK_API_URL=http://host.docker.internal:${process.env.API_PORT || "3001"}`,
         // Email IMAP/SMTP credentials (if configured by company owner)
         ...buildEmailEnvVars(employee.provisionedAccounts as Record<string, unknown>),
       ],
@@ -150,6 +157,7 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
           `${configDir}:/home/node/.openclaw`,
           `${configDir}/workspace:/home/node/.openclaw/workspace`,
         ],
+        ExtraHosts: ["host.docker.internal:host-gateway"],
         NetworkMode: OPENCLAW_NETWORK,
         Memory: parseMemory(resources.memory),
         NanoCpus: parseCpus(resources.cpus),
