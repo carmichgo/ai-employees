@@ -53,6 +53,21 @@ export async function POST(request: NextRequest) {
     await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS interservice_secret VARCHAR(255)`;
     results.push("0005: employee droplet fields — OK");
 
+    // Admin action: reset stuck employees for reprovisioning
+    const action = request.nextUrl.searchParams.get("action");
+    if (action === "reset-stuck-employees") {
+      const stuck = await sql`
+        UPDATE employees
+        SET droplet_id = NULL, droplet_ip = NULL, droplet_status = 'none',
+            status = 'provisioning', interservice_secret = NULL
+        WHERE (droplet_status = 'active' OR droplet_status = 'error')
+          AND status != 'terminated'
+          AND droplet_id IS NOT NULL
+        RETURNING id, name
+      `;
+      results.push(`reset-stuck: ${stuck.length} employees reset: ${stuck.map((r: any) => r.name).join(", ")}`);
+    }
+
     // Check current employees columns
     const cols = await sql`
       SELECT column_name FROM information_schema.columns
