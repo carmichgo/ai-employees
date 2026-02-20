@@ -53,7 +53,6 @@ import {
   Zap,
   Crown,
   Rocket,
-  Video,
   Users,
   Plus,
   Trash2,
@@ -89,10 +88,8 @@ const CAPABILITY_ICONS: Record<string, any> = {
   "code-execution": Code,
   scheduling: Calendar,
   memory: Sparkles,
-  images: Palette,
-  "video-generation": Video,
+  "visual-media": Palette,
   "phone-calls": Headphones,
-  pdf: FileText,
 };
 
 // ── Expertise icons ────────────────────────────
@@ -107,9 +104,7 @@ const EXPERTISE_ICONS: Record<string, any> = {
   "project-management": KanbanSquare,
   "customer-support": Headphones,
   "sales-crm": Target,
-  "design-media": Palette,
   "scheduling-ops": Calendar,
-  "file-documents": FileText,
 };
 
 // ── All capability IDs (for default-all-on) ────
@@ -134,16 +129,16 @@ const TEMPLATE_CAPABILITIES: Record<string, string[]> = {
 // ── Template → Expertise Mapping ───────────────
 
 const TEMPLATE_EXPERTISE: Record<string, string[]> = {
-  marketer: ["web-research", "writing", "social-media", "data-analytics", "email-outreach", "design-media"],
+  marketer: ["web-research", "writing", "social-media", "data-analytics", "email-outreach"],
   "seo-manager": ["web-research", "writing", "data-analytics"],
   coo: ["project-management", "data-analytics", "scheduling-ops"],
   "customer-support": ["customer-support", "writing", "email-outreach"],
   "sales-rep": ["sales-crm", "email-outreach", "web-research"],
-  "software-engineer": ["code-engineering", "web-research", "file-documents"],
-  "data-analyst": ["data-analytics", "code-engineering", "file-documents"],
-  "content-writer": ["writing", "web-research", "social-media", "design-media"],
-  "executive-assistant": ["scheduling-ops", "email-outreach", "file-documents"],
-  researcher: ["web-research", "writing", "data-analytics", "file-documents"],
+  "software-engineer": ["code-engineering", "web-research"],
+  "data-analyst": ["data-analytics", "code-engineering"],
+  "content-writer": ["writing", "web-research", "social-media"],
+  "executive-assistant": ["scheduling-ops", "email-outreach"],
+  researcher: ["web-research", "writing", "data-analytics"],
 };
 
 // ── Expand helpers ─────────────────────────────
@@ -1577,16 +1572,16 @@ function HireEmployeeWizard() {
       {/* ═══ Step 7: Skills / Expertise ═══ */}
       {step === "skills" && (
         <div key={animKey} className={animClass}>
-          <h1 style={styles.heading}>What should they be great at?</h1>
+          <h1 style={styles.heading}>What should they focus on?</h1>
           <p style={styles.subtitle}>
-            Select focus areas — {form.name || "they"} can do all of these, but will prioritize what you pick
+            Pick priority areas — {form.name || "they"} will invest the most effort here
           </p>
 
           <div
             style={{
               marginTop: 40,
               display: "grid",
-              gridTemplateColumns: "repeat(4, 1fr)",
+              gridTemplateColumns: "repeat(3, 1fr)",
               gridAutoRows: "1fr",
               gap: 10,
             }}

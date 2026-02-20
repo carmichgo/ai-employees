@@ -213,14 +213,12 @@ export const CAPABILITY_OPTIONS: CapabilityOption[] = [
   { id: "web-browsing", label: "Browse websites", desc: "Visit websites, fill forms, extract data", toolsAllow: ["group:web", "browser", "web_fetch"] },
   { id: "internet-search", label: "Search the internet", desc: "Find information, news, and answers online", toolsAllow: ["web_search"] },
   { id: "email", label: "Send & receive emails", desc: "Read inbox, compose emails, manage threads", toolsAllow: ["group:messaging"], skills: ["himalaya"] },
-  { id: "files", label: "Create & edit files", desc: "Write documents, spreadsheets, and organize files", toolsAllow: ["group:fs"] },
+  { id: "files", label: "Create & edit files", desc: "Write documents, spreadsheets, PDFs, and organize files", toolsAllow: ["group:fs"], skills: ["nano-pdf"] },
   { id: "code-execution", label: "Write & run code", desc: "Execute scripts, install packages, use the terminal", toolsAllow: ["group:runtime"] },
   { id: "scheduling", label: "Schedule recurring tasks", desc: "Set up automated routines and reminders", toolsAllow: ["group:automation"] },
   { id: "memory", label: "Remember past work", desc: "Recall previous conversations, contacts, and context", toolsAllow: ["group:memory", "group:sessions"] },
-  { id: "images", label: "Create images & designs", desc: "Generate, edit, and analyze visual content (Nano Banana, DALL-E, canvas)", toolsAllow: ["image", "canvas"] },
-  { id: "video-generation", label: "Generate videos", desc: "Create AI-generated video clips from text prompts (Veo 3)", toolsAllow: ["group:runtime"] },
+  { id: "visual-media", label: "Images, video & design", desc: "Generate images, AI video, and visual content (Nano Banana, Veo 3, canvas)", toolsAllow: ["image", "canvas", "group:runtime"], skills: ["openai-image-gen", "video-frames", "gifgrep", "media-generation"] },
   { id: "phone-calls", label: "Make phone calls", desc: "Place and receive voice calls", toolsAllow: [], plugins: ["voice-call"] },
-  { id: "pdf", label: "Read & create PDFs", desc: "Generate reports, read documents, manipulate PDFs", toolsAllow: [], skills: ["nano-pdf"] },
 ];
 
 // ── Expertise Options ──────────────────────────────────
@@ -244,7 +242,5 @@ export const EXPERTISE_OPTIONS: ExpertiseOption[] = [
   { id: "project-management", label: "Project Management", desc: "Organize tasks, coordinate work, manage boards", skills: ["notion", "trello", "google"] },
   { id: "customer-support", label: "Customer Support", desc: "Handle tickets, write help docs, resolve issues", skills: ["himalaya", "summarize"] },
   { id: "sales-crm", label: "Sales & CRM", desc: "Find prospects, track deals, manage pipeline", skills: ["himalaya", "sag"] },
-  { id: "design-media", label: "Design & Media", desc: "Create images, generate videos, produce visual content (Nano Banana, Veo 3)", skills: ["openai-image-gen", "video-frames", "gifgrep", "media-generation"] },
   { id: "scheduling-ops", label: "Scheduling & Ops", desc: "Manage calendars, set reminders, automate workflows", skills: ["google"] },
-  { id: "file-documents", label: "Files & Documents", desc: "Read, write, organize files, create PDFs", skills: ["nano-pdf"] },
 ];
