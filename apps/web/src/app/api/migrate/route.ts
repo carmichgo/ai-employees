@@ -68,6 +68,15 @@ export async function POST(request: NextRequest) {
       results.push(`reset-stuck: ${stuck.length} employees reset: ${stuck.map((r: any) => r.name).join(", ")}`);
     }
 
+    // Always include employee diagnostics
+    const empRows = await sql`
+      SELECT id, name, status, droplet_id, droplet_ip, droplet_status, interservice_secret IS NOT NULL as has_secret, created_at, updated_at
+      FROM employees
+      WHERE status != 'terminated'
+      ORDER BY created_at DESC
+      LIMIT 10
+    `;
+
     // Check current employees columns
     const cols = await sql`
       SELECT column_name FROM information_schema.columns
@@ -78,6 +87,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       migrations: results,
+      employees: empRows,
       employeeColumns: cols.map((c: any) => c.column_name),
     });
   } catch (err: any) {
