@@ -115,6 +115,51 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Admin action: tear down existing container and reprovision (for config changes)
+    if (action === "rebuild-container") {
+      const empId = request.nextUrl.searchParams.get("employeeId");
+      if (!empId) {
+        return NextResponse.json({ error: "employeeId required" }, { status: 400 });
+      }
+      const [emp] = await sql`SELECT id, name, droplet_ip, interservice_secret, status FROM employees WHERE id = ${empId}`;
+      if (!emp || !emp.droplet_ip || !emp.interservice_secret) {
+        results.push(`rebuild-container: employee not found or no droplet`);
+      } else {
+        try {
+          // Step 1: Tear down existing container via the worker
+          const tearRes = await fetch(`http://${emp.droplet_ip}:3001/internal/employees/${empId}/teardown`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-INTERSERVICE-SECRET": emp.interservice_secret,
+            },
+            body: JSON.stringify({}),
+            signal: AbortSignal.timeout(30000),
+          });
+          const tearData = await tearRes.json().catch(() => ({}));
+          results.push(`rebuild-container: teardown ${tearRes.status} ${JSON.stringify(tearData)}`);
+
+          // Step 2: Clear container fields and set status to provisioning
+          await sql`UPDATE employees SET status = 'provisioning', container_id = NULL, container_host = NULL WHERE id = ${empId}`;
+
+          // Step 3: Trigger reprovision
+          const provRes = await fetch(`http://${emp.droplet_ip}:3001/internal/employees/${empId}/reprovision`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-INTERSERVICE-SECRET": emp.interservice_secret,
+            },
+            body: JSON.stringify({}),
+            signal: AbortSignal.timeout(15000),
+          });
+          const provData = await provRes.json().catch(() => ({}));
+          results.push(`rebuild-container: reprovision ${provRes.status} ${JSON.stringify(provData)}`);
+        } catch (err: any) {
+          results.push(`rebuild-container: FAILED — ${err.message}`);
+        }
+      }
+    }
+
     // Always include employee diagnostics
     const empRows = await sql`
       SELECT id, name, status, droplet_id, droplet_ip, droplet_status, interservice_secret IS NOT NULL as has_secret, created_at, updated_at

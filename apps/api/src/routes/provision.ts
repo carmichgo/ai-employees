@@ -237,6 +237,21 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     return { employee: sanitize(updated), message: `${employee.name} has been terminated.` };
   });
 
+  // POST /internal/employees/:id/teardown — destroy container only (keeps employee record)
+  fastify.post<{ Params: { id: string } }>("/internal/employees/:id/teardown", async (request, reply) => {
+    const { id } = request.params;
+
+    const employee = await db.query.employees.findFirst({
+      where: eq(employees.id, id),
+    });
+    if (!employee) return reply.status(404).send({ error: "Employee not found" });
+
+    const queue = getProvisionQueue();
+    await queue.add("teardown-employee", { employeeId: id });
+
+    return { message: `Container teardown queued for ${employee.name}` };
+  });
+
   // GET /internal/employees/:id/status — poll status
   fastify.get<{ Params: { id: string } }>("/internal/employees/:id/status", async (request, reply) => {
     const { id } = request.params;
