@@ -132,17 +132,28 @@ export async function POST(
       { role: "user", content: message },
     ];
 
-    const res = await fetch(
-      `http://${employee.dropletIp}:3001/internal/employees/${id}/chat`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-interservice-secret": employee.interserviceSecret,
+    // Timeout slightly under maxDuration so we fail gracefully with a proper error
+    // instead of Vercel killing the function and returning a generic non-JSON error
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 110_000); // 110s
+
+    let res: Response;
+    try {
+      res = await fetch(
+        `http://${employee.dropletIp}:3001/internal/employees/${id}/chat`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-interservice-secret": employee.interserviceSecret,
+          },
+          body: JSON.stringify({ messages }),
+          signal: controller.signal,
         },
-        body: JSON.stringify({ messages }),
-      },
-    );
+      );
+    } finally {
+      clearTimeout(timeout);
+    }
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: "Chat request failed" }));
@@ -180,6 +191,20 @@ export async function POST(
 
     return NextResponse.json({ ...data, reply });
   } catch (err: any) {
+    // Handle timeout — the AI is still working but took too long for this request
+    const isTimeout = err?.name === "AbortError";
+    if (isTimeout) {
+      const reply = `I'm still working on this — it's taking longer than expected. Give me a moment and check back shortly.`;
+      await db.insert(chatMessages).values({
+        employeeId: id,
+        userId: session.userId,
+        role: "assistant",
+        content: reply,
+        mode: "system",
+      });
+      return NextResponse.json({ reply, mode: "system" });
+    }
+
     // If the employee was already in error state, give a friendlier message
     if (employee.status === "error") {
       const reply = `I'm having trouble connecting right now — my workspace is recovering. Please try again in a moment.`;

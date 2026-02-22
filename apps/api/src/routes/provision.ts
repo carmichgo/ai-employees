@@ -387,7 +387,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       where: eq(employees.id, id),
     });
     if (!employee) return reply.status(404).send({ error: "Employee not found" });
-    if (employee.status !== "active") {
+    if (employee.status === "terminated" || employee.status === "paused") {
       return reply.status(400).send({ error: `Employee is ${employee.status}` });
     }
 
