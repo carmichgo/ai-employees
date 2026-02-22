@@ -13,6 +13,7 @@ import { provisionRoutes } from "./routes/provision.js";
 import { fileRoutes } from "./routes/files.js";
 import { triggerRoutes } from "./routes/triggers.js";
 import { taskRoutes } from "./routes/tasks.js";
+import { employeeGatewayRoutes } from "./routes/employee-gateway.js";
 import { getSlackProxy } from "./slack/proxy.js";
 
 export async function buildServer(config: Env) {
@@ -50,6 +51,7 @@ export async function buildServer(config: Env) {
   await fastify.register(fileRoutes, { prefix: "/internal" });
   await fastify.register(triggerRoutes);
   await fastify.register(taskRoutes);
+  await fastify.register(employeeGatewayRoutes);
 
   // Health check (used by Vercel to verify droplet readiness)
   fastify.get("/health", async () => ({ status: "ok", timestamp: new Date().toISOString() }));
@@ -68,6 +70,12 @@ export async function buildServer(config: Env) {
     checks.anthropicKeySet = !!process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY.length > 10;
     checks.anthropicKeyPrefix = process.env.ANTHROPIC_API_KEY?.slice(0, 8) || "NOT SET";
     try { checks.images = execSync("docker images --format '{{.Repository}}:{{.Tag}}'", { timeout: 5000 }).toString().trim() || "none"; } catch (e: any) { checks.images = `error: ${e.message}`; }
+    // Check config files inside the container
+    try { checks.configFiles = execSync("docker exec $(docker ps -q --latest) ls -la /home/node/.openclaw/ 2>&1", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.configFiles = `error: ${e.message}`; }
+    try { checks.soulMdHead = execSync("docker exec $(docker ps -q --latest) head -20 /home/node/.openclaw/SOUL.md 2>&1", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.soulMdHead = `error: ${e.message}`; }
+    try { checks.openclawJson = execSync("docker exec $(docker ps -q --latest) cat /home/node/.openclaw/openclaw.json 2>&1", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.openclawJson = `error: ${e.message}`; }
+    try { checks.workspaceSoulMd = execSync("docker exec $(docker ps -q --latest) head -10 /home/node/.openclaw/workspace/SOUL.md 2>&1", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.workspaceSoulMd = `error: ${e.message}`; }
+    try { checks.containerEnv = execSync("docker exec $(docker ps -q --latest) env 2>&1 | grep -E 'EMPLOYEE_|OPENCLAW_|ANTHROPIC_API_KEY=' | sed 's/=.\\{8\\}.*/=...REDACTED/'", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.containerEnv = `error: ${e.message}`; }
     return checks;
   });
 

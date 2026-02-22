@@ -44,7 +44,10 @@ class ApiClient {
 
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new ApiError(res.status, body.error || "Request failed");
+      const msg = body.detail
+        ? `${body.error || "Error"}: ${body.detail}`
+        : body.error || "Request failed";
+      throw new ApiError(res.status, msg);
     }
 
     return res.json();
@@ -80,7 +83,7 @@ class ApiClient {
   }
 
   async forgotPassword(email: string) {
-    return this.request<{ message: string; resetLink?: string }>(
+    return this.request<{ message: string; resetUrl?: string }>(
       "/api/auth/forgot-password",
       { method: "POST", body: JSON.stringify({ email }) },
     );
@@ -116,6 +119,10 @@ class ApiClient {
       autonomy?: string;
       proactivity?: string;
       communication?: string;
+    };
+    authorityConfig?: {
+      defaultRole: string;
+      members: Array<{ slackUserId: string; name: string; role: string }>;
     };
   }) {
     return this.request<{ employee: any; message: string }>("/api/employees", {
@@ -423,6 +430,8 @@ class ApiClient {
         status: string;
         priority: string;
         source: string;
+        category: string | null;
+        dueDate: string | null;
         completedAt: string | null;
         createdAt: string;
         updatedAt: string;
@@ -438,6 +447,8 @@ class ApiClient {
     title: string;
     description?: string;
     priority?: string;
+    category?: string;
+    dueDate?: string;
   }) {
     return this.request<{ task: any }>("/api/tasks", {
       method: "POST",
@@ -450,6 +461,8 @@ class ApiClient {
     description?: string;
     status?: string;
     priority?: string;
+    category?: string;
+    dueDate?: string | null;
   }) {
     return this.request<{ task: any }>(`/api/tasks?taskId=${taskId}`, {
       method: "PATCH",
@@ -461,6 +474,81 @@ class ApiClient {
     return this.request<{ message: string }>(`/api/tasks?taskId=${taskId}`, {
       method: "DELETE",
     });
+  }
+
+  // Task Comments
+  async listTaskComments(taskId: string) {
+    return this.request<{
+      comments: Array<{
+        id: string;
+        taskId: string;
+        authorType: string;
+        authorName: string;
+        content: string;
+        createdAt: string;
+      }>;
+    }>(`/api/tasks/comments?taskId=${taskId}`);
+  }
+
+  async addTaskComment(taskId: string, content: string, authorName?: string) {
+    return this.request<{ comment: any }>(`/api/tasks/comments?taskId=${taskId}`, {
+      method: "POST",
+      body: JSON.stringify({ content, authorName }),
+    });
+  }
+
+  // Billing
+  async createCheckoutSession(data: {
+    name: string;
+    jobTitle: string;
+    tier: string;
+    channels: string[];
+    capabilities: string[];
+    expertise: string[];
+    templateId?: string;
+    persona?: string;
+    goals?: string;
+    toolsAllow?: string[];
+    skills?: string[];
+    personalityConfig?: any;
+    authorityConfig?: any;
+  }) {
+    // Returns { url } for first hire (redirect to Stripe Checkout)
+    // or { employee, message } for subsequent hires (line item added to existing subscription)
+    return this.request<{ url?: string; employee?: any; message?: string; billingAdded?: boolean; priceMonthly?: number }>("/api/billing/checkout", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async confirmCheckout(sessionId: string) {
+    return this.request<{ employee?: any; message?: string; alreadyCompleted?: boolean }>(
+      "/api/billing/checkout/confirm",
+      {
+        method: "POST",
+        body: JSON.stringify({ sessionId }),
+      },
+    );
+  }
+
+  async createPortalSession() {
+    return this.request<{ url: string }>("/api/billing/portal", {
+      method: "POST",
+    });
+  }
+
+  async listSubscriptions() {
+    return this.request<{ subscriptions: any[] }>("/api/billing/subscriptions");
+  }
+
+  async getBillingOverview() {
+    return this.request<{
+      subscription: any;
+      employees: any[];
+      monthlyTotal: number;
+      paymentMethods: any[];
+      invoices: any[];
+    }>("/api/billing/overview");
   }
 
   getSlackInstallUrl(): string {

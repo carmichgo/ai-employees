@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq, and, desc } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { tasks, employees } from "@/lib/schema";
+import { tasks, employees, taskComments } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
-import crypto from "node:crypto";
 
 async function authenticate(request: NextRequest) {
   const token =
@@ -31,6 +30,8 @@ export async function GET(request: NextRequest) {
       status: tasks.status,
       priority: tasks.priority,
       source: tasks.source,
+      category: tasks.category,
+      dueDate: tasks.dueDate,
       completedAt: tasks.completedAt,
       createdAt: tasks.createdAt,
       updatedAt: tasks.updatedAt,
@@ -62,7 +63,7 @@ export async function POST(request: NextRequest) {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await request.json();
-  const { employeeId, title, description, priority } = body;
+  const { employeeId, title, description, priority, category, dueDate, source } = body;
 
   if (!employeeId || !title) {
     return NextResponse.json({ error: "employeeId and title are required" }, { status: 400 });
@@ -87,7 +88,9 @@ export async function POST(request: NextRequest) {
       title,
       description: description || null,
       priority: priority || "medium",
-      source: "manager",
+      source: source || "manager",
+      category: category || null,
+      dueDate: dueDate ? new Date(dueDate) : null,
     })
     .returning();
 
@@ -110,8 +113,11 @@ export async function PATCH(request: NextRequest) {
   if (body.status !== undefined) {
     updates.status = body.status;
     if (body.status === "completed") updates.completedAt = new Date();
+    else updates.completedAt = null;
   }
   if (body.priority !== undefined) updates.priority = body.priority;
+  if (body.category !== undefined) updates.category = body.category || null;
+  if (body.dueDate !== undefined) updates.dueDate = body.dueDate ? new Date(body.dueDate) : null;
 
   const [task] = await db
     .update(tasks)

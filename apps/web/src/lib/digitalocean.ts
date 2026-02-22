@@ -10,9 +10,9 @@
 import crypto from "node:crypto";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { companies } from "@/lib/schema";
+import { companies, employees } from "@/lib/schema";
 
-const DO_API_TOKEN = process.env.DO_API_TOKEN;
+const DO_API_TOKEN = process.env.DO_API_TOKEN?.trim();
 const DO_API = "https://api.digitalocean.com/v2";
 
 // The GitHub repo URL for cloning on the droplet
@@ -20,7 +20,7 @@ const REPO_URL = process.env.REPO_URL || "https://github.com/carmichgo/ai-employ
 const REPO_BRANCH = (process.env.REPO_BRANCH || "main").trim();
 
 export function isDropletProvisioningEnabled(): boolean {
-  return !!DO_API_TOKEN;
+  return !!DO_API_TOKEN && DO_API_TOKEN.length > 10;
 }
 
 async function doFetch(path: string, options: RequestInit = {}): Promise<Response> {
@@ -28,21 +28,36 @@ async function doFetch(path: string, options: RequestInit = {}): Promise<Respons
     throw new Error("DO_API_TOKEN not configured");
   }
 
-  const res = await fetch(`${DO_API}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${DO_API_TOKEN}`,
-      ...options.headers,
-    },
-  });
+  // Use AbortController for timeout to avoid hanging on slow DO API responses
+  // (Vercel serverless functions have a 10s default timeout)
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 25000); // 25s timeout
 
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({ message: res.statusText }));
-    throw new Error(body.message || `DO API error: ${res.status}`);
+  try {
+    const res = await fetch(`${DO_API}${path}`, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${DO_API_TOKEN}`,
+        ...options.headers,
+      },
+    });
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ message: res.statusText }));
+      throw new Error(body.message || `DO API error: ${res.status}`);
+    }
+
+    return res;
+  } catch (err: any) {
+    if (err.name === "AbortError") {
+      throw new Error(`DigitalOcean API timeout on ${path}`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
   }
-
-  return res;
 }
 
 /** Generate the cloud-init user_data script for a company's droplet */
@@ -54,9 +69,14 @@ function generateCloudInit(params: {
   repoUrl: string;
   repoBranch: string;
   anthropicApiKey: string;
+  geminiApiKey: string;
   braveApiKey: string;
+  twilioAccountSid: string;
+  twilioAuthToken: string;
   slackAppToken: string;
   slackSigningSecret: string;
+  employeeId?: string;
+  companyId?: string;
 }): string {
   // Generate secrets in JS so they're embedded as actual values
   const jwtSecret = crypto.randomBytes(32).toString("hex");
@@ -228,7 +248,10 @@ OPENCLAW_NETWORK=ai-employees-internal
 API_PORT=3001
 PLATFORM_URL=${params.platformUrl}
 ANTHROPIC_API_KEY=${params.anthropicApiKey}
+GEMINI_API_KEY=${params.geminiApiKey}
 BRAVE_API_KEY=${params.braveApiKey}
+TWILIO_ACCOUNT_SID=${params.twilioAccountSid}
+TWILIO_AUTH_TOKEN=${params.twilioAuthToken}
 SLACK_APP_TOKEN=${params.slackAppToken}
 SLACK_SIGNING_SECRET=${params.slackSigningSecret}
 ENVEOF
@@ -349,7 +372,7 @@ sleep 2
 echo "Testing API startup..."
 cd /opt/ai-employees/app
 source /opt/ai-employees/.env
-export DATABASE_URL REDIS_URL JWT_SECRET JWT_EXPIRES_IN ENCRYPTION_KEY INTERSERVICE_SECRET OPENCLAW_IMAGE OPENCLAW_NETWORK API_PORT PLATFORM_URL ANTHROPIC_API_KEY BRAVE_API_KEY NODE_ENV=production
+export DATABASE_URL REDIS_URL JWT_SECRET JWT_EXPIRES_IN ENCRYPTION_KEY INTERSERVICE_SECRET OPENCLAW_IMAGE OPENCLAW_NETWORK API_PORT PLATFORM_URL ANTHROPIC_API_KEY GEMINI_API_KEY BRAVE_API_KEY TWILIO_ACCOUNT_SID TWILIO_AUTH_TOKEN NODE_ENV=production
 timeout 10 /usr/bin/node apps/api/dist/index.js > /tmp/api-test.log 2>&1 &
 TEST_PID=\$!
 sleep 5
@@ -376,6 +399,17 @@ for i in \$(seq 1 12); do
   if curl -sf http://localhost:3001/health > /dev/null 2>&1; then
     report "phase2-ready" "ok"
     echo "READY" > /opt/ai-employees/status
+    echo "Cloud-init: API is ready at \$(date)"
+${params.employeeId ? `
+    # Auto-provision the OpenClaw container for this employee
+    echo "Triggering container provisioning for employee ${params.employeeId}..."
+    PROVISION_RESULT=\$(curl -sf -X POST http://localhost:3001/internal/employees/${params.employeeId}/reprovision \\
+      -H "Content-Type: application/json" \\
+      -H "X-INTERSERVICE-SECRET: ${params.interserviceSecret}" \\
+      -d '{}' 2>&1) || true
+    echo "Provision result: \$PROVISION_RESULT"
+    report "ready" "ok"
+` : '    report "ready" "ok"'}
     echo "Cloud-init complete at \$(date)"
     exit 0
   fi
@@ -437,14 +471,17 @@ export async function createCompanyDroplet(companyId: string): Promise<{
   }
 
   const interserviceSecret = crypto.randomBytes(32).toString("hex");
-  const databaseUrl = process.env.DATABASE_URL;
+  const databaseUrl = process.env.DATABASE_URL?.trim();
   if (!databaseUrl) throw new Error("DATABASE_URL not set");
 
   const region = company.dropletRegion || "nyc3";
   const size = PLAN_DROPLET_SIZES[company.plan] || PLAN_DROPLET_SIZES.starter;
 
   const anthropicApiKey = process.env.ANTHROPIC_API_KEY || "";
+  const geminiApiKey = process.env.GEMINI_API_KEY || "";
   const braveApiKey = process.env.BRAVE_API_KEY || "";
+  const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID || "";
+  const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN || "";
   const slackAppToken = (process.env.SLACK_APP_TOKEN || "").trim();
   const slackSigningSecret = (process.env.SLACK_SIGNING_SECRET || "").trim();
 
@@ -456,7 +493,10 @@ export async function createCompanyDroplet(companyId: string): Promise<{
     repoUrl: REPO_URL,
     repoBranch: REPO_BRANCH,
     anthropicApiKey,
+    geminiApiKey,
     braveApiKey,
+    twilioAccountSid,
+    twilioAuthToken,
     slackAppToken,
     slackSigningSecret,
   });
@@ -503,6 +543,202 @@ export async function createCompanyDroplet(companyId: string): Promise<{
     .where(eq(companies.id, companyId));
 
   return { dropletId, interserviceSecret };
+}
+
+function slugifyName(name: string) {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+/** Create a new droplet for a specific employee */
+export async function createEmployeeDroplet(employeeId: string): Promise<{
+  dropletId: string;
+  interserviceSecret: string;
+}> {
+  const [employee] = await db
+    .select()
+    .from(employees)
+    .where(eq(employees.id, employeeId))
+    .limit(1);
+
+  if (!employee) throw new Error("Employee not found");
+  if (employee.dropletStatus === "provisioning") throw new Error("Droplet is already being provisioned");
+
+  // If there's a stale "active" droplet, verify it actually exists on DO
+  if (employee.dropletStatus === "active" && employee.dropletId) {
+    try {
+      await doFetch(`/droplets/${employee.dropletId}`);
+      throw new Error("Employee already has an active droplet");
+    } catch (err: any) {
+      if (!err.message.includes("already has an active droplet")) {
+        await db
+          .update(employees)
+          .set({ dropletId: null, dropletIp: null, dropletStatus: "destroyed", interserviceSecret: null, updatedAt: new Date() })
+          .where(eq(employees.id, employeeId));
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  // Get company for slug and plan
+  const [company] = await db
+    .select()
+    .from(companies)
+    .where(eq(companies.id, employee.companyId))
+    .limit(1);
+
+  if (!company) throw new Error("Company not found");
+
+  const interserviceSecret = crypto.randomBytes(32).toString("hex");
+  const databaseUrl = process.env.DATABASE_URL?.trim();
+  if (!databaseUrl) throw new Error("DATABASE_URL not set");
+
+  const region = "nyc3";
+  const size = PLAN_DROPLET_SIZES[company.plan] || PLAN_DROPLET_SIZES.starter;
+
+  const userData = generateCloudInit({
+    companySlug: company.slug,
+    databaseUrl,
+    interserviceSecret,
+    platformUrl: process.env.NEXT_PUBLIC_APP_URL || "https://ai-employees-ten.vercel.app",
+    repoUrl: REPO_URL,
+    repoBranch: REPO_BRANCH,
+    anthropicApiKey: process.env.ANTHROPIC_API_KEY || "",
+    geminiApiKey: process.env.GEMINI_API_KEY || "",
+    braveApiKey: process.env.BRAVE_API_KEY || "",
+    twilioAccountSid: process.env.TWILIO_ACCOUNT_SID || "",
+    twilioAuthToken: process.env.TWILIO_AUTH_TOKEN || "",
+    slackAppToken: (process.env.SLACK_APP_TOKEN || "").trim(),
+    slackSigningSecret: (process.env.SLACK_SIGNING_SECRET || "").trim(),
+    employeeId: employee.id,
+    companyId: employee.companyId,
+  });
+
+  let sshKeys: number[] = [];
+  try {
+    const keysRes = await doFetch("/account/keys");
+    const keysData = await keysRes.json();
+    sshKeys = (keysData.ssh_keys || []).map((k: { id: number }) => k.id);
+  } catch {}
+
+  const dropletName = `ai-emp-${company.slug}-${slugifyName(employee.name)}`;
+
+  const res = await doFetch("/droplets", {
+    method: "POST",
+    body: JSON.stringify({
+      name: dropletName,
+      region,
+      size,
+      image: "ubuntu-24-04-x64",
+      user_data: userData,
+      tags: ["ai-employees", `company:${company.slug}`, `employee:${slugifyName(employee.name)}`],
+      monitoring: true,
+      ...(sshKeys.length > 0 ? { ssh_keys: sshKeys } : {}),
+    }),
+  });
+
+  const data = await res.json();
+  const dropletId = String(data.droplet.id);
+
+  // Store on the employee record
+  await db
+    .update(employees)
+    .set({
+      dropletId,
+      dropletSize: size,
+      dropletRegion: region,
+      dropletStatus: "provisioning",
+      interserviceSecret,
+      updatedAt: new Date(),
+    })
+    .where(eq(employees.id, employeeId));
+
+  return { dropletId, interserviceSecret };
+}
+
+/** Poll DO API for an employee's droplet IP and readiness */
+export async function pollEmployeeDropletStatus(employeeId: string): Promise<{
+  status: string;
+  ip: string | null;
+  phase: string | null;
+}> {
+  const [employee] = await db
+    .select()
+    .from(employees)
+    .where(eq(employees.id, employeeId))
+    .limit(1);
+
+  if (!employee || !employee.dropletId) {
+    return { status: "none", ip: null, phase: null };
+  }
+
+  // If we already have an IP, just check health
+  if ((employee.dropletStatus === "active" || employee.dropletStatus === "error") && employee.dropletIp) {
+    const apiCheck = await checkDropletApi(employee.dropletIp, employee.interserviceSecret || "");
+    if (apiCheck.ok) {
+      if (employee.dropletStatus === "error") {
+        await db.update(employees).set({ dropletStatus: "active", updatedAt: new Date() }).where(eq(employees.id, employeeId));
+      }
+      return { status: "active", ip: employee.dropletIp, phase: apiCheck.phase };
+    }
+    return { status: employee.dropletStatus || "error", ip: employee.dropletIp, phase: null };
+  }
+
+  // Query DO API for the droplet's IP
+  try {
+    const res = await doFetch(`/droplets/${employee.dropletId}`);
+    const data = await res.json();
+    const droplet = data.droplet;
+
+    const publicNet = droplet.networks?.v4?.find((n: { type: string }) => n.type === "public");
+    const ip = publicNet?.ip_address || null;
+
+    if (droplet.status === "active" && ip) {
+      const apiCheck = await checkDropletApi(ip, employee.interserviceSecret || "");
+
+      if (apiCheck.ok) {
+        await db.update(employees).set({ dropletIp: ip, dropletStatus: "active", updatedAt: new Date() }).where(eq(employees.id, employeeId));
+        return { status: "active", ip, phase: apiCheck.phase };
+      }
+
+      // Droplet running but API not ready yet
+      await db.update(employees).set({ dropletIp: ip, updatedAt: new Date() }).where(eq(employees.id, employeeId));
+      return { status: "booting", ip, phase: null };
+    }
+
+    return { status: "provisioning", ip, phase: null };
+  } catch {
+    await db.update(employees).set({ dropletStatus: "error", updatedAt: new Date() }).where(eq(employees.id, employeeId));
+    return { status: "error", ip: null, phase: null };
+  }
+}
+
+/** Destroy an employee's droplet */
+export async function destroyEmployeeDroplet(employeeId: string): Promise<void> {
+  const [employee] = await db
+    .select()
+    .from(employees)
+    .where(eq(employees.id, employeeId))
+    .limit(1);
+
+  if (!employee || !employee.dropletId) return;
+
+  try {
+    await doFetch(`/droplets/${employee.dropletId}`, { method: "DELETE" });
+  } catch {
+    // Droplet may already be destroyed
+  }
+
+  await db
+    .update(employees)
+    .set({
+      dropletId: null,
+      dropletIp: null,
+      dropletStatus: "destroyed",
+      interserviceSecret: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(employees.id, employeeId));
 }
 
 /** Poll DO API for droplet IP and readiness */
@@ -603,6 +839,12 @@ async function checkDropletApi(ip: string, _secret: string): Promise<{ ok: boole
     const body = await res.json().catch(() => ({}));
     // Placeholder returns { phase: "provisioning" }, real API returns { status: "ok", timestamp: "..." }
     const phase = body.phase || (body.timestamp ? "ready" : "unknown");
+
+    // If the phase indicates a download/setup failure, the droplet is NOT ready
+    if (typeof phase === "string" && phase.startsWith("PHASE2_FAILED")) {
+      return { ok: false, phase };
+    }
+
     return { ok: true, phase };
   } catch {
     return { ok: false, phase: null };

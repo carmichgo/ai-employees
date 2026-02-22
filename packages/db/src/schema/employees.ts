@@ -16,9 +16,21 @@ export const employees = pgTable("employees", {
   tier: varchar("tier", { length: 20 }).notNull().default("junior"),
   // junior | senior | expert
 
+  // Stripe billing — links this employee to a line item on the company subscription
+  stripeSubscriptionItemId: varchar("stripe_subscription_item_id", { length: 255 }),
+  priceMonthly: integer("price_monthly"),
+
   // Status & lifecycle
   status: varchar("status", { length: 20 }).notNull().default("provisioning"),
   // provisioning | onboarding | active | paused | terminated | error
+
+  // Per-employee DigitalOcean droplet
+  dropletId: varchar("droplet_id", { length: 50 }),
+  dropletIp: varchar("droplet_ip", { length: 45 }),
+  dropletRegion: varchar("droplet_region", { length: 20 }),
+  dropletSize: varchar("droplet_size", { length: 50 }),
+  dropletStatus: varchar("droplet_status", { length: 20 }).default("none"),
+  interserviceSecret: varchar("interservice_secret", { length: 255 }),
 
   // OpenClaw container
   containerId: varchar("container_id", { length: 100 }),
@@ -40,6 +52,16 @@ export const employees = pgTable("employees", {
   }),
   toolsConfig: jsonb("tools_config").notNull().default({}),
   sandboxConfig: jsonb("sandbox_config").notNull().default({}),
+
+  // Authority — who can assign tasks vs. who can only ask questions
+  authorityConfig: jsonb("authority_config").notNull().default({
+    defaultRole: "manager",
+    members: [],
+  }),
+  // {
+  //   defaultRole: "manager" | "colleague" — what role do unrecognized Slack users get
+  //   members: [{ slackUserId: "U...", name: "Alice", role: "manager" | "colleague" }]
+  // }
 
   // Provisioned accounts
   emailAddress: varchar("email_address", { length: 255 }),

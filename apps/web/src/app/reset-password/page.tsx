@@ -12,9 +12,26 @@ function ResetPasswordForm() {
 
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
-  const [loading, setLoading] = useState(false);
+
+  if (!token) {
+    return (
+      <div
+        style={{
+          background: "var(--red-muted)",
+          borderRadius: "var(--radius-sm)",
+          padding: "14px 16px",
+          color: "var(--red)",
+          fontSize: 13,
+          lineHeight: 1.5,
+        }}
+      >
+        Invalid or missing reset token. Please request a new password reset link.
+      </div>
+    );
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,11 +48,10 @@ function ResetPasswordForm() {
     }
 
     setLoading(true);
-
     try {
       await api.resetPassword(token, password);
       setSuccess(true);
-      setTimeout(() => router.push("/login"), 3000);
+      setTimeout(() => router.push("/login"), 2000);
     } catch (err: any) {
       setError(err.message || "Failed to reset password");
     } finally {
@@ -43,18 +59,20 @@ function ResetPasswordForm() {
     }
   };
 
-  if (!token) {
+  if (success) {
     return (
       <div
         style={{
-          background: "var(--red-muted)",
+          background: "rgba(22,163,74,0.06)",
+          border: "1px solid rgba(22,163,74,0.15)",
           borderRadius: "var(--radius-sm)",
-          padding: "10px 14px",
-          color: "var(--red)",
+          padding: "14px 16px",
+          color: "#16a34a",
           fontSize: 13,
+          lineHeight: 1.5,
         }}
       >
-        Invalid or missing reset token. Please request a new password reset.
+        Password reset successfully! Redirecting to login...
       </div>
     );
   }
@@ -76,56 +94,42 @@ function ResetPasswordForm() {
         </div>
       )}
 
-      {success ? (
-        <div
-          style={{
-            background: "var(--green-muted, rgba(34,197,94,0.1))",
-            borderRadius: "var(--radius-sm)",
-            padding: "10px 14px",
-            color: "var(--green, #22c55e)",
-            fontSize: 13,
-          }}
-        >
-          Password reset successfully! Redirecting to login...
+      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div>
+          <label className="input-label">New Password</label>
+          <input
+            className="input"
+            type="password"
+            placeholder="Min 8 characters"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            minLength={8}
+          />
         </div>
-      ) : (
-        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <div>
-            <label className="input-label">New Password</label>
-            <input
-              className="input"
-              type="password"
-              placeholder="At least 8 characters"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              minLength={8}
-            />
-          </div>
 
-          <div>
-            <label className="input-label">Confirm Password</label>
-            <input
-              className="input"
-              type="password"
-              placeholder="Repeat your password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              required
-              minLength={8}
-            />
-          </div>
+        <div>
+          <label className="input-label">Confirm Password</label>
+          <input
+            className="input"
+            type="password"
+            placeholder="Confirm your password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            required
+            minLength={8}
+          />
+        </div>
 
-          <button
-            type="submit"
-            className="btn-primary"
-            disabled={loading}
-            style={{ width: "100%", marginTop: 4, height: 36 }}
-          >
-            {loading ? "Resetting..." : "Reset Password"}
-          </button>
-        </form>
-      )}
+        <button
+          type="submit"
+          className="btn-primary"
+          disabled={loading}
+          style={{ width: "100%", marginTop: 4, height: 36 }}
+        >
+          {loading ? "Resetting..." : "Reset Password"}
+        </button>
+      </form>
     </>
   );
 }
@@ -161,7 +165,7 @@ export default function ResetPasswordPage() {
               marginBottom: 20,
             }}
           >
-            AI
+            B
           </div>
           <h1
             style={{
@@ -176,7 +180,7 @@ export default function ResetPasswordPage() {
             Set new password
           </h1>
           <p style={{ color: "var(--text-secondary)", fontSize: 14, margin: 0 }}>
-            Choose a strong password for your account
+            Choose a new password for your account
           </p>
         </div>
 
@@ -190,7 +194,11 @@ export default function ResetPasswordPage() {
             boxShadow: "var(--shadow-md)",
           }}
         >
-          <Suspense fallback={<div style={{ color: "var(--text-secondary)", fontSize: 13 }}>Loading...</div>}>
+          <Suspense fallback={
+            <div style={{ textAlign: "center", padding: 20, color: "var(--text-secondary)", fontSize: 13 }}>
+              Loading...
+            </div>
+          }>
             <ResetPasswordForm />
           </Suspense>
         </div>

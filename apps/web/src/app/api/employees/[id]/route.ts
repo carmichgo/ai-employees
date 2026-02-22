@@ -4,7 +4,10 @@ import { db } from "@/lib/db";
 import { employees } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
 import { updateEmployeeSchema } from "@ai-employees/shared";
-import { getCompanyBackend, createBackendClient } from "@/lib/backend";
+import { getEmployeeBackend, createBackendClient } from "@/lib/backend";
+import { destroyEmployeeDroplet, pollEmployeeDropletStatus } from "@/lib/digitalocean";
+
+export const maxDuration = 60;
 
 async function authenticate(request: NextRequest) {
   const token =
@@ -15,10 +18,10 @@ async function authenticate(request: NextRequest) {
 }
 
 function sanitize(emp: Record<string, unknown>) {
-  const { gatewayToken, ...safe } = emp as { gatewayToken?: string } & Record<
-    string,
-    unknown
-  >;
+  const { gatewayToken, interserviceSecret, ...safe } = emp as {
+    gatewayToken?: string;
+    interserviceSecret?: string;
+  } & Record<string, unknown>;
   return safe;
 }
 
@@ -40,6 +43,26 @@ export async function GET(
 
   if (!employee) {
     return NextResponse.json({ error: "Employee not found" }, { status: 404 });
+  }
+
+  // If employee is provisioning and has a droplet, poll DO for IP/status updates
+  if (employee.status === "provisioning" && employee.dropletId) {
+    try {
+      const pollResult = await pollEmployeeDropletStatus(id);
+      if (pollResult.status === "active" && pollResult.ip) {
+        // Re-fetch the updated employee record
+        const [updated] = await db
+          .select()
+          .from(employees)
+          .where(eq(employees.id, id))
+          .limit(1);
+        if (updated) {
+          return NextResponse.json({ employee: sanitize(updated) });
+        }
+      }
+    } catch (err: any) {
+      console.error("[employee-get] pollEmployeeDropletStatus failed:", err.message);
+    }
   }
 
   return NextResponse.json({ employee: sanitize(employee) });
@@ -101,8 +124,8 @@ export async function DELETE(
     return NextResponse.json({ error: "Employee not found" }, { status: 404 });
   }
 
-  // Try backend teardown if droplet is active (best-effort — don't block on failure)
-  const backendConfig = await getCompanyBackend(session.companyId);
+  // Try backend teardown if employee has an active droplet (best-effort)
+  const backendConfig = await getEmployeeBackend(id);
   if (backendConfig) {
     try {
       const backend = createBackendClient(backendConfig);
@@ -112,10 +135,30 @@ export async function DELETE(
     }
   }
 
+  // Destroy the employee's dedicated droplet
+  if (employee.dropletId) {
+    try {
+      await destroyEmployeeDroplet(id);
+    } catch (err: any) {
+      console.error("Failed to destroy employee droplet:", err.message);
+    }
+  }
+
+  // Remove Stripe subscription item if it exists (prorates the invoice)
+  if (employee.stripeSubscriptionItemId) {
+    try {
+      const { removeEmployeeFromSubscription } = await import("@/lib/stripe");
+      await removeEmployeeFromSubscription(employee.stripeSubscriptionItemId);
+    } catch (err: any) {
+      console.error("Failed to remove Stripe subscription item:", err.message);
+      // Continue — still terminate the employee in DB
+    }
+  }
+
   // Always mark as terminated in the DB
   const [updated] = await db
     .update(employees)
-    .set({ status: "terminated", updatedAt: new Date() })
+    .set({ status: "terminated", stripeSubscriptionItemId: null, updatedAt: new Date() })
     .where(eq(employees.id, id))
     .returning();
 

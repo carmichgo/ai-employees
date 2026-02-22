@@ -44,6 +44,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       persona?: string;
       goals?: string;
       personalityConfig?: { autonomy?: string; proactivity?: string; communication?: string };
+      authorityConfig?: { defaultRole?: string; members?: Array<{ slackUserId: string; name: string; role: string }> };
       channels?: string[];
       channelCredentials?: Record<string, Record<string, unknown>>;
       modelConfig?: { primary: string };
@@ -98,6 +99,11 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     const tier = (body.tier || "junior") as EmployeeTier;
     const tierModel = getModelForTier(tier);
 
+    const authorityConfig = body.authorityConfig || {
+      defaultRole: "manager",
+      members: [],
+    };
+
     // Create employee record with status=provisioning
     const [employee] = await db
       .insert(employees)
@@ -111,6 +117,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
         persona,
         goals,
         personalityConfig,
+        authorityConfig,
         modelConfig: body.modelConfig || { primary: tierModel },
         toolsConfig: body.toolsAllow ? { allow: body.toolsAllow } : {},
         gatewayToken,
@@ -133,6 +140,36 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       employee: sanitize(employee),
       message: `${body.name} is being onboarded! Their workstation is spinning up.`,
     });
+  });
+
+  // POST /internal/employees/:id/reprovision — Re-queue provisioning for a stuck employee
+  fastify.post<{ Params: { id: string } }>("/internal/employees/:id/reprovision", async (request, reply) => {
+    const { id } = request.params;
+
+    const employee = await db.query.employees.findFirst({
+      where: eq(employees.id, id),
+    });
+    if (!employee) return reply.status(404).send({ error: "Employee not found" });
+    if (employee.status !== "provisioning") {
+      return reply.status(400).send({ error: `Employee is ${employee.status}, not provisioning` });
+    }
+
+    // Check if a container already exists for this employee
+    if (employee.containerHost && employee.containerPort) {
+      return reply.status(400).send({ error: "Employee already has a container" });
+    }
+
+    // Queue the provision job
+    const queue = getProvisionQueue();
+    await queue.add("provision-employee", {
+      employeeId: employee.id,
+      companyId: employee.companyId,
+      channels: [],
+      channelCredentials: {},
+      skills: [],
+    });
+
+    return { employee: sanitize(employee), message: `Re-queued provisioning for ${employee.name}` };
   });
 
   // POST /internal/employees/:id/pause
@@ -198,6 +235,21 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       .returning();
 
     return { employee: sanitize(updated), message: `${employee.name} has been terminated.` };
+  });
+
+  // POST /internal/employees/:id/teardown — destroy container only (keeps employee record)
+  fastify.post<{ Params: { id: string } }>("/internal/employees/:id/teardown", async (request, reply) => {
+    const { id } = request.params;
+
+    const employee = await db.query.employees.findFirst({
+      where: eq(employees.id, id),
+    });
+    if (!employee) return reply.status(404).send({ error: "Employee not found" });
+
+    const queue = getProvisionQueue();
+    await queue.add("teardown-employee", { employeeId: id });
+
+    return { message: `Container teardown queued for ${employee.name}` };
   });
 
   // GET /internal/employees/:id/status — poll status

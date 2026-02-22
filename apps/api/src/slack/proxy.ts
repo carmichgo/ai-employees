@@ -36,6 +36,17 @@ function emojiToSlackIcon(emoji: string | null): string | undefined {
   return undefined;
 }
 
+interface AuthorityMember {
+  slackUserId: string;
+  name: string;
+  role: "manager" | "colleague";
+}
+
+interface AuthorityConfig {
+  defaultRole: "manager" | "colleague";
+  members: AuthorityMember[];
+}
+
 interface EmployeeMapping {
   id: string;
   name: string;
@@ -45,6 +56,7 @@ interface EmployeeMapping {
   containerPort: number | null;
   gatewayToken: string | null;
   slackChannelId: string | null;
+  authorityConfig: AuthorityConfig | null;
 }
 
 export class SlackProxy {
@@ -179,6 +191,15 @@ export class SlackProxy {
       const slackInfo = accounts.slack as Record<string, unknown> | undefined;
       const channelId = slackInfo?.channelId as string | undefined;
 
+      const authorityRaw = (emp.authorityConfig as Record<string, unknown>) || {};
+      const authorityConfig: AuthorityConfig | null =
+        authorityRaw.defaultRole
+          ? {
+              defaultRole: (authorityRaw.defaultRole as "manager" | "colleague") || "manager",
+              members: (authorityRaw.members as AuthorityMember[]) || [],
+            }
+          : null;
+
       const mapping: EmployeeMapping = {
         id: emp.id,
         name: emp.name,
@@ -188,6 +209,7 @@ export class SlackProxy {
         containerPort: emp.containerPort,
         gatewayToken: emp.gatewayToken,
         slackChannelId: channelId || null,
+        authorityConfig,
       };
 
       if (channelId) {
@@ -270,6 +292,7 @@ export class SlackProxy {
         containerPort: emp.containerPort,
         gatewayToken: emp.gatewayToken,
         slackChannelId: channelId,
+        authorityConfig: null,
       });
 
       console.log(`[slack-proxy] Created channel #${channelName} (${channelId}) for ${emp.name}`);
@@ -321,6 +344,7 @@ export class SlackProxy {
           containerPort: emp.containerPort,
           gatewayToken: emp.gatewayToken,
           slackChannelId: existing.id,
+          authorityConfig: null,
         });
 
         console.log(`[slack-proxy] Found existing channel #${channelName} (${existing.id}) for ${emp.name}`);
@@ -403,6 +427,33 @@ export class SlackProxy {
     }
   }
 
+  /**
+   * Resolve a Slack user's authority level for a given employee.
+   * Returns { role, displayName } based on the employee's authorityConfig.
+   */
+  private resolveAuthority(
+    employee: EmployeeMapping,
+    slackUserId: string,
+    slackUserName?: string,
+  ): { role: "manager" | "colleague"; displayName: string } {
+    const displayName = slackUserName || slackUserId;
+    const config = employee.authorityConfig;
+
+    if (!config) {
+      // No authority config — everyone is a manager (backward compatible)
+      return { role: "manager", displayName };
+    }
+
+    // Check if this user is explicitly listed
+    const member = config.members.find((m) => m.slackUserId === slackUserId);
+    if (member) {
+      return { role: member.role, displayName: member.name || displayName };
+    }
+
+    // Fall back to default role
+    return { role: config.defaultRole, displayName };
+  }
+
   /** Handle incoming Slack messages */
   private async handleMessage(message: any, client: any): Promise<void> {
     if (message.bot_id || message.subtype === "bot_message") return;
@@ -422,11 +473,22 @@ export class SlackProxy {
     });
     if (!freshEmp || freshEmp.status !== "active") return;
 
+    // Also refresh authority config from fresh data
+    const authorityRaw = (freshEmp.authorityConfig as Record<string, unknown>) || {};
+    const freshAuthority: AuthorityConfig | null =
+      authorityRaw.defaultRole
+        ? {
+            defaultRole: (authorityRaw.defaultRole as "manager" | "colleague") || "manager",
+            members: (authorityRaw.members as AuthorityMember[]) || [],
+          }
+        : null;
+
     employee = {
       ...employee,
       containerHost: freshEmp.containerHost,
       containerPort: freshEmp.containerPort,
       gatewayToken: freshEmp.gatewayToken,
+      authorityConfig: freshAuthority,
     };
 
     if (!employee.containerHost || !employee.containerPort) {
@@ -434,12 +496,21 @@ export class SlackProxy {
       return;
     }
 
+    // Resolve sender's authority level
+    const slackUserId = message.user as string;
+    const slackUserName = message.user_profile?.display_name || message.user_profile?.real_name || message.username || undefined;
+    const { role: senderRole, displayName: senderName } = this.resolveAuthority(employee, slackUserId, slackUserName);
+
+    // Prefix the message with sender context so the employee knows who's talking and their authority
+    const authorityTag = senderRole === "manager" ? "Manager" : "Colleague";
+    const taggedText = `[Message from ${senderName} (${authorityTag})]\n${text}`;
+
     // Fetch recent conversation history from Slack so the employee has context
     const history = await this.fetchChannelHistory(channelId, message.ts);
-    // Build messages array: history + current message
+    // Build messages array: history + current message (with authority tag)
     const messages = [
       ...history,
-      { role: "user" as const, content: text },
+      { role: "user" as const, content: taggedText },
     ];
 
     const sendToContainer = (host: string) => {
@@ -689,6 +760,7 @@ export class SlackProxy {
         containerPort: emp.containerPort,
         gatewayToken: emp.gatewayToken,
         slackChannelId: channelId,
+        authorityConfig: null,
       };
       await this.postAsEmployee(this.webClient, channelId, mapping, text);
       return true;

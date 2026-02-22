@@ -72,6 +72,108 @@ export const CONTAINER_RESOURCES = {
   enterprise: { memory: "8g", cpus: "4.0" },
 } as const;
 
+// ── Add-on Pricing ─────────────────────────────────────
+// Some channels, capabilities, and skills cost extra per month.
+// Higher tiers unlock some add-ons for free ("included").
+// "free" = included at no extra cost for that tier.
+// number = monthly add-on price for that tier.
+
+export type AddonPricing = Record<EmployeeTier, "free" | number>;
+
+export interface AddonConfig {
+  /** Map of item ID → per-tier pricing */
+  channels: Record<string, AddonPricing>;
+  capabilities: Record<string, AddonPricing>;
+  expertise: Record<string, AddonPricing>;
+}
+
+export const ADDON_PRICING: AddonConfig = {
+  channels: {
+    // Free for all tiers
+    slack:        { junior: "free", senior: "free", expert: "free" },
+    email:        { junior: "free", senior: "free", expert: "free" },
+    // Jr add-on, Sr+ included
+    telegram:     { junior: 9,      senior: "free", expert: "free" },
+    discord:      { junior: 9,      senior: "free", expert: "free" },
+    // Jr/Sr add-on, Expert included
+    whatsapp:     { junior: 19,     senior: 19,     expert: "free" },
+    teams:        { junior: 19,     senior: 19,     expert: "free" },
+    "google-chat":{ junior: 19,     senior: 19,     expert: "free" },
+    // Add-on for all tiers
+    signal:       { junior: 29,     senior: 29,     expert: 19 },
+    matrix:       { junior: 29,     senior: 29,     expert: 19 },
+  },
+  capabilities: {
+    // Free for all tiers
+    "web-browsing":    { junior: "free", senior: "free", expert: "free" },
+    "internet-search": { junior: "free", senior: "free", expert: "free" },
+    files:             { junior: "free", senior: "free", expert: "free" },
+    memory:            { junior: "free", senior: "free", expert: "free" },
+    // Jr add-on, Sr+ included
+    email:             { junior: 19,     senior: "free", expert: "free" },
+    "code-execution":  { junior: 19,     senior: "free", expert: "free" },
+    pdf:               { junior: 19,     senior: "free", expert: "free" },
+    // Jr/Sr add-on, Expert included
+    images:            { junior: 29,     senior: 19,     expert: "free" },
+    scheduling:        { junior: 29,     senior: 19,     expert: "free" },
+    // Add-on for all tiers (expensive resources)
+    "video-generation":{ junior: 49,     senior: 39,     expert: 29 },
+    "phone-calls":     { junior: 49,     senior: 39,     expert: 29 },
+  },
+  expertise: {
+    // Free for all tiers
+    "web-research":    { junior: "free", senior: "free", expert: "free" },
+    "email-outreach":  { junior: "free", senior: "free", expert: "free" },
+    writing:           { junior: "free", senior: "free", expert: "free" },
+    // Jr add-on, Sr+ included
+    "data-analytics":  { junior: 19,     senior: "free", expert: "free" },
+    "customer-support":{ junior: 19,     senior: "free", expert: "free" },
+    "file-documents":  { junior: 19,     senior: "free", expert: "free" },
+    // Jr/Sr add-on, Expert included
+    "code-engineering":{ junior: 29,     senior: 19,     expert: "free" },
+    "social-media":    { junior: 29,     senior: 19,     expert: "free" },
+    "project-management":{ junior: 29,   senior: 19,     expert: "free" },
+    // Add-on for all tiers
+    "sales-crm":       { junior: 39,     senior: 29,     expert: 19 },
+    "design-media":    { junior: 39,     senior: 29,     expert: 19 },
+    "scheduling-ops":  { junior: 39,     senior: 29,     expert: 19 },
+  },
+};
+
+/** Get the add-on price for an item, or "free" if included with the tier */
+export function getAddonPrice(
+  category: keyof AddonConfig,
+  itemId: string,
+  tier: EmployeeTier,
+): "free" | number {
+  const pricing = ADDON_PRICING[category][itemId];
+  if (!pricing) return "free";
+  return pricing[tier];
+}
+
+/** Calculate total monthly add-on cost for selected items */
+export function calculateAddonTotal(
+  tier: EmployeeTier,
+  channels: string[],
+  capabilities: string[],
+  expertise: string[],
+): number {
+  let total = 0;
+  for (const ch of channels) {
+    const price = getAddonPrice("channels", ch, tier);
+    if (price !== "free") total += price;
+  }
+  for (const cap of capabilities) {
+    const price = getAddonPrice("capabilities", cap, tier);
+    if (price !== "free") total += price;
+  }
+  for (const exp of expertise) {
+    const price = getAddonPrice("expertise", exp, tier);
+    if (price !== "free") total += price;
+  }
+  return total;
+}
+
 export const EMPLOYEE_STATUSES = [
   "provisioning",
   "onboarding",
@@ -111,13 +213,12 @@ export const CAPABILITY_OPTIONS: CapabilityOption[] = [
   { id: "web-browsing", label: "Browse websites", desc: "Visit websites, fill forms, extract data", toolsAllow: ["group:web", "browser", "web_fetch"] },
   { id: "internet-search", label: "Search the internet", desc: "Find information, news, and answers online", toolsAllow: ["web_search"] },
   { id: "email", label: "Send & receive emails", desc: "Read inbox, compose emails, manage threads", toolsAllow: ["group:messaging"], skills: ["himalaya"] },
-  { id: "files", label: "Create & edit files", desc: "Write documents, spreadsheets, and organize files", toolsAllow: ["group:fs"] },
+  { id: "files", label: "Create & edit files", desc: "Write documents, spreadsheets, PDFs, and organize files", toolsAllow: ["group:fs"], skills: ["nano-pdf"] },
   { id: "code-execution", label: "Write & run code", desc: "Execute scripts, install packages, use the terminal", toolsAllow: ["group:runtime"] },
   { id: "scheduling", label: "Schedule recurring tasks", desc: "Set up automated routines and reminders", toolsAllow: ["group:automation"] },
   { id: "memory", label: "Remember past work", desc: "Recall previous conversations, contacts, and context", toolsAllow: ["group:memory", "group:sessions"] },
-  { id: "images", label: "Create images & designs", desc: "Generate, edit, and analyze visual content", toolsAllow: ["image", "canvas"] },
+  { id: "visual-media", label: "Images, video & design", desc: "Generate images, AI video, and visual content (Nano Banana, Veo 3, canvas)", toolsAllow: ["image", "canvas", "group:runtime"], skills: ["openai-image-gen", "video-frames", "gifgrep", "media-generation"] },
   { id: "phone-calls", label: "Make phone calls", desc: "Place and receive voice calls", toolsAllow: [], plugins: ["voice-call"] },
-  { id: "pdf", label: "Read & create PDFs", desc: "Generate reports, read documents, manipulate PDFs", toolsAllow: [], skills: ["nano-pdf"] },
 ];
 
 // ── Expertise Options ──────────────────────────────────
@@ -141,7 +242,5 @@ export const EXPERTISE_OPTIONS: ExpertiseOption[] = [
   { id: "project-management", label: "Project Management", desc: "Organize tasks, coordinate work, manage boards", skills: ["notion", "trello", "google"] },
   { id: "customer-support", label: "Customer Support", desc: "Handle tickets, write help docs, resolve issues", skills: ["himalaya", "summarize"] },
   { id: "sales-crm", label: "Sales & CRM", desc: "Find prospects, track deals, manage pipeline", skills: ["himalaya", "sag"] },
-  { id: "design-media", label: "Design & Media", desc: "Create images, edit videos, produce visual content", skills: ["openai-image-gen", "video-frames", "gifgrep"] },
   { id: "scheduling-ops", label: "Scheduling & Ops", desc: "Manage calendars, set reminders, automate workflows", skills: ["google"] },
-  { id: "file-documents", label: "Files & Documents", desc: "Read, write, organize files, create PDFs", skills: ["nano-pdf"] },
 ];

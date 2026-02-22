@@ -4,7 +4,6 @@ import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users } from "@/lib/schema";
-import { resetPasswordSchema } from "@ai-employees/shared";
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || "dev-secret-change-me-in-production",
@@ -12,54 +11,49 @@ const JWT_SECRET = new TextEncoder().encode(
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const input = resetPasswordSchema.parse(body);
+    const { token, password } = await request.json();
 
-    // Verify the reset token
-    let payload;
+    if (!token || typeof token !== "string") {
+      return NextResponse.json({ error: "Reset token is required" }, { status: 400 });
+    }
+    if (!password || typeof password !== "string" || password.length < 8) {
+      return NextResponse.json({ error: "Password must be at least 8 characters" }, { status: 400 });
+    }
+
+    // Verify reset token
+    let payload: any;
     try {
-      const result = await jwtVerify(input.token, JWT_SECRET);
-      payload = result.payload as { userId: string; purpose: string; hash: string };
+      const result = await jwtVerify(token, JWT_SECRET);
+      payload = result.payload;
     } catch {
       return NextResponse.json({ error: "Invalid or expired reset link" }, { status: 400 });
     }
 
-    if (payload.purpose !== "password-reset") {
+    if (payload.type !== "password-reset" || !payload.userId) {
       return NextResponse.json({ error: "Invalid reset token" }, { status: 400 });
     }
 
-    // Find the user
+    // Find user
     const [user] = await db
-      .select()
+      .select({ id: users.id })
       .from(users)
       .where(eq(users.id, payload.userId))
       .limit(1);
 
     if (!user) {
-      return NextResponse.json({ error: "Invalid reset token" }, { status: 400 });
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // Verify the token hasn't been used (password hash fingerprint still matches)
-    if (user.passwordHash.slice(-8) !== payload.hash) {
-      return NextResponse.json(
-        { error: "This reset link has already been used" },
-        { status: 400 },
-      );
-    }
+    // Update password
+    const passwordHash = await bcrypt.hash(password, 12);
+    await db.update(users).set({ passwordHash }).where(eq(users.id, user.id));
 
-    // Hash and update the new password
-    const passwordHash = await bcrypt.hash(input.password, 12);
-    await db
-      .update(users)
-      .set({ passwordHash })
-      .where(eq(users.id, user.id));
-
-    return NextResponse.json({ message: "Password reset successfully" });
+    return NextResponse.json({ message: "Password has been reset successfully" });
   } catch (error: any) {
-    if (error.name === "ZodError") {
-      return NextResponse.json({ error: "Password must be at least 8 characters" }, { status: 400 });
-    }
     console.error("Reset password error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
   }
 }

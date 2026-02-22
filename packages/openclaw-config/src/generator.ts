@@ -8,11 +8,23 @@
  *   - Channel integrations (Slack, Discord, etc.) when credentials are provided
  */
 
+export interface AuthorityMember {
+  slackUserId: string;
+  name: string;
+  role: "manager" | "colleague";
+}
+
+export interface AuthorityConfigInput {
+  defaultRole?: "manager" | "colleague";
+  members?: AuthorityMember[];
+}
+
 export interface EmployeeInput {
   id: string;
   name: string;
   jobTitle: string;
   emoji?: string;
+  tier?: string;
   persona?: string | null;
   goals?: string | null;
   personalityConfig?: {
@@ -21,6 +33,7 @@ export interface EmployeeInput {
     communication?: string;
     bossTechnicalLevel?: string;
   } | null;
+  authorityConfig?: AuthorityConfigInput | null;
   companySlug?: string;
   companyName?: string;
   ownerName?: string;
@@ -39,17 +52,69 @@ export interface ChannelInput {
 // OpenClaw config type — loosely typed to allow any valid OpenClaw config
 export type OpenClawConfig = Record<string, unknown>;
 
+// Sonnet model ID — used as the fast/efficient model for Expert tier routing
+const SONNET_MODEL = "anthropic/claude-sonnet-4-5-20250929";
+const OPUS_MODEL = "anthropic/claude-opus-4-6";
+
 /** Generate a complete OpenClaw configuration for an AI employee */
 export function generateOpenClawConfig(
   employee: EmployeeInput,
   gatewayToken: string,
 ): OpenClawConfig {
   const agentId = slugify(employee.name);
+  const isExpertTier = employee.tier === "expert" || employee.modelConfig.primary === OPUS_MODEL;
 
   // Only include channels that have real credentials
   const validChannels = filterValidChannels(employee.channels);
   const channels = buildChannels(validChannels);
   const bindings = buildBindings(agentId, validChannels);
+
+  // Build agent list — Expert tier gets a dual-agent setup for cost optimization:
+  //   Main agent (Opus):   Orchestrator — chats with user, evaluates tasks, handles complex work
+  //   Fast agent (Sonnet): Worker — delegated simple/routine tasks for speed & cost savings
+  // Junior/Senior tiers use a single agent with their designated model.
+  const toolsAllow = buildToolAllow(employee.toolsConfig);
+  const agentsList: Record<string, unknown>[] = [];
+
+  if (isExpertTier) {
+    // Main orchestrator — runs on Opus, chats with user, decides task routing
+    agentsList.push({
+      id: agentId,
+      default: true,
+      workspace: "/home/node/.openclaw/workspace",
+      model: { primary: OPUS_MODEL },
+      identity: {
+        name: employee.name,
+        emoji: employee.emoji || "🤖",
+      },
+      tools: { allow: toolsAllow },
+    });
+
+    // Fast worker agent — runs on Sonnet for routine/simple tasks
+    agentsList.push({
+      id: `${agentId}-fast`,
+      workspace: "/home/node/.openclaw/workspace",
+      model: { primary: SONNET_MODEL },
+      identity: {
+        name: `${employee.name} (Fast)`,
+        emoji: "⚡",
+      },
+      tools: { allow: toolsAllow },
+    });
+  } else {
+    // Junior/Senior — single agent with their tier's model
+    agentsList.push({
+      id: agentId,
+      default: true,
+      workspace: "/home/node/.openclaw/workspace",
+      model: employee.modelConfig,
+      identity: {
+        name: employee.name,
+        emoji: employee.emoji || "🤖",
+      },
+      tools: { allow: toolsAllow },
+    });
+  }
 
   const config: OpenClawConfig = {
     gateway: {
@@ -83,26 +148,11 @@ export function generateOpenClawConfig(
         model: { primary: employee.modelConfig.primary },
         // Sandbox OFF — the Docker container itself IS the sandbox
         sandbox: { mode: "off" },
+        // SOUL.md can be large (25K+) — raise the per-file bootstrap limit from 20K default
+        bootstrapMaxChars: 50000,
+        bootstrapTotalMaxChars: 200000,
       },
-      list: [
-        {
-          id: agentId,
-          default: true,
-          workspace: "/home/node/.openclaw/workspace",
-          model: employee.modelConfig,
-          identity: {
-            name: employee.name,
-            emoji: employee.emoji || "🤖",
-          },
-          // Tool access — uses employee-specific selection if provided,
-          // otherwise enables everything (backward compatible).
-          // Skills (SKILL.md files at ~/.openclaw/skills/) are automatically
-          // available and don't need to be listed here.
-          tools: {
-            allow: buildToolAllow(employee.toolsConfig),
-          },
-        },
-      ],
+      list: agentsList,
     },
 
     // Only include channels/bindings if there are real integrations
@@ -220,6 +270,49 @@ export function generateSoulMd(employee: EmployeeInput): string {
     }
   }
 
+  // Authority — who can assign tasks vs. who can ask questions
+  const authority = employee.authorityConfig;
+  if (authority && (authority.members?.length || authority.defaultRole === "colleague")) {
+    parts.push("## Authority & Permissions (IMPORTANT)");
+    parts.push("");
+    parts.push("Not everyone who messages you has the same authority. Some people are your **managers** — they can assign you tasks, give you instructions, and direct your work. Others are **colleagues** — they can ask you questions and chat with you, but you should NOT treat their messages as task assignments.");
+    parts.push("");
+
+    // List specific managers
+    const managers = authority.members?.filter((m) => m.role === "manager") || [];
+    const colleagues = authority.members?.filter((m) => m.role === "colleague") || [];
+
+    if (managers.length > 0) {
+      parts.push("**Your managers (can assign tasks):**");
+      for (const m of managers) {
+        parts.push(`- ${m.name}`);
+      }
+      parts.push("");
+    }
+
+    if (colleagues.length > 0) {
+      parts.push("**Your colleagues (can ask questions, NOT assign tasks):**");
+      for (const m of colleagues) {
+        parts.push(`- ${m.name}`);
+      }
+      parts.push("");
+    }
+
+    // Default role for unlisted people
+    if (authority.defaultRole === "colleague") {
+      parts.push("**Default:** Anyone not listed above is treated as a **colleague**. Be helpful and answer their questions, but do not treat their messages as task assignments or instructions. If they try to assign you a task, politely let them know that your managers direct your work and suggest they check with one of them.");
+    } else {
+      parts.push("**Default:** Anyone not listed above is treated as a **manager** and can assign you tasks.");
+    }
+    parts.push("");
+
+    parts.push("**How to behave:**");
+    parts.push("- When a **manager** messages you: Treat it as a directive. Execute tasks, take action, report back.");
+    parts.push("- When a **colleague** messages you: Be helpful and friendly. Answer questions, share information, provide guidance — but don't start executing tasks or making changes unless a manager has approved it.");
+    parts.push("- Each incoming message will include the sender's name. Use that to determine their authority level.");
+    parts.push("");
+  }
+
   // How to behave
   parts.push("## How You Work");
   parts.push("");
@@ -232,6 +325,57 @@ export function generateSoulMd(employee: EmployeeInput): string {
   parts.push("**Don't over-explain yourself.** Don't narrate your thought process or list your capabilities unless asked. Just do the work and report the result.");
   parts.push("");
   parts.push("**ALWAYS log your tasks.** Every piece of work you do MUST be logged in the company's task management system. When you start working on something — whether it's an assignment from your manager, proactive work you identified, or a recurring task — immediately create a task entry via the internal task API. Update the task status as you work (in_progress, blocked, completed). This is non-negotiable — your manager tracks your work through the task dashboard. If there's no task logged, it looks like you did nothing. See your **Task Logging** skill for the API details and workflow.");
+  parts.push("");
+
+  // Smart model routing — Expert tier only
+  const isExpertTier = employee.tier === "expert" || employee.modelConfig.primary === OPUS_MODEL;
+  if (isExpertTier) {
+    const fastAgentId = slugify(employee.name) + "-fast";
+    parts.push("## Smart Task Routing (IMPORTANT — Cost Optimization)");
+    parts.push("");
+    parts.push("You are the main orchestrator (Opus). You chat with people, understand context, and decide how to handle every task. To save costs and improve speed, you have a fast worker agent you can delegate routine tasks to.");
+    parts.push("");
+    parts.push("**You (Opus)** — the orchestrator. You receive all messages, understand what's needed, and decide how to handle it. You personally handle anything that needs deep reasoning, nuance, or complex judgment.");
+    parts.push("");
+    parts.push("**Fast Worker (Sonnet)** — your `" + fastAgentId + "` agent. Fast and cost-efficient. Delegate straightforward execution tasks to this agent whenever the task doesn't require your full reasoning power.");
+    parts.push("");
+    parts.push("### Handle yourself (Opus) when the task involves:");
+    parts.push("- Complex strategic analysis with multiple tradeoffs and no clear answer");
+    parts.push("- Business strategy, competitive analysis, or nuanced decision-making");
+    parts.push("- Debugging hard problems that require deep understanding");
+    parts.push("- Writing that requires exceptional nuance (investor memos, legal-adjacent copy, high-stakes communications)");
+    parts.push("- Multi-step reasoning chains where getting the logic wrong has consequences");
+    parts.push("- Understanding and synthesizing large amounts of conflicting information");
+    parts.push("- Novel problems that feel genuinely hard");
+    parts.push("- Direct conversation with the user (always you)");
+    parts.push("");
+    parts.push("### Delegate to Fast Worker (Sonnet) when the task is:");
+    parts.push("- Email drafts, scheduling, routine messages, status updates");
+    parts.push("- Web research, browsing, data collection, lookups");
+    parts.push("- File creation, document writing, spreadsheets, reports");
+    parts.push("- Simple Q&A, summaries, formatting");
+    parts.push("- Code for straightforward tasks, scripts, automation");
+    parts.push("- Image/video generation, media tasks");
+    parts.push("- Social media posts, CRM updates, project management updates");
+    parts.push("- Any well-defined task where the instructions are clear and execution is routine");
+    parts.push("");
+    parts.push("### How to delegate:");
+    parts.push("When a task is routine, delegate it to the `" + fastAgentId + "` agent with clear instructions. The fast worker has access to all the same tools and workspace as you. You evaluate the result before passing it back to the user.");
+    parts.push("");
+    parts.push("**The golden rule:** You always talk to the user directly. When a task comes in, you assess complexity. If it's straightforward execution, hand it off to your fast worker. If it needs your judgment, handle it yourself. This keeps costs down while maintaining quality where it matters.");
+    parts.push("");
+  }
+
+  // Team communication
+  parts.push("## Your Team");
+  parts.push("");
+  parts.push("You are part of a team. Other AI employees at " + companyName + " are your colleagues. You can discover who they are and communicate with them directly using the **team-communication** skill.");
+  parts.push("");
+  parts.push("**When to reach out:** If a task falls outside your expertise, or would benefit from another perspective, or requires coordination — message the right teammate. Check who's on your team first, then send them a specific, actionable message.");
+  parts.push("");
+  parts.push("**When you receive a message from a teammate** (marked with `[Inter-team message from ...]`), treat it as a request from a colleague. Be helpful, professional, and respond with what they need. You're peers — collaborate naturally.");
+  parts.push("");
+  parts.push("**Don't over-communicate.** Only reach out when it genuinely adds value. If you can handle something yourself, just do it. But when the task genuinely benefits from team coordination, don't hesitate.");
   parts.push("");
 
   // Confidentiality & identity rules
@@ -300,12 +444,17 @@ export function generateSoulMd(employee: EmployeeInput): string {
   parts.push("- Browser screenshots are saved to `/home/node/.openclaw/media/browser/` and work the same way.");
   parts.push("");
   parts.push("**Creating images to share:**");
+  parts.push("- `generate-image` (Nano Banana) — Generate high-quality images from text: `generate-image \"prompt\" output.png`");
   parts.push("- `openai-image-gen` — Generate images from text descriptions (logos, illustrations, concept art, social media graphics)");
   parts.push("- `canvas` — Create designs, diagrams, and drawings programmatically");
   parts.push("- `browser` screenshot — Capture screenshots of web pages, dashboards, or visual content");
   parts.push("- `nano-banana-pro` — Process, resize, convert, or edit existing images");
   parts.push("- `lobster` — Create rich media content");
   parts.push("- Shell (`exec`) — Use ImageMagick, ffmpeg, or Python (Pillow/matplotlib) for charts, graphs, and image manipulation");
+  parts.push("");
+  parts.push("**Creating videos to share:**");
+  parts.push("- `generate-video` (Veo 3) — Generate videos from text: `generate-video \"prompt\" output.mp4`");
+  parts.push("- Generates MP4 clips with synchronized audio (4-8 seconds, 720p)");
   parts.push("");
   parts.push("**Creating documents and files to share:**");
   parts.push("- `write` — Create text files, CSVs, JSON, Markdown, HTML reports directly");
@@ -371,6 +520,23 @@ export function generateSoulMd(employee: EmployeeInput): string {
   parts.push("- `gifgrep` — search and create GIFs");
   parts.push("- `camsnap` — camera capture");
   parts.push("- `peekaboo` — screenshot and screen capture");
+  parts.push("");
+  parts.push("### AI Image Generation — Nano Banana (Google Gemini)");
+  parts.push("- Use `generate-image` to create images from text prompts: `generate-image \"A professional logo\" logo.png`");
+  parts.push("- Supports custom aspect ratios: `generate-image \"Banner design\" banner.png 16:9`");
+  parts.push("- Can also edit existing images and blend multiple images together (use the Python API — see the Media Generation skill)");
+  parts.push("- Great for: logos, banners, social media graphics, product mockups, illustrations, concept art, marketing materials");
+  parts.push("- Renders text in images accurately (posters, signs, UI mockups)");
+  parts.push("- See `~/.openclaw/skills/media-generation/SKILL.md` for advanced usage");
+  parts.push("");
+  parts.push("### AI Video Generation — Veo 3 (Google)");
+  parts.push("- Use `generate-video` to create videos from text prompts: `generate-video \"A timelapse of a sunset\" sunset.mp4`");
+  parts.push("- Generates 4, 6, or 8 second MP4 clips at 720p with synchronized audio (dialogue, sound effects, ambient noise)");
+  parts.push("- Can also animate still images into video (use the Python API — see the Media Generation skill)");
+  parts.push("- Great for: product demos, social media clips, promotional videos, animated explainers");
+  parts.push("- Generation takes 1-3 minutes — tell the user you're working on it before starting");
+  parts.push("- **Cost-aware:** video generation costs ~$1-3 per clip. Use for genuine needs, not trivial requests");
+  parts.push("- See `~/.openclaw/skills/media-generation/SKILL.md` for advanced usage");
   parts.push("");
 
   parts.push("### Audio & Voice");

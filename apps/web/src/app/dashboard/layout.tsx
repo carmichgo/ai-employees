@@ -15,6 +15,8 @@ import {
   MessageCircle,
   Server,
   Link2,
+  Inbox,
+  CreditCard,
 } from "lucide-react";
 
 const NAV_SECTIONS = [
@@ -23,6 +25,7 @@ const NAV_SECTIONS = [
     items: [
       { href: "/dashboard/employees", label: "Employees", icon: Users },
       { href: "/dashboard/hire", label: "Hire Employee", icon: UserPlus },
+      { href: "/dashboard/inbox", label: "Inbox", icon: Inbox },
       { href: "/dashboard/tasks", label: "Tasks", icon: ListTodo },
     ],
   },
@@ -35,6 +38,7 @@ const NAV_SECTIONS = [
   {
     label: "Settings",
     items: [
+      { href: "/dashboard/billing", label: "Billing", icon: CreditCard },
       { href: "/dashboard/settings", label: "Settings", icon: Settings },
     ],
   },
@@ -73,8 +77,10 @@ export default function DashboardLayout({
     return pathname.startsWith(href);
   };
 
+  const isFullWidth = pathname.startsWith("/dashboard/inbox");
+
   return (
-    <div style={{ display: "flex", minHeight: "100vh" }}>
+    <div style={{ display: "flex", minHeight: "100vh", position: "relative", isolation: "isolate" }}>
       {/* Sidebar */}
       <aside
         style={{
@@ -117,7 +123,7 @@ export default function DashboardLayout({
                 flexShrink: 0,
               }}
             >
-              AI
+              B
             </div>
             <span
               style={{
@@ -127,7 +133,7 @@ export default function DashboardLayout({
                 color: "var(--text)",
               }}
             >
-              AI Employees
+              Blitzer
             </span>
           </div>
         </div>
@@ -283,14 +289,16 @@ export default function DashboardLayout({
           flex: 1,
           marginLeft: 220,
           minHeight: "100vh",
+          position: "relative",
+          zIndex: 1,
         }}
       >
         <div
-          style={{
-            maxWidth: 1100,
-            margin: "0 auto",
-            padding: "24px 32px",
-          }}
+          style={
+            isFullWidth
+              ? { padding: "24px 32px", height: "100vh" }
+              : { maxWidth: 1100, margin: "0 auto", padding: "24px 32px" }
+          }
         >
           {children}
         </div>

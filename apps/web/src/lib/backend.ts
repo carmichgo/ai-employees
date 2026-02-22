@@ -1,24 +1,49 @@
 /**
- * Per-company backend client — routes provisioning requests to the
- * company's dedicated DigitalOcean droplet.
+ * Per-employee backend client — routes requests to the
+ * employee's dedicated DigitalOcean droplet.
  *
- * Each company has its own droplet (IP + interservice secret stored in DB).
- * Falls back to demo mode if the company has no active droplet.
+ * Architecture: one droplet per employee. Each droplet runs
+ * Redis + Fastify API + BullMQ Worker + one OpenClaw container.
  */
 
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { companies } from "@/lib/schema";
+import { companies, employees } from "@/lib/schema";
 
-interface CompanyBackendConfig {
+interface BackendConfig {
   url: string;
   secret: string;
 }
 
-/** Look up a company's droplet backend from the DB */
+/** Look up an employee's droplet backend from the DB */
+export async function getEmployeeBackend(
+  employeeId: string,
+): Promise<BackendConfig | null> {
+  const [employee] = await db
+    .select()
+    .from(employees)
+    .where(eq(employees.id, employeeId))
+    .limit(1);
+
+  if (
+    !employee ||
+    employee.dropletStatus !== "active" ||
+    !employee.dropletIp ||
+    !employee.interserviceSecret
+  ) {
+    return null;
+  }
+
+  return {
+    url: `http://${employee.dropletIp}:3001`,
+    secret: employee.interserviceSecret,
+  };
+}
+
+/** @deprecated Use getEmployeeBackend instead — kept for backward compat */
 export async function getCompanyBackend(
   companyId: string,
-): Promise<CompanyBackendConfig | null> {
+): Promise<BackendConfig | null> {
   const [company] = await db
     .select()
     .from(companies)
@@ -40,39 +65,53 @@ export async function getCompanyBackend(
   };
 }
 
-/** Check if a company has an active droplet backend */
-export async function isCompanyBackendReady(companyId: string): Promise<boolean> {
-  const backend = await getCompanyBackend(companyId);
+/** Check if an employee has an active droplet backend */
+export async function isEmployeeBackendReady(employeeId: string): Promise<boolean> {
+  const backend = await getEmployeeBackend(employeeId);
   return backend !== null;
 }
 
-/** Make an authenticated request to a company's droplet API */
+/** Make an authenticated request to a droplet API */
 async function backendFetch(
-  config: CompanyBackendConfig,
+  config: BackendConfig,
   path: string,
   options: RequestInit = {},
 ): Promise<Response> {
   const url = `${config.url}${path}`;
 
-  const res = await fetch(url, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      "x-interservice-secret": config.secret,
-      ...options.headers,
-    },
-  });
+  // Add timeout to prevent hanging Vercel functions
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
 
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(body.error || `Backend error: ${res.status}`);
+  try {
+    const res = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        "x-interservice-secret": config.secret,
+        ...options.headers,
+      },
+    });
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(body.error || `Backend error: ${res.status}`);
+    }
+
+    return res;
+  } catch (err: any) {
+    if (err.name === "AbortError") {
+      throw new Error(`Backend timeout on ${path}`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
   }
-
-  return res;
 }
 
-/** Create a backend client bound to a specific company's droplet */
-export function createBackendClient(config: CompanyBackendConfig) {
+/** Create a backend client bound to a specific droplet */
+export function createBackendClient(config: BackendConfig) {
   return {
     async provisionEmployee(data: {
       companyId: string;
@@ -83,6 +122,7 @@ export function createBackendClient(config: CompanyBackendConfig) {
       persona?: string;
       goals?: string;
       personalityConfig?: { autonomy?: string; proactivity?: string; communication?: string };
+      authorityConfig?: { defaultRole?: string; members?: Array<{ slackUserId: string; name: string; role: string }> };
       channels?: string[];
       channelCredentials?: Record<string, Record<string, unknown>>;
       modelConfig?: { primary: string };
@@ -92,6 +132,13 @@ export function createBackendClient(config: CompanyBackendConfig) {
       const res = await backendFetch(config, "/internal/employees/provision", {
         method: "POST",
         body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+
+    async reprovisionEmployee(id: string) {
+      const res = await backendFetch(config, `/internal/employees/${id}/reprovision`, {
+        method: "POST",
       });
       return res.json();
     },

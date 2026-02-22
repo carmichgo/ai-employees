@@ -8,6 +8,14 @@ import { registerSchema } from "@ai-employees/shared";
 
 export async function POST(request: NextRequest) {
   try {
+    // Validate DATABASE_URL early
+    if (!process.env.DATABASE_URL) {
+      return NextResponse.json(
+        { error: "Server misconfigured", detail: "DATABASE_URL is not set" },
+        { status: 500 },
+      );
+    }
+
     const body = await request.json();
     const input = registerSchema.parse(body);
 
@@ -87,6 +95,9 @@ export async function POST(request: NextRequest) {
       );
     }
     console.error("Register error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error", detail: error?.message || String(error) },
+      { status: 500 },
+    );
   }
 }

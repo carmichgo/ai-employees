@@ -3,7 +3,7 @@ import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { employees } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
-import { getCompanyBackend, createBackendClient } from "@/lib/backend";
+import { getEmployeeBackend, createBackendClient } from "@/lib/backend";
 
 export async function POST(
   request: NextRequest,
@@ -33,8 +33,8 @@ export async function POST(
     return NextResponse.json({ error: "Employee is not paused" }, { status: 400 });
   }
 
-  // If company has an active droplet, delegate to it
-  const backendConfig = await getCompanyBackend(session.companyId);
+  // If employee has an active droplet, delegate to it
+  const backendConfig = await getEmployeeBackend(id);
   if (backendConfig) {
     try {
       const backend = createBackendClient(backendConfig);

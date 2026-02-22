@@ -59,6 +59,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Validation error" }, { status: 400 });
     }
     console.error("Login error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error", detail: error?.message || String(error) },
+      { status: 500 },
+    );
   }
 }

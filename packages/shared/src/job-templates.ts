@@ -54,6 +54,16 @@ export const BOSS_TECHNICAL_LEVEL_OPTIONS = [
   { value: "non-technical", label: "Non-technical", desc: "Keep everything simple — no code, no APIs" },
 ] as const;
 
+export const AUTHORITY_ROLE_OPTIONS = [
+  { value: "manager", label: "Manager", desc: "Can assign tasks, give instructions, and ask questions" },
+  { value: "colleague", label: "Colleague", desc: "Can ask questions and chat, but not assign tasks" },
+] as const;
+
+export const DEFAULT_AUTHORITY_ROLE_OPTIONS = [
+  { value: "manager", label: "Everyone is a manager", desc: "Anyone in Slack can give tasks to this employee" },
+  { value: "colleague", label: "Everyone is a colleague", desc: "Nobody can assign tasks unless explicitly listed as a manager" },
+] as const;
+
 export const JOB_TEMPLATES: JobTemplate[] = [
   {
     id: "marketer",

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import {
   ArrowLeft, Pause, Play, Trash2, Loader2, Server, Mail, Cpu, Clock, Calendar,
@@ -123,9 +123,11 @@ function formatFileSize(bytes: number): string {
 export default function EmployeeDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [employee, setEmployee] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [hireBanner, setHireBanner] = useState<{ billed: boolean; price: string } | null>(null);
 
   // Email config state
   const [emailConfig, setEmailConfig] = useState<any>(null);
@@ -177,6 +179,18 @@ export default function EmployeeDetailPage() {
 
   const employeeId = params.id as string;
 
+  // Show hire confirmation banner from URL params
+  useEffect(() => {
+    if (searchParams.get("hired") === "true") {
+      setHireBanner({
+        billed: searchParams.get("billed") === "true",
+        price: searchParams.get("price") || "",
+      });
+      // Clean URL params without full reload
+      window.history.replaceState({}, "", `/dashboard/employees/${employeeId}`);
+    }
+  }, [searchParams, employeeId]);
+
   useEffect(() => {
     api.getEmployee(employeeId).then((res) => {
       setEmployee(res.employee);
@@ -199,13 +213,34 @@ export default function EmployeeDetailPage() {
     api.listChannels(employeeId).then((res) => setChannelsList(res.channels || [])).catch(() => {});
   }, [employeeId]);
 
-  // Auto-poll while provisioning
+  // Auto-poll while provisioning, with auto-reprovision for stuck employees
+  const reprovisionAttempted = useRef(false);
+  const provisioningStartRef = useRef<number | null>(null);
   useEffect(() => {
-    if (!employee || (employee.status !== "provisioning" && employee.status !== "onboarding")) return;
-    const interval = setInterval(() => {
-      api.getEmployee(employeeId).then((res) => {
+    if (!employee || (employee.status !== "provisioning" && employee.status !== "onboarding")) {
+      provisioningStartRef.current = null;
+      reprovisionAttempted.current = false;
+      return;
+    }
+    if (!provisioningStartRef.current) provisioningStartRef.current = Date.now();
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await api.getEmployee(employeeId);
         setEmployee(res.employee);
-      }).catch(() => {});
+
+        // If still provisioning after 2 minutes, try reprovision once
+        if (
+          res.employee.status === "provisioning" &&
+          !reprovisionAttempted.current &&
+          provisioningStartRef.current &&
+          Date.now() - provisioningStartRef.current > 120000
+        ) {
+          reprovisionAttempted.current = true;
+          console.log("[auto-reprovision] Attempting reprovision for stuck employee", employeeId);
+          fetch(`/api/employees/${employeeId}/reprovision`, { method: "POST" }).catch(() => {});
+        }
+      } catch {}
     }, 4000);
     return () => clearInterval(interval);
   }, [employee?.status, employeeId]);
@@ -451,6 +486,32 @@ export default function EmployeeDetailPage() {
         <ArrowLeft size={14} /> Back to Employees
       </Link>
 
+      {/* Hire confirmation banner */}
+      {hireBanner && (
+        <div style={{
+          background: "var(--green-muted)",
+          border: "1px solid var(--green)",
+          borderRadius: "var(--radius-md)",
+          padding: "12px 16px",
+          marginBottom: 24,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--green)" }}>
+            <Check size={16} />
+            <span style={{ fontWeight: 500 }}>
+              {employee?.name || "Employee"} has been hired!
+              {hireBanner.billed && hireBanner.price && ` Added to your subscription — $${hireBanner.price}/mo.`}
+              {hireBanner.billed && !hireBanner.price && " Added to your subscription."}
+            </span>
+          </div>
+          <button onClick={() => setHireBanner(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--green)", padding: 4 }}>
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 32 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
@@ -500,6 +561,20 @@ export default function EmployeeDetailPage() {
           <div style={{ marginTop: 24, height: 3, background: "var(--border)", borderRadius: 2, overflow: "hidden", maxWidth: 300, margin: "24px auto 0" }}>
             <div style={{ height: "100%", width: "60%", background: "var(--blue)", borderRadius: 2, animation: "shimmer 2s ease-in-out infinite" }} />
           </div>
+          <button
+            className="btn-secondary btn-sm"
+            onClick={async () => {
+              setActionLoading(true);
+              try {
+                await fetch(`/api/employees/${employeeId}/reprovision`, { method: "POST" });
+              } catch {}
+              setActionLoading(false);
+            }}
+            disabled={actionLoading}
+            style={{ marginTop: 20, fontSize: 12 }}
+          >
+            {actionLoading ? "Retrying..." : "Retry Provisioning"}
+          </button>
         </div>
       )}
 

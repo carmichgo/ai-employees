@@ -6,10 +6,10 @@ import { api } from "@/lib/api";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
-  const [error, setError] = useState("");
-  const [submitted, setSubmitted] = useState(false);
-  const [resetLink, setResetLink] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState("");
+  const [resetUrl, setResetUrl] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -18,9 +18,9 @@ export default function ForgotPasswordPage() {
 
     try {
       const res = await api.forgotPassword(email);
-      setSubmitted(true);
-      if (res.resetLink) {
-        setResetLink(res.resetLink);
+      setSent(true);
+      if (res.resetUrl) {
+        setResetUrl(res.resetUrl);
       }
     } catch (err: any) {
       setError(err.message || "Something went wrong");
@@ -59,7 +59,7 @@ export default function ForgotPasswordPage() {
               marginBottom: 20,
             }}
           >
-            AI
+            B
           </div>
           <h1
             style={{
@@ -103,36 +103,46 @@ export default function ForgotPasswordPage() {
             </div>
           )}
 
-          {submitted ? (
+          {sent ? (
             <div>
               <div
                 style={{
-                  background: "var(--green-muted, rgba(34,197,94,0.1))",
+                  background: "rgba(22,163,74,0.06)",
+                  border: "1px solid rgba(22,163,74,0.15)",
                   borderRadius: "var(--radius-sm)",
-                  padding: "10px 14px",
-                  marginBottom: 16,
-                  color: "var(--green, #22c55e)",
+                  padding: "14px 16px",
+                  color: "#16a34a",
                   fontSize: 13,
+                  lineHeight: 1.5,
+                  marginBottom: resetUrl ? 16 : 0,
                 }}
               >
-                If an account exists with that email, a password reset link has been generated.
+                If an account with that email exists, a password reset link has been sent. Check your inbox.
               </div>
-              {resetLink && (
-                <div style={{ marginBottom: 16 }}>
-                  <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 8 }}>
-                    Use this link to reset your password:
-                  </p>
+              {resetUrl && (
+                <div
+                  style={{
+                    background: "var(--bg-secondary)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "var(--radius-sm)",
+                    padding: "12px 14px",
+                    fontSize: 12,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  <div style={{ color: "var(--text-secondary)", marginBottom: 8 }}>
+                    Since email delivery is not configured, use this link directly:
+                  </div>
                   <Link
-                    href={resetLink}
+                    href={resetUrl}
                     style={{
-                      fontSize: 13,
                       color: "var(--blue)",
-                      wordBreak: "break-all",
-                      textDecoration: "none",
                       fontWeight: 500,
+                      textDecoration: "none",
+                      wordBreak: "break-all",
                     }}
                   >
-                    Click here to reset your password
+                    Reset Password
                   </Link>
                 </div>
               )}

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useCallback, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import {
   JOB_TEMPLATES,
@@ -11,11 +11,14 @@ import {
   PROACTIVITY_OPTIONS,
   COMMUNICATION_OPTIONS,
   BOSS_TECHNICAL_LEVEL_OPTIONS,
+  DEFAULT_AUTHORITY_ROLE_OPTIONS,
   DEFAULT_PERSONALITY,
   CAPABILITY_OPTIONS,
   EXPERTISE_OPTIONS,
   EMPLOYEE_TIERS,
   EMPLOYEE_TIER_OPTIONS,
+  getAddonPrice,
+  calculateAddonTotal,
   type PersonalityConfig,
   type EmployeeTier,
 } from "@ai-employees/shared";
@@ -50,13 +53,16 @@ import {
   Zap,
   Crown,
   Rocket,
+  Users,
+  Plus,
+  Trash2,
 } from "lucide-react";
 
 // ── Steps ──────────────────────────────────────
 
-type Step = "role" | "identity" | "tier" | "personality" | "boss-tech" | "channels" | "tools" | "skills" | "review";
-const STEPS: Step[] = ["role", "identity", "tier", "personality", "boss-tech", "channels", "tools", "skills", "review"];
-const SKIPPABLE_STEPS: Step[] = ["channels", "tools", "skills"];
+type Step = "role" | "identity" | "tier" | "personality" | "boss-tech" | "authority" | "channels" | "tools" | "skills" | "review";
+const STEPS: Step[] = ["role", "identity", "tier", "personality", "boss-tech", "authority", "channels", "tools", "skills", "review"];
+const SKIPPABLE_STEPS: Step[] = ["authority", "channels", "tools", "skills"];
 
 // ── Channel Options ────────────────────────────
 
@@ -82,9 +88,8 @@ const CAPABILITY_ICONS: Record<string, any> = {
   "code-execution": Code,
   scheduling: Calendar,
   memory: Sparkles,
-  images: Palette,
+  "visual-media": Palette,
   "phone-calls": Headphones,
-  pdf: FileText,
 };
 
 // ── Expertise icons ────────────────────────────
@@ -99,9 +104,7 @@ const EXPERTISE_ICONS: Record<string, any> = {
   "project-management": KanbanSquare,
   "customer-support": Headphones,
   "sales-crm": Target,
-  "design-media": Palette,
   "scheduling-ops": Calendar,
-  "file-documents": FileText,
 };
 
 // ── All capability IDs (for default-all-on) ────
@@ -131,11 +134,11 @@ const TEMPLATE_EXPERTISE: Record<string, string[]> = {
   coo: ["project-management", "data-analytics", "scheduling-ops"],
   "customer-support": ["customer-support", "writing", "email-outreach"],
   "sales-rep": ["sales-crm", "email-outreach", "web-research"],
-  "software-engineer": ["code-engineering", "web-research", "file-documents"],
-  "data-analyst": ["data-analytics", "code-engineering", "file-documents"],
+  "software-engineer": ["code-engineering", "web-research"],
+  "data-analyst": ["data-analytics", "code-engineering"],
   "content-writer": ["writing", "web-research", "social-media"],
-  "executive-assistant": ["scheduling-ops", "email-outreach", "file-documents"],
-  researcher: ["web-research", "writing", "data-analytics", "file-documents"],
+  "executive-assistant": ["scheduling-ops", "email-outreach"],
+  researcher: ["web-research", "writing", "data-analytics"],
 };
 
 // ── Expand helpers ─────────────────────────────
@@ -198,7 +201,17 @@ const styles = {
 // ── Component ──────────────────────────────────
 
 export default function HireEmployeePage() {
+  return (
+    <Suspense>
+      <HireEmployeeWizard />
+    </Suspense>
+  );
+}
+
+function HireEmployeeWizard() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const [paymentStatus, setPaymentStatus] = useState<"success" | "cancelled" | null>(null);
   const [stepIndex, setStepIndex] = useState(0);
   const [direction, setDirection] = useState<"forward" | "back">("forward");
   const [animKey, setAnimKey] = useState(0);
@@ -214,6 +227,10 @@ export default function HireEmployeePage() {
     capabilities: [...ALL_CAPABILITY_IDS] as string[],
     skills: [] as string[],
     personality: { ...DEFAULT_PERSONALITY } as PersonalityConfig,
+    authority: {
+      defaultRole: "manager" as "manager" | "colleague",
+      members: [] as Array<{ slackUserId: string; name: string; role: "manager" | "colleague" }>,
+    },
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -221,6 +238,37 @@ export default function HireEmployeePage() {
   const step = STEPS[stepIndex];
   const template = selectedTemplate ? getJobTemplate(selectedTemplate) : null;
   const categories = getJobTemplateCategories();
+
+  // ── Handle Stripe return ───────────────────
+  useEffect(() => {
+    const payment = searchParams.get("payment");
+    const sessionId = searchParams.get("session_id");
+    if (payment === "success" && sessionId) {
+      setPaymentStatus("success");
+      // Confirm the checkout and provision the employee
+      api.confirmCheckout(sessionId)
+        .then((result) => {
+          if (result.employee?.id) {
+            router.push(`/dashboard/employees/${result.employee.id}`);
+          } else {
+            // Already completed by webhook or no employee ID — go to list
+            router.push("/dashboard/employees");
+          }
+        })
+        .catch((err) => {
+          console.error("Checkout confirm failed:", err);
+          // Still redirect — webhook may have handled it
+          router.push("/dashboard/employees");
+        });
+    } else if (payment === "success") {
+      setPaymentStatus("success");
+      const timer = setTimeout(() => router.push("/dashboard/employees"), 3000);
+      return () => clearTimeout(timer);
+    }
+    if (payment === "cancelled") {
+      setPaymentStatus("cancelled");
+    }
+  }, [searchParams, router]);
 
   // ── Navigation ─────────────────────────────
 
@@ -256,6 +304,7 @@ export default function HireEmployeePage() {
       capabilities: TEMPLATE_CAPABILITIES[id] || [...ALL_CAPABILITY_IDS],
       skills: TEMPLATE_EXPERTISE[id] || [],
       personality: { ...t.defaultPersonality },
+      authority: { defaultRole: "manager", members: [] },
     });
     goTo(1);
   };
@@ -272,6 +321,7 @@ export default function HireEmployeePage() {
       capabilities: [...ALL_CAPABILITY_IDS],
       skills: [],
       personality: { ...DEFAULT_PERSONALITY },
+      authority: { defaultRole: "manager", members: [] },
     });
     goTo(1);
   };
@@ -321,7 +371,7 @@ export default function HireEmployeePage() {
       const toolsAllow = expandCapabilities(form.capabilities);
       const skillSlugs = expandExpertise(form.skills);
 
-      const result = await api.hireEmployee({
+      const hireData = {
         name: form.name,
         jobTitle: form.jobTitle,
         tier: form.tier,
@@ -332,7 +382,44 @@ export default function HireEmployeePage() {
         toolsAllow,
         skills: skillSlugs,
         personalityConfig: form.personality,
-      });
+        authorityConfig: form.authority.members.length > 0 || form.authority.defaultRole !== "manager"
+          ? form.authority
+          : undefined,
+      };
+
+      // Try Stripe billing first — if configured:
+      //   - First hire: returns { url } → redirect to Stripe Checkout
+      //   - Subsequent hires: returns { employee } → line item added to existing subscription
+      try {
+        const checkout = await api.createCheckoutSession({
+          ...hireData,
+          capabilities: form.capabilities,
+          expertise: form.skills,
+        });
+        if (checkout.url) {
+          // First hire — redirect to Stripe Checkout for payment
+          window.location.href = checkout.url;
+          return;
+        }
+        if ((checkout as any).employee) {
+          // Subsequent hire — employee was created and billed immediately
+          const billingMsg = (checkout as any).billingAdded
+            ? `&billed=true&price=${(checkout as any).priceMonthly || ""}`
+            : "";
+          router.push(`/dashboard/employees/${(checkout as any).employee.id}?hired=true${billingMsg}`);
+          return;
+        }
+      } catch (checkoutErr: any) {
+        // Rethrow client errors (400, 401, 403) — these are real validation failures
+        if (checkoutErr.status && checkoutErr.status >= 400 && checkoutErr.status < 500) throw checkoutErr;
+        // Rethrow 502 (Stripe API error) — these need user attention (bad API key, etc.)
+        if (checkoutErr.status === 502) throw checkoutErr;
+        // 501 (Stripe not configured) and other server/network errors: fall through to direct hire
+        console.warn("Stripe checkout unavailable, falling back to direct hire:", checkoutErr.message);
+      }
+
+      // Direct hire (no Stripe or Stripe unavailable)
+      const result = await api.hireEmployee(hireData);
       router.push(`/dashboard/employees/${result.employee.id}`);
     } catch (err: any) {
       setError(err.message || "Failed to hire employee");
@@ -356,12 +443,14 @@ export default function HireEmployeePage() {
     icon,
     label,
     desc,
+    priceBadge,
   }: {
     selected: boolean;
     onClick: () => void;
     icon: React.ReactNode;
     label: string;
     desc?: string;
+    priceBadge?: "free" | number;
   }) => (
     <button
       onClick={onClick}
@@ -394,15 +483,33 @@ export default function HireEmployeePage() {
     >
       {icon && <div style={{ fontSize: 20, lineHeight: 1, flexShrink: 0, marginTop: 1 }}>{icon}</div>}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div
-          style={{
-            fontSize: 14,
-            fontWeight: 600,
-            color: "var(--text)",
-            letterSpacing: "-0.01em",
-          }}
-        >
-          {label}
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <div
+            style={{
+              fontSize: 14,
+              fontWeight: 600,
+              color: "var(--text)",
+              letterSpacing: "-0.01em",
+            }}
+          >
+            {label}
+          </div>
+          {priceBadge !== undefined && (
+            <span
+              style={{
+                fontSize: 10,
+                fontWeight: 600,
+                padding: "2px 6px",
+                borderRadius: 4,
+                whiteSpace: "nowrap",
+                ...(priceBadge === "free"
+                  ? { color: "#16a34a", background: "rgba(22, 163, 74, 0.08)" }
+                  : { color: "#d97706", background: "rgba(217, 119, 6, 0.08)" }),
+              }}
+            >
+              {priceBadge === "free" ? "Included" : `+$${priceBadge}/mo`}
+            </span>
+          )}
         </div>
         {desc && (
           <div
@@ -634,8 +741,61 @@ export default function HireEmployeePage() {
         padding: "40px 0",
       }}
     >
+      {/* ═══ Payment Return Status ═══ */}
+      {paymentStatus === "success" && (
+        <div style={{
+          textAlign: "center",
+          padding: "80px 20px",
+        }}>
+          <div style={{
+            width: 64, height: 64, borderRadius: "50%",
+            background: "rgba(22, 163, 74, 0.1)", margin: "0 auto 20px",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <Check size={32} style={{ color: "#16a34a" }} />
+          </div>
+          <h1 style={styles.heading}>Payment confirmed!</h1>
+          <p style={styles.subtitle}>
+            Your new employee is being set up. Redirecting to your team...
+          </p>
+          <div style={{ marginTop: 24 }}>
+            <Loader2 size={20} className="spin" style={{ color: "var(--text-secondary)" }} />
+          </div>
+        </div>
+      )}
+      {paymentStatus === "cancelled" && (
+        <div style={{
+          background: "rgba(217, 119, 6, 0.06)",
+          border: "1px solid rgba(217, 119, 6, 0.15)",
+          borderRadius: "var(--radius-lg)",
+          padding: "14px 18px",
+          marginBottom: 24,
+          fontSize: 13,
+          color: "#d97706",
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+        }}>
+          Payment was cancelled. You can try again when you&apos;re ready.
+          <button
+            onClick={() => setPaymentStatus(null)}
+            style={{
+              marginLeft: "auto",
+              background: "none",
+              border: "none",
+              color: "#d97706",
+              fontWeight: 600,
+              cursor: "pointer",
+              fontSize: 13,
+            }}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* ═══ Step 1: Role Selection ═══ */}
-      {step === "role" && (
+      {step === "role" && paymentStatus !== "success" && (
         <div key={animKey} className={animClass}>
           <h1 style={styles.heading}>What role should they fill?</h1>
           <p style={styles.subtitle}>
@@ -1107,6 +1267,229 @@ export default function HireEmployeePage() {
         </div>
       )}
 
+      {/* ═══ Step: Authority ═══ */}
+      {step === "authority" && (
+        <div key={animKey} className={animClass}>
+          <h1 style={styles.heading}>Who&apos;s in charge?</h1>
+          <p style={styles.subtitle}>
+            Control who can assign tasks to {form.name || "your employee"} and who can only ask questions
+          </p>
+
+          <div style={{ marginTop: 40 }}>
+            {/* Default role for unlisted users */}
+            <div style={styles.sectionLabel}>Default permission for Slack users</div>
+            <p style={styles.sectionHint}>
+              When someone messages {form.name || "your employee"} in Slack and isn&apos;t in the list below, what role do they get?
+            </p>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 32 }}>
+              {DEFAULT_AUTHORITY_ROLE_OPTIONS.map((opt) => {
+                const selected = form.authority.defaultRole === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    onClick={() =>
+                      setForm({
+                        ...form,
+                        authority: { ...form.authority, defaultRole: opt.value as "manager" | "colleague" },
+                      })
+                    }
+                    style={{
+                      padding: "16px 18px",
+                      background: selected ? "#ffffff" : "var(--bg-secondary)",
+                      border: selected ? "1.5px solid var(--text)" : "1px solid var(--border)",
+                      borderRadius: "var(--radius-xl)",
+                      cursor: "pointer",
+                      textAlign: "left",
+                      transition: "all 0.15s ease",
+                      position: "relative",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!selected) {
+                        (e.currentTarget as HTMLElement).style.borderColor = "var(--border-hover)";
+                        (e.currentTarget as HTMLElement).style.boxShadow = "var(--shadow-sm)";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!selected) {
+                        (e.currentTarget as HTMLElement).style.borderColor = "var(--border)";
+                        (e.currentTarget as HTMLElement).style.boxShadow = "none";
+                      }
+                    }}
+                  >
+                    <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)", marginBottom: 4 }}>
+                      {opt.label}
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.4 }}>
+                      {opt.desc}
+                    </div>
+                    {selected && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: 10,
+                          right: 10,
+                          width: 18,
+                          height: 18,
+                          borderRadius: "50%",
+                          background: "var(--text)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <Check size={11} style={{ color: "#ffffff" }} />
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Specific team members */}
+            <div style={styles.sectionLabel}>Team members (optional)</div>
+            <p style={styles.sectionHint}>
+              Override the default for specific people. Add Slack users and set whether they&apos;re a manager or colleague.
+            </p>
+
+            {/* Members list */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+              {form.authority.members.map((member, i) => (
+                <div
+                  key={i}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    background: "var(--bg-secondary)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "var(--radius-lg)",
+                    padding: "8px 12px",
+                  }}
+                >
+                  <Users size={14} style={{ color: "var(--text-tertiary)", flexShrink: 0 }} />
+                  <input
+                    className="input"
+                    placeholder="Name"
+                    value={member.name}
+                    onChange={(e) => {
+                      const updated = [...form.authority.members];
+                      updated[i] = { ...updated[i], name: e.target.value };
+                      setForm({ ...form, authority: { ...form.authority, members: updated } });
+                    }}
+                    style={{
+                      flex: 1,
+                      height: 32,
+                      fontSize: 13,
+                      borderRadius: "var(--radius-md)",
+                      padding: "0 10px",
+                      minWidth: 0,
+                    }}
+                  />
+                  <input
+                    className="input"
+                    placeholder="Slack User ID (U...)"
+                    value={member.slackUserId}
+                    onChange={(e) => {
+                      const updated = [...form.authority.members];
+                      updated[i] = { ...updated[i], slackUserId: e.target.value };
+                      setForm({ ...form, authority: { ...form.authority, members: updated } });
+                    }}
+                    style={{
+                      width: 160,
+                      height: 32,
+                      fontSize: 13,
+                      borderRadius: "var(--radius-md)",
+                      padding: "0 10px",
+                    }}
+                  />
+                  <select
+                    value={member.role}
+                    onChange={(e) => {
+                      const updated = [...form.authority.members];
+                      updated[i] = { ...updated[i], role: e.target.value as "manager" | "colleague" };
+                      setForm({ ...form, authority: { ...form.authority, members: updated } });
+                    }}
+                    style={{
+                      height: 32,
+                      fontSize: 13,
+                      borderRadius: "var(--radius-md)",
+                      padding: "0 8px",
+                      border: "1px solid var(--border)",
+                      background: "#ffffff",
+                      color: "var(--text)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <option value="manager">Manager</option>
+                    <option value="colleague">Colleague</option>
+                  </select>
+                  <button
+                    onClick={() => {
+                      const updated = form.authority.members.filter((_, idx) => idx !== i);
+                      setForm({ ...form, authority: { ...form.authority, members: updated } });
+                    }}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      padding: 4,
+                      color: "var(--text-tertiary)",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <button
+              onClick={() => {
+                setForm({
+                  ...form,
+                  authority: {
+                    ...form.authority,
+                    members: [...form.authority.members, { slackUserId: "", name: "", role: "manager" }],
+                  },
+                });
+              }}
+              style={{
+                background: "none",
+                border: "1px dashed var(--border)",
+                borderRadius: "var(--radius-lg)",
+                padding: "10px 16px",
+                cursor: "pointer",
+                color: "var(--text-secondary)",
+                fontSize: 13,
+                fontWeight: 500,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                width: "100%",
+                justifyContent: "center",
+              }}
+            >
+              <Plus size={14} />
+              Add team member
+            </button>
+
+            <p
+              style={{
+                fontSize: 12,
+                color: "var(--text-tertiary)",
+                marginTop: 16,
+                lineHeight: 1.5,
+              }}
+            >
+              You can find a user&apos;s Slack ID by clicking their profile in Slack, then clicking the &quot;...&quot; menu and selecting &quot;Copy member ID&quot;.
+              You can also configure this later from the employee settings page.
+            </p>
+          </div>
+
+          {renderBottomNav({ showSkip: true })}
+        </div>
+      )}
+
       {/* ═══ Step 5: Channels ═══ */}
       {step === "channels" && (
         <div key={animKey} className={animClass}>
@@ -1126,6 +1509,7 @@ export default function HireEmployeePage() {
           >
             {CHANNEL_OPTIONS.map((ch) => {
               const selected = form.channels.includes(ch.id);
+              const price = getAddonPrice("channels", ch.id, form.tier);
               return (
                 <div key={ch.id} style={{ height: "100%" }}>
                   {renderSelectionCard({
@@ -1134,6 +1518,7 @@ export default function HireEmployeePage() {
                     icon: <ch.Icon size={20} style={{ color: selected ? "var(--text)" : "var(--text-secondary)" }} />,
                     label: ch.label,
                     desc: ch.desc,
+                    priceBadge: price,
                   })}
                 </div>
               );
@@ -1156,7 +1541,7 @@ export default function HireEmployeePage() {
             style={{
               marginTop: 40,
               display: "grid",
-              gridTemplateColumns: "repeat(2, 1fr)",
+              gridTemplateColumns: "repeat(3, 1fr)",
               gridAutoRows: "1fr",
               gap: 10,
             }}
@@ -1164,6 +1549,7 @@ export default function HireEmployeePage() {
             {CAPABILITY_OPTIONS.map((cap) => {
               const selected = form.capabilities.includes(cap.id);
               const Icon = CAPABILITY_ICONS[cap.id] || Sparkles;
+              const price = getAddonPrice("capabilities", cap.id, form.tier);
               return (
                 <div key={cap.id} style={{ height: "100%" }}>
                   {renderSelectionCard({
@@ -1172,6 +1558,7 @@ export default function HireEmployeePage() {
                     icon: <Icon size={20} style={{ color: selected ? "var(--text)" : "var(--text-secondary)" }} />,
                     label: cap.label,
                     desc: cap.desc,
+                    priceBadge: price,
                   })}
                 </div>
               );
@@ -1185,22 +1572,24 @@ export default function HireEmployeePage() {
       {/* ═══ Step 7: Skills / Expertise ═══ */}
       {step === "skills" && (
         <div key={animKey} className={animClass}>
-          <h1 style={styles.heading}>What should they be great at?</h1>
+          <h1 style={styles.heading}>What should they focus on?</h1>
           <p style={styles.subtitle}>
-            Select focus areas — {form.name || "they"} can do all of these, but will prioritize what you pick
+            Pick priority areas — {form.name || "they"} will invest the most effort here
           </p>
 
           <div
             style={{
               marginTop: 40,
               display: "grid",
-              gridTemplateColumns: "repeat(4, 1fr)",
+              gridTemplateColumns: "repeat(3, 1fr)",
+              gridAutoRows: "1fr",
               gap: 10,
             }}
           >
             {EXPERTISE_OPTIONS.map((skill) => {
               const selected = form.skills.includes(skill.id);
               const Icon = EXPERTISE_ICONS[skill.id] || Sparkles;
+              const price = getAddonPrice("expertise", skill.id, form.tier);
               return (
                 <button
                   key={skill.id}
@@ -1249,10 +1638,27 @@ export default function HireEmployeePage() {
                       <Check size={11} style={{ color: "#ffffff" }} />
                     </div>
                   )}
-                  <Icon
-                    size={20}
-                    style={{ color: selected ? "var(--text)" : "var(--text-secondary)" }}
-                  />
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <Icon
+                      size={20}
+                      style={{ color: selected ? "var(--text)" : "var(--text-secondary)" }}
+                    />
+                    {price !== "free" && (
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 600,
+                          padding: "2px 6px",
+                          borderRadius: 4,
+                          whiteSpace: "nowrap",
+                          color: "#d97706",
+                          background: "rgba(217, 119, 6, 0.08)",
+                        }}
+                      >
+                        +${price}/mo
+                      </span>
+                    )}
+                  </div>
                   <div>
                     <div
                       style={{
@@ -1354,22 +1760,79 @@ export default function HireEmployeePage() {
             <div className="divider" style={{ marginBottom: 20 }} />
 
             {/* Tier & Pricing */}
-            <div style={{ marginBottom: 20 }}>
-              <div style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>
-                Employee Tier
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={pillStyle}>
-                  {EMPLOYEE_TIERS[form.tier].label}
-                </span>
-                <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>
-                  ${EMPLOYEE_TIERS[form.tier].priceMonthly}/mo
-                </span>
-                <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
-                  &middot; {EMPLOYEE_TIERS[form.tier].creditsIncluded} credits included
-                </span>
-              </div>
-            </div>
+            {(() => {
+              const baseCost = EMPLOYEE_TIERS[form.tier].priceMonthly;
+              const addonCost = calculateAddonTotal(form.tier, form.channels, form.capabilities, form.skills);
+              const totalCost = baseCost + addonCost;
+
+              // Collect paid add-on line items
+              const addonLines: { label: string; price: number }[] = [];
+              for (const ch of form.channels) {
+                const p = getAddonPrice("channels", ch, form.tier);
+                if (p !== "free") {
+                  const opt = CHANNEL_OPTIONS.find((c) => c.id === ch);
+                  addonLines.push({ label: opt?.label || ch, price: p });
+                }
+              }
+              for (const cap of form.capabilities) {
+                const p = getAddonPrice("capabilities", cap, form.tier);
+                if (p !== "free") {
+                  const opt = CAPABILITY_OPTIONS.find((c) => c.id === cap);
+                  addonLines.push({ label: opt?.label || cap, price: p });
+                }
+              }
+              for (const sk of form.skills) {
+                const p = getAddonPrice("expertise", sk, form.tier);
+                if (p !== "free") {
+                  const opt = EXPERTISE_OPTIONS.find((s) => s.id === sk);
+                  addonLines.push({ label: opt?.label || sk, price: p });
+                }
+              }
+
+              return (
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>
+                    Pricing
+                  </div>
+                  {/* Base tier */}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={pillStyle}>{EMPLOYEE_TIERS[form.tier].label}</span>
+                      <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
+                        {EMPLOYEE_TIERS[form.tier].creditsIncluded} credits included
+                      </span>
+                    </div>
+                    <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text)" }}>
+                      ${baseCost}/mo
+                    </span>
+                  </div>
+                  {/* Add-on line items */}
+                  {addonLines.length > 0 && (
+                    <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border)" }}>
+                      {addonLines.map((item, i) => (
+                        <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "3px 0" }}>
+                          <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>{item.label}</span>
+                          <span style={{ fontSize: 13, color: "#d97706", fontWeight: 500 }}>+${item.price}/mo</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {/* Total */}
+                  <div style={{
+                    marginTop: 10, paddingTop: 10,
+                    borderTop: "1.5px solid var(--text)",
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                  }}>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>
+                      Total
+                    </span>
+                    <span style={{ fontSize: 18, fontWeight: 700, color: "var(--text)", letterSpacing: "-0.02em" }}>
+                      ${totalCost}/mo
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Personality */}
             <div style={{ marginBottom: 20 }}>
@@ -1390,6 +1853,26 @@ export default function HireEmployeePage() {
               </div>
             </div>
 
+            {/* Authority */}
+            {(form.authority.members.length > 0 || form.authority.defaultRole !== "manager") && (
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>
+                  Authority
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  <span style={pillStyle}>
+                    Default: {form.authority.defaultRole === "manager" ? "Everyone is a manager" : "Everyone is a colleague"}
+                  </span>
+                  {form.authority.members.map((m, i) => (
+                    <span key={i} style={pillStyle}>
+                      <Users size={12} />
+                      {m.name || m.slackUserId}: {m.role}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Channels */}
             <div style={{ marginBottom: 20 }}>
               <div style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>
@@ -1399,10 +1882,12 @@ export default function HireEmployeePage() {
                 {form.channels.length > 0 ? (
                   form.channels.map((ch) => {
                     const channel = CHANNEL_OPTIONS.find((c) => c.id === ch);
+                    const price = getAddonPrice("channels", ch, form.tier);
                     return (
                       <span key={ch} style={pillStyle}>
                         {channel && <channel.Icon size={12} />}
                         {channel?.label || ch}
+                        {price !== "free" && <span style={{ color: "#d97706", fontSize: 10, fontWeight: 600 }}>+${price}</span>}
                       </span>
                     );
                   })
@@ -1425,8 +1910,12 @@ export default function HireEmployeePage() {
                 ) : form.capabilities.length > 0 ? (
                   form.capabilities.map((capId) => {
                     const cap = CAPABILITY_OPTIONS.find((c) => c.id === capId);
+                    const price = getAddonPrice("capabilities", capId, form.tier);
                     return (
-                      <span key={capId} style={pillStyle}>{cap?.label || capId}</span>
+                      <span key={capId} style={pillStyle}>
+                        {cap?.label || capId}
+                        {price !== "free" && <span style={{ color: "#d97706", fontSize: 10, fontWeight: 600 }}>+${price}</span>}
+                      </span>
                     );
                   })
                 ) : (
@@ -1447,10 +1936,12 @@ export default function HireEmployeePage() {
                   form.skills.map((sk) => {
                     const skill = EXPERTISE_OPTIONS.find((s) => s.id === sk);
                     const Icon = EXPERTISE_ICONS[sk];
+                    const price = getAddonPrice("expertise", sk, form.tier);
                     return (
                       <span key={sk} style={pillStyle}>
                         {Icon && <Icon size={12} />}
                         {skill?.label || sk}
+                        {price !== "free" && <span style={{ color: "#d97706", fontSize: 10, fontWeight: 600 }}>+${price}</span>}
                       </span>
                     );
                   })

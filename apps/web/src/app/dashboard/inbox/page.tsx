@@ -1,0 +1,1084 @@
+"use client";
+
+import { useEffect, useState, useRef, useCallback } from "react";
+import { api } from "@/lib/api";
+import {
+  Send,
+  Loader2,
+  Bot,
+  User,
+  Download,
+  FileText,
+  FileSpreadsheet,
+  FileCode,
+  File,
+  Search,
+  MessageCircle,
+} from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+
+// ── Types ──────────────────────────────────────
+
+interface Employee {
+  id: string;
+  name: string;
+  jobTitle: string;
+  emoji: string | null;
+  status: string;
+}
+
+interface Message {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  timestamp: Date;
+  mode?: string;
+}
+
+interface ConversationPreview {
+  employee: Employee;
+  lastMessage: string | null;
+  lastMessageTime: Date | null;
+}
+
+// ── Main Inbox Page ─────────────────────────────
+
+export default function InboxPage() {
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [previews, setPreviews] = useState<Map<string, ConversationPreview>>(new Map());
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  // Chat state for the selected employee
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [chatLoading, setChatLoading] = useState(false);
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Load employees and their last messages
+  useEffect(() => {
+    async function load() {
+      try {
+        const res = await api.listEmployees();
+        const emps = (res.employees || []).filter(
+          (e: Employee) => e.status !== "terminated",
+        );
+        setEmployees(emps);
+
+        // Load last message for each employee
+        const previewMap = new Map<string, ConversationPreview>();
+        await Promise.all(
+          emps.map(async (emp: Employee) => {
+            try {
+              const historyRes = await api.getChatHistory(emp.id);
+              const msgs = historyRes.messages || [];
+              const last = msgs.length > 0 ? msgs[msgs.length - 1] : null;
+              previewMap.set(emp.id, {
+                employee: emp,
+                lastMessage: last?.content?.slice(0, 80) || null,
+                lastMessageTime: last ? new Date(last.createdAt) : null,
+              });
+            } catch {
+              previewMap.set(emp.id, {
+                employee: emp,
+                lastMessage: null,
+                lastMessageTime: null,
+              });
+            }
+          }),
+        );
+        setPreviews(previewMap);
+
+        // Auto-select first employee
+        if (emps.length > 0 && !selectedId) {
+          setSelectedId(emps[0].id);
+        }
+      } catch {
+        // Failed to load
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Load chat when selected employee changes
+  const loadChat = useCallback(
+    async (empId: string) => {
+      setChatLoading(true);
+      setMessages([]);
+      try {
+        const historyRes = await api.getChatHistory(empId);
+        if (historyRes.messages.length > 0) {
+          setMessages(
+            historyRes.messages.map((m) => ({
+              id: m.id,
+              role: m.role as "user" | "assistant",
+              content: m.content,
+              timestamp: new Date(m.createdAt),
+              mode: m.mode || undefined,
+            })),
+          );
+        } else {
+          const emp = employees.find((e) => e.id === empId);
+          if (emp) {
+            setMessages([
+              {
+                id: "welcome",
+                role: "assistant",
+                content: `Hi! I'm ${emp.name}, your ${emp.jobTitle}. How can I help you today?`,
+                timestamp: new Date(),
+              },
+            ]);
+          }
+        }
+      } catch {
+        const emp = employees.find((e) => e.id === empId);
+        if (emp) {
+          setMessages([
+            {
+              id: "welcome",
+              role: "assistant",
+              content: `Hi! I'm ${emp.name}, your ${emp.jobTitle}. How can I help you today?`,
+              timestamp: new Date(),
+            },
+          ]);
+        }
+      } finally {
+        setChatLoading(false);
+      }
+    },
+    [employees],
+  );
+
+  useEffect(() => {
+    if (selectedId) {
+      loadChat(selectedId);
+      setInput("");
+    }
+  }, [selectedId, loadChat]);
+
+  // Auto-scroll
+  const scrollToBottom = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, []);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, scrollToBottom]);
+
+  // Send message
+  const handleSend = async () => {
+    const text = input.trim();
+    if (!text || sending || !selectedId) return;
+
+    const emp = employees.find((e) => e.id === selectedId);
+    if (!emp || emp.status !== "active") return;
+
+    const userMessage: Message = {
+      id: `user-${Date.now()}`,
+      role: "user",
+      content: text,
+      timestamp: new Date(),
+    };
+
+    setMessages((prev) => [...prev, userMessage]);
+    setInput("");
+    setSending(true);
+
+    if (inputRef.current) {
+      inputRef.current.style.height = "auto";
+    }
+
+    try {
+      const history = messages
+        .filter((m) => m.id !== "welcome")
+        .map((m) => ({ role: m.role, content: m.content }));
+
+      const res = await api.chatWithEmployee(selectedId, text, history);
+
+      const assistantMessage: Message = {
+        id: `assistant-${Date.now()}`,
+        role: "assistant",
+        content: res.reply,
+        timestamp: new Date(),
+        mode: res.mode,
+      };
+
+      setMessages((prev) => [...prev, assistantMessage]);
+
+      // Update preview
+      setPreviews((prev) => {
+        const updated = new Map(prev);
+        const existing = updated.get(selectedId);
+        if (existing) {
+          updated.set(selectedId, {
+            ...existing,
+            lastMessage: res.reply.slice(0, 80),
+            lastMessageTime: new Date(),
+          });
+        }
+        return updated;
+      });
+    } catch (err: any) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `error-${Date.now()}`,
+          role: "assistant",
+          content: `Sorry, I couldn't process that: ${err.message}`,
+          timestamp: new Date(),
+        },
+      ]);
+    } finally {
+      setSending(false);
+      inputRef.current?.focus();
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value);
+    const el = e.target;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 150) + "px";
+  };
+
+  // Filter employees by search
+  const filtered = employees.filter(
+    (e) =>
+      e.name.toLowerCase().includes(search.toLowerCase()) ||
+      e.jobTitle.toLowerCase().includes(search.toLowerCase()),
+  );
+
+  // Sort: employees with recent messages first, then by name
+  const sorted = [...filtered].sort((a, b) => {
+    const aTime = previews.get(a.id)?.lastMessageTime?.getTime() || 0;
+    const bTime = previews.get(b.id)?.lastMessageTime?.getTime() || 0;
+    if (aTime && bTime) return bTime - aTime;
+    if (aTime) return -1;
+    if (bTime) return 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  const selectedEmployee = employees.find((e) => e.id === selectedId);
+
+  if (loading) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "80vh" }}>
+        <div
+          style={{
+            width: 24,
+            height: 24,
+            borderRadius: "50%",
+            border: "2px solid var(--border, #e5e5e5)",
+            borderTopColor: "var(--text-tertiary, #a3a3a3)",
+            animation: "spin 0.8s linear infinite",
+          }}
+        />
+        <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        height: "calc(100vh - 48px)",
+        margin: "-24px -32px",
+        width: "calc(100% + 64px)",
+        overflow: "hidden",
+      }}
+    >
+      {/* ── Employee Sidebar ── */}
+      <div
+        style={{
+          width: 300,
+          minWidth: 300,
+          borderRight: "1px solid var(--border, #e5e5e5)",
+          display: "flex",
+          flexDirection: "column",
+          background: "var(--bg, #ffffff)",
+        }}
+      >
+        {/* Sidebar header */}
+        <div
+          style={{
+            padding: "16px 16px 12px",
+            borderBottom: "1px solid var(--border, #e5e5e5)",
+            flexShrink: 0,
+          }}
+        >
+          <h2 style={{ fontSize: 16, fontWeight: 700, color: "var(--text, #0a0a0a)", margin: 0, marginBottom: 12 }}>
+            Inbox
+          </h2>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "6px 10px",
+              borderRadius: 8,
+              border: "1px solid var(--border, #e5e5e5)",
+              background: "var(--bg-secondary, #f5f5f5)",
+            }}
+          >
+            <Search size={14} style={{ color: "var(--text-tertiary, #a3a3a3)", flexShrink: 0 }} />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search employees..."
+              style={{
+                flex: 1,
+                border: "none",
+                outline: "none",
+                background: "transparent",
+                fontSize: 13,
+                color: "var(--text, #0a0a0a)",
+                fontFamily: "inherit",
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Employee list */}
+        <div style={{ flex: 1, overflowY: "auto" }}>
+          {sorted.length === 0 && (
+            <div style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary, #a3a3a3)", fontSize: 13 }}>
+              {employees.length === 0 ? "No employees yet" : "No matches"}
+            </div>
+          )}
+          {sorted.map((emp) => {
+            const preview = previews.get(emp.id);
+            const isSelected = emp.id === selectedId;
+            const statusColor =
+              emp.status === "active"
+                ? "#22c55e"
+                : emp.status === "provisioning"
+                  ? "#f59e0b"
+                  : "#a3a3a3";
+
+            return (
+              <button
+                key={emp.id}
+                onClick={() => setSelectedId(emp.id)}
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  padding: "12px 16px",
+                  background: isSelected ? "var(--bg-secondary, #f5f5f5)" : "transparent",
+                  border: "none",
+                  borderLeft: isSelected ? "3px solid var(--text, #0a0a0a)" : "3px solid transparent",
+                  cursor: "pointer",
+                  textAlign: "left",
+                  transition: "background 0.1s",
+                }}
+              >
+                {/* Avatar */}
+                <div
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 10,
+                    background: "var(--bg-secondary, #f5f5f5)",
+                    border: "1px solid var(--border, #e5e5e5)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 18,
+                    flexShrink: 0,
+                    position: "relative",
+                  }}
+                >
+                  {emp.emoji || emp.name.charAt(0)}
+                  {/* Status dot */}
+                  <div
+                    style={{
+                      position: "absolute",
+                      bottom: -1,
+                      right: -1,
+                      width: 10,
+                      height: 10,
+                      borderRadius: "50%",
+                      background: statusColor,
+                      border: "2px solid var(--bg, #ffffff)",
+                    }}
+                  />
+                </div>
+
+                {/* Info */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontSize: 13,
+                      fontWeight: isSelected ? 600 : 500,
+                      color: "var(--text, #0a0a0a)",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {emp.name}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "var(--text-tertiary, #a3a3a3)",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                      marginTop: 2,
+                    }}
+                  >
+                    {preview?.lastMessage || emp.jobTitle}
+                  </div>
+                </div>
+
+                {/* Time */}
+                {preview?.lastMessageTime && (
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: "var(--text-tertiary, #a3a3a3)",
+                      flexShrink: 0,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {formatTime(preview.lastMessageTime)}
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Chat Panel ── */}
+      <div
+        style={{
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          background: "var(--bg, #ffffff)",
+          minWidth: 0,
+        }}
+      >
+        {!selectedEmployee ? (
+          /* Empty state */
+          <div
+            style={{
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 12,
+              color: "var(--text-tertiary, #a3a3a3)",
+            }}
+          >
+            <MessageCircle size={48} strokeWidth={1} />
+            <div style={{ fontSize: 16, fontWeight: 500 }}>Select a conversation</div>
+            <div style={{ fontSize: 13 }}>Choose an employee from the sidebar to start chatting</div>
+          </div>
+        ) : (
+          <>
+            {/* Chat header */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                padding: "12px 24px",
+                borderBottom: "1px solid var(--border, #e5e5e5)",
+                flexShrink: 0,
+              }}
+            >
+              <div
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 10,
+                  background: "var(--bg-secondary, #f5f5f5)",
+                  border: "1px solid var(--border, #e5e5e5)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 18,
+                }}
+              >
+                {selectedEmployee.emoji || selectedEmployee.name.charAt(0)}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600, fontSize: 14, color: "var(--text, #0a0a0a)" }}>
+                  {selectedEmployee.name}
+                </div>
+                <div style={{ fontSize: 12, color: "var(--text-tertiary, #a3a3a3)" }}>
+                  {selectedEmployee.jobTitle}
+                </div>
+              </div>
+              <div
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "4px 10px",
+                  borderRadius: 20,
+                  fontSize: 11,
+                  fontWeight: 500,
+                  background:
+                    selectedEmployee.status === "active"
+                      ? "rgba(34, 197, 94, 0.08)"
+                      : selectedEmployee.status === "provisioning"
+                        ? "rgba(245, 158, 11, 0.08)"
+                        : "var(--bg-secondary, #f5f5f5)",
+                  color:
+                    selectedEmployee.status === "active"
+                      ? "#16a34a"
+                      : selectedEmployee.status === "provisioning"
+                        ? "#d97706"
+                        : "var(--text-tertiary, #a3a3a3)",
+                  border: "1px solid",
+                  borderColor:
+                    selectedEmployee.status === "active"
+                      ? "rgba(34, 197, 94, 0.2)"
+                      : selectedEmployee.status === "provisioning"
+                        ? "rgba(245, 158, 11, 0.2)"
+                        : "var(--border, #e5e5e5)",
+                  textTransform: "capitalize",
+                }}
+              >
+                <span
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: "50%",
+                    background: "currentColor",
+                  }}
+                />
+                {selectedEmployee.status}
+              </div>
+            </div>
+
+            {/* Messages */}
+            <div
+              style={{
+                flex: 1,
+                overflowY: "auto",
+                padding: "24px 24px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 20,
+              }}
+            >
+              {chatLoading ? (
+                <div style={{ display: "flex", justifyContent: "center", padding: 40 }}>
+                  <div
+                    style={{
+                      width: 20,
+                      height: 20,
+                      borderRadius: "50%",
+                      border: "2px solid var(--border, #e5e5e5)",
+                      borderTopColor: "var(--text-tertiary, #a3a3a3)",
+                      animation: "spin 0.8s linear infinite",
+                    }}
+                  />
+                </div>
+              ) : (
+                <>
+                  {messages.map((msg) => (
+                    <div
+                      key={msg.id}
+                      style={{
+                        display: "flex",
+                        gap: 12,
+                        alignItems: "flex-start",
+                        flexDirection: msg.role === "user" ? "row-reverse" : "row",
+                        maxWidth: 800,
+                        alignSelf: msg.role === "user" ? "flex-end" : "flex-start",
+                      }}
+                    >
+                      {/* Avatar */}
+                      <div
+                        style={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: 10,
+                          flexShrink: 0,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          background: "var(--bg-secondary, #f5f5f5)",
+                          border: "1px solid var(--border, #e5e5e5)",
+                          fontSize: msg.role === "assistant" ? 16 : 14,
+                        }}
+                      >
+                        {msg.role === "assistant" ? (
+                          <span>{selectedEmployee.emoji || <Bot size={16} />}</span>
+                        ) : (
+                          <User size={14} style={{ color: "var(--text-secondary, #525252)" }} />
+                        )}
+                      </div>
+
+                      {/* Bubble */}
+                      <div
+                        style={{
+                          maxWidth: "75%",
+                          padding: "12px 16px",
+                          borderRadius:
+                            msg.role === "user"
+                              ? "16px 16px 4px 16px"
+                              : "16px 16px 16px 4px",
+                          background:
+                            msg.role === "user"
+                              ? "rgba(37, 99, 235, 0.06)"
+                              : "var(--bg-secondary, #f5f5f5)",
+                          border: "1px solid var(--border, #e5e5e5)",
+                          fontSize: 14,
+                          lineHeight: 1.6,
+                          color: "var(--text, #0a0a0a)",
+                          wordBreak: "break-word",
+                        }}
+                      >
+                        <MessageContent content={msg.content} employeeId={selectedId!} />
+                        {msg.mode === "demo" && (
+                          <div
+                            style={{
+                              marginTop: 8,
+                              padding: "4px 8px",
+                              borderRadius: 4,
+                              background: "rgba(245, 158, 11, 0.08)",
+                              border: "1px solid rgba(245, 158, 11, 0.2)",
+                              fontSize: 11,
+                              color: "#b45309",
+                            }}
+                          >
+                            Getting ready — this employee is still being set up
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Typing indicator */}
+                  {sending && (
+                    <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                      <div
+                        style={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: 10,
+                          flexShrink: 0,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          background: "var(--bg-secondary, #f5f5f5)",
+                          border: "1px solid var(--border, #e5e5e5)",
+                          fontSize: 16,
+                        }}
+                      >
+                        {selectedEmployee.emoji || "A"}
+                      </div>
+                      <div
+                        style={{
+                          padding: "12px 16px",
+                          borderRadius: "16px 16px 16px 4px",
+                          background: "var(--bg-secondary, #f5f5f5)",
+                          border: "1px solid var(--border, #e5e5e5)",
+                          display: "flex",
+                          gap: 4,
+                          alignItems: "center",
+                        }}
+                      >
+                        <span className="typing-dot" style={{ animationDelay: "0s" }} />
+                        <span className="typing-dot" style={{ animationDelay: "0.2s" }} />
+                        <span className="typing-dot" style={{ animationDelay: "0.4s" }} />
+                      </div>
+                    </div>
+                  )}
+
+                  <div ref={messagesEndRef} />
+                </>
+              )}
+            </div>
+
+            {/* Input */}
+            <div
+              style={{
+                flexShrink: 0,
+                padding: "12px 24px 16px",
+                borderTop: "1px solid var(--border, #e5e5e5)",
+              }}
+            >
+              {selectedEmployee.status === "active" ? (
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    alignItems: "flex-end",
+                    background: "var(--bg, #ffffff)",
+                    borderRadius: 16,
+                    border: "1px solid var(--border, #e5e5e5)",
+                    padding: "8px 12px",
+                  }}
+                >
+                  <textarea
+                    ref={inputRef}
+                    value={input}
+                    onChange={handleInput}
+                    onKeyDown={handleKeyDown}
+                    placeholder={`Message ${selectedEmployee.name}...`}
+                    disabled={sending}
+                    rows={1}
+                    style={{
+                      flex: 1,
+                      background: "transparent",
+                      border: "none",
+                      outline: "none",
+                      resize: "none",
+                      color: "var(--text, #0a0a0a)",
+                      fontSize: 14,
+                      lineHeight: 1.5,
+                      padding: "4px 0",
+                      fontFamily: "inherit",
+                      maxHeight: 150,
+                    }}
+                  />
+                  <button
+                    onClick={handleSend}
+                    disabled={!input.trim() || sending}
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 10,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      border: "none",
+                      cursor: input.trim() && !sending ? "pointer" : "default",
+                      background:
+                        input.trim() && !sending
+                          ? "var(--text, #0a0a0a)"
+                          : "var(--bg-secondary, #f5f5f5)",
+                      color:
+                        input.trim() && !sending
+                          ? "#ffffff"
+                          : "var(--text-tertiary, #a3a3a3)",
+                      transition: "all 0.2s",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {sending ? (
+                      <Loader2 size={16} style={{ animation: "spin 0.8s linear infinite" }} />
+                    ) : (
+                      <Send size={16} />
+                    )}
+                  </button>
+                </div>
+              ) : selectedEmployee.status === "provisioning" ? (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 8,
+                    padding: "12px 16px",
+                    borderRadius: 12,
+                    background: "rgba(217, 119, 6, 0.06)",
+                    border: "1px solid rgba(217, 119, 6, 0.14)",
+                  }}
+                >
+                  <Loader2 size={14} style={{ color: "#d97706", animation: "spin 1.5s linear infinite" }} />
+                  <span style={{ fontSize: 13, color: "#b45309" }}>
+                    Setting up {selectedEmployee.name}&apos;s workstation...
+                  </span>
+                </div>
+              ) : (
+                <div
+                  style={{
+                    textAlign: "center",
+                    padding: "12px 16px",
+                    fontSize: 13,
+                    color: "var(--text-tertiary, #a3a3a3)",
+                  }}
+                >
+                  Chat is disabled — {selectedEmployee.name} is {selectedEmployee.status}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg) } }
+        @keyframes bounce {
+          0%, 80%, 100% { transform: translateY(0) }
+          40% { transform: translateY(-6px) }
+        }
+        .typing-dot {
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          background: var(--text-tertiary, #a3a3a3);
+          animation: bounce 1.4s infinite ease-in-out;
+        }
+
+        /* Markdown styles */
+        .markdown-body { overflow-wrap: break-word; color: var(--text, #0a0a0a); }
+        .markdown-body > *:first-child { margin-top: 0; }
+        .markdown-body > *:last-child { margin-bottom: 0; }
+        .markdown-body p { margin: 0.4em 0; }
+        .markdown-body h1, .markdown-body h2, .markdown-body h3,
+        .markdown-body h4, .markdown-body h5, .markdown-body h6 {
+          margin: 0.6em 0 0.3em; font-weight: 600; line-height: 1.3; color: var(--text, #0a0a0a);
+        }
+        .markdown-body h1 { font-size: 1.35em; }
+        .markdown-body h2 { font-size: 1.2em; }
+        .markdown-body h3 { font-size: 1.1em; }
+        .markdown-body strong { font-weight: 600; }
+        .markdown-body em { font-style: italic; }
+        .markdown-body a { color: #2563eb; text-decoration: underline; }
+        .markdown-body code {
+          font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+          font-size: 0.88em; padding: 0.15em 0.4em; border-radius: 4px;
+          background: #f5f5f5; border: 1px solid var(--border, #e5e5e5);
+        }
+        .markdown-body pre {
+          margin: 0.5em 0; padding: 12px 14px; border-radius: 8px;
+          background: #f9fafb; border: 1px solid var(--border, #e5e5e5); overflow-x: auto;
+        }
+        .markdown-body pre code { padding: 0; background: none; border: none; font-size: 0.85em; line-height: 1.5; }
+        .markdown-body ul, .markdown-body ol { margin: 0.4em 0; padding-left: 1.5em; }
+        .markdown-body ul { list-style-type: disc; }
+        .markdown-body ol { list-style-type: decimal; }
+        .markdown-body li { margin: 0.15em 0; display: list-item; }
+        .markdown-body blockquote {
+          margin: 0.5em 0; padding: 0.3em 0 0.3em 1em;
+          border-left: 3px solid var(--border, #e5e5e5); color: var(--text-secondary, #525252);
+        }
+        .markdown-body hr { margin: 0.8em 0; border: none; border-top: 1px solid var(--border, #e5e5e5); }
+        .markdown-body table { margin: 0.5em 0; border-collapse: collapse; width: 100%; font-size: 0.9em; }
+        .markdown-body th, .markdown-body td { padding: 6px 10px; border: 1px solid var(--border, #e5e5e5); text-align: left; }
+        .markdown-body th { font-weight: 600; background: var(--bg-secondary, #f5f5f5); }
+        .markdown-body img { max-width: 100%; border-radius: 8px; }
+
+        .file-chip {
+          display: inline-flex; align-items: center; gap: 6px;
+          padding: 4px 10px; margin: 2px 0; border-radius: 6px;
+          background: rgba(37, 99, 235, 0.04); border: 1px solid rgba(37, 99, 235, 0.15);
+          color: #2563eb; font-size: 12px;
+          font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+          cursor: pointer; transition: all 0.15s; text-decoration: none;
+        }
+        .file-chip:hover { background: rgba(37, 99, 235, 0.1); border-color: rgba(37, 99, 235, 0.3); }
+        .file-chip-name { max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      `}</style>
+    </div>
+  );
+}
+
+// ── Helper: format relative time ────────────────
+
+function formatTime(date: Date): string {
+  const now = new Date();
+  const diff = now.getTime() - date.getTime();
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+
+  if (minutes < 1) return "now";
+  if (minutes < 60) return `${minutes}m`;
+  if (hours < 24) return `${hours}h`;
+  if (days < 7) return `${days}d`;
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+// ── Chat content components (shared with chat page) ──
+
+const FILE_EXT_RE = /^[\w][\w. -]*\.(csv|tsv|txt|md|pdf|doc|docx|xlsx|xls|html|xml|json|yaml|yml|py|js|ts|tsx|jsx|sh|bash|sql|rb|go|java|css|scss|less|zip|tar|gz|tgz|rar|7z|png|jpe?g|gif|webp|svg|bmp|mp3|mp4|wav|ogg|log|cfg|ini|toml|env|pptx?|rtf)$/i;
+
+function MarkdownText({ text, employeeId }: { text: string; employeeId: string }) {
+  return (
+    <div className="markdown-body">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          a: ({ href, children, ...props }) => (
+            <a href={href} target="_blank" rel="noopener noreferrer" {...props}>
+              {children}
+            </a>
+          ),
+          img: ({ src, alt }) =>
+            typeof src === "string" ? <ImageEmbed src={src} alt={alt || "image"} /> : null,
+          code: ({ children, className, ...props }) => {
+            if (className) return <code className={className} {...props}>{children}</code>;
+            const text = String(children).trim();
+            if (FILE_EXT_RE.test(text)) return <FileChip filename={text} employeeId={employeeId} />;
+            return <code {...props}>{children}</code>;
+          },
+        }}
+      >
+        {text}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+function MessageContent({ content, employeeId }: { content: string; employeeId: string }) {
+  const imagePattern =
+    /`(\/api\/employees\/[^\s`]+\.(?:png|jpe?g|gif|webp|svg|bmp))`|(?:^|[\s:;,(])(\/api\/employees\/[^\s)\]>"'`]+\.(?:png|jpe?g|gif|webp|svg|bmp))/gm;
+
+  const parts: Array<{ type: "text" | "image"; value: string; alt?: string }> = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = imagePattern.exec(content)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push({ type: "text", value: content.slice(lastIndex, match.index) });
+    }
+    if (match[1]) {
+      parts.push({ type: "image", value: match[1].trim(), alt: "image" });
+    } else if (match[2]) {
+      const url = match[2].trim();
+      const leadingChar = match[0].charAt(0);
+      if (leadingChar && /[\s:;,(]/.test(leadingChar)) {
+        parts.push({ type: "text", value: leadingChar });
+      }
+      parts.push({ type: "image", value: url, alt: "image" });
+    }
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < content.length) {
+    parts.push({ type: "text", value: content.slice(lastIndex) });
+  }
+
+  if (parts.length === 0 || parts.every((p) => p.type === "text")) {
+    return <MarkdownText text={content} employeeId={employeeId} />;
+  }
+
+  return (
+    <>
+      {parts.map((part, i) =>
+        part.type === "image" ? (
+          <ImageEmbed key={i} src={part.value} alt={part.alt || "image"} />
+        ) : (
+          <MarkdownText key={i} text={part.value} employeeId={employeeId} />
+        ),
+      )}
+    </>
+  );
+}
+
+function getFileIcon(filename: string) {
+  const ext = filename.split(".").pop()?.toLowerCase() || "";
+  if (["csv", "tsv", "xlsx", "xls"].includes(ext)) return FileSpreadsheet;
+  if (["py", "js", "ts", "tsx", "jsx", "sh", "bash", "sql", "rb", "go", "java", "css", "scss", "html", "xml", "json", "yaml", "yml"].includes(ext)) return FileCode;
+  if (["txt", "md", "log", "rtf", "doc", "docx", "pdf"].includes(ext)) return FileText;
+  return File;
+}
+
+function FileChip({ filename, employeeId }: { filename: string; employeeId: string }) {
+  const [downloading, setDownloading] = useState(false);
+  const Icon = getFileIcon(filename);
+
+  const handleDownload = async () => {
+    setDownloading(true);
+    try {
+      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+      const res = await fetch(`/api/employees/${employeeId}/workspace/${encodeURIComponent(filename)}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) throw new Error("File not found");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      window.open(`/api/employees/${employeeId}/workspace/${encodeURIComponent(filename)}`, "_blank");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  return (
+    <button onClick={handleDownload} disabled={downloading} className="file-chip" title={`Download ${filename}`}>
+      <Icon size={13} />
+      <span className="file-chip-name">{filename}</span>
+      {downloading ? (
+        <Loader2 size={11} style={{ animation: "spin 0.8s linear infinite" }} />
+      ) : (
+        <Download size={11} />
+      )}
+    </button>
+  );
+}
+
+function ImageEmbed({ src, alt }: { src: string; alt: string }) {
+  const [error, setError] = useState(false);
+
+  if (error) {
+    return (
+      <div style={{ margin: "8px 0" }}>
+        <a
+          href={src}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "8px 12px",
+            borderRadius: 8,
+            background: "var(--bg-secondary, #f5f5f5)",
+            border: "1px solid var(--border, #e5e5e5)",
+            color: "#2563eb",
+            fontSize: 13,
+            textDecoration: "none",
+          }}
+        >
+          {alt || src.split("/").pop() || "View file"}
+        </a>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ margin: "8px 0" }}>
+      <a href={src} target="_blank" rel="noopener noreferrer">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={src}
+          alt={alt}
+          onError={() => setError(true)}
+          style={{
+            maxWidth: "100%",
+            maxHeight: 400,
+            borderRadius: 8,
+            border: "1px solid var(--border, #e5e5e5)",
+            cursor: "pointer",
+          }}
+          loading="lazy"
+        />
+      </a>
+    </div>
+  );
+}

@@ -9,7 +9,7 @@ import { db } from "@/lib/db";
 import { employees } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
 import { randomUUID } from "crypto";
-import { getCompanyBackend, createBackendClient } from "@/lib/backend";
+import { getEmployeeBackend, createBackendClient } from "@/lib/backend";
 
 async function authenticate(request: NextRequest) {
   const token =
@@ -130,7 +130,7 @@ export async function PUT(
     .where(eq(employees.id, id));
 
   // Sync all credentials to the employee's container so they can access them
-  const backendConfig = await getCompanyBackend(session.companyId);
+  const backendConfig = await getEmployeeBackend(id);
   if (backendConfig) {
     try {
       const backend = createBackendClient(backendConfig);
@@ -204,7 +204,7 @@ export async function DELETE(
     .where(eq(employees.id, id));
 
   // Re-sync remaining credentials to the container
-  const backendConfig = await getCompanyBackend(session.companyId);
+  const backendConfig = await getEmployeeBackend(id);
   if (backendConfig) {
     try {
       const backend = createBackendClient(backendConfig);

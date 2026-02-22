@@ -12,6 +12,12 @@ import {
   generateCaptchaSolvingSkill,
   generateAccountCreationSkill,
   generateTaskLoggingSkill,
+  generateMediaGenerationSkill,
+  generateRestartGatewaySkill,
+  generateTeamCommunicationSkill,
+  generateTaskManagementSkill,
+  generateImageScript,
+  generateVideoScript,
   type EmployeeInput,
 } from "@ai-employees/openclaw-config";
 import { docker, ensureNetwork, ensureImage } from "../docker/client.js";
@@ -19,7 +25,10 @@ import { docker, ensureNetwork, ensureImage } from "../docker/client.js";
 const OPENCLAW_IMAGE = process.env.OPENCLAW_IMAGE || "ghcr.io/carmichgo/openclaw:latest";
 const OPENCLAW_NETWORK = process.env.OPENCLAW_NETWORK || "ai-employees-internal";
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
 const BRAVE_API_KEY = process.env.BRAVE_API_KEY || "";
+const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID || "";
+const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || "";
 
 /** Derive a per-employee encryption key from the system key + employee ID */
@@ -88,15 +97,20 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
       config: {},
     }));
 
+    // Determine resource limits based on employee tier
+    const tier = (employee.tier as EmployeeTier) || "junior";
+
     // Generate OpenClaw config
     const employeeInput: EmployeeInput = {
       id: employee.id,
       name: employee.name,
       jobTitle: employee.jobTitle,
       emoji: employee.emoji || undefined,
+      tier,
       persona: employee.persona,
       goals: employee.goals,
       personalityConfig: employee.personalityConfig as { autonomy?: string; proactivity?: string; communication?: string } | null,
+      authorityConfig: employee.authorityConfig as { defaultRole?: "manager" | "colleague"; members?: Array<{ slackUserId: string; name: string; role: "manager" | "colleague" }> } | null,
       companySlug: company.slug,
       companyName: company.name,
       ownerName: owner?.name,
@@ -109,8 +123,6 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     const config = generateOpenClawConfig(employeeInput, employee.gatewayToken!);
     const soulMd = generateSoulMd(employeeInput);
 
-    // Determine resource limits based on employee tier
-    const tier = (employee.tier as EmployeeTier) || "junior";
     const resources = getResourcesForTier(tier);
 
     // Write OpenClaw config + soul.md + skills to a host directory that gets bind-mounted
@@ -121,6 +133,10 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     mkdirSync(`${configDir}/skills/captcha-solving`, { recursive: true });
     mkdirSync(`${configDir}/skills/account-creation`, { recursive: true });
     mkdirSync(`${configDir}/skills/task-logging`, { recursive: true });
+    mkdirSync(`${configDir}/skills/media-generation`, { recursive: true });
+    mkdirSync(`${configDir}/skills/restart-gateway`, { recursive: true });
+    mkdirSync(`${configDir}/skills/team-communication`, { recursive: true });
+    mkdirSync(`${configDir}/skills/task-management`, { recursive: true });
     writeFileSync(`${configDir}/openclaw.json`, JSON.stringify(config, null, 2));
     writeFileSync(`${configDir}/SOUL.md`, soulMd);
     writeFileSync(`${configDir}/workspace/SOUL.md`, soulMd);
@@ -132,6 +148,14 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     writeFileSync(`${configDir}/skills/captcha-solving/SKILL.md`, generateCaptchaSolvingSkill());
     writeFileSync(`${configDir}/skills/account-creation/SKILL.md`, generateAccountCreationSkill());
     writeFileSync(`${configDir}/skills/task-logging/SKILL.md`, generateTaskLoggingSkill());
+    writeFileSync(`${configDir}/skills/media-generation/SKILL.md`, generateMediaGenerationSkill());
+    writeFileSync(`${configDir}/skills/restart-gateway/SKILL.md`, generateRestartGatewaySkill());
+    writeFileSync(`${configDir}/skills/team-communication/SKILL.md`, generateTeamCommunicationSkill());
+    writeFileSync(`${configDir}/skills/task-management/SKILL.md`, generateTaskManagementSkill());
+
+    // Write CLI wrapper scripts for image/video generation (installed into container below)
+    writeFileSync(`${configDir}/generate-image.sh`, generateImageScript(), { mode: 0o755 });
+    writeFileSync(`${configDir}/generate-video.sh`, generateVideoScript(), { mode: 0o755 });
 
     // Fix permissions for the node user (uid 1000) inside the container
     execSync(`chown -R 1000:1000 ${configDir}`);
@@ -146,15 +170,20 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
         `NODE_OPTIONS=--max-old-space-size=1536`,
         `OPENCLAW_GATEWAY_TOKEN=${employee.gatewayToken}`,
         `ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}`,
+        ...(GEMINI_API_KEY ? [`GEMINI_API_KEY=${GEMINI_API_KEY}`] : []),
         ...(BRAVE_API_KEY ? [`BRAVE_API_KEY=${BRAVE_API_KEY}`] : []),
+        ...(TWILIO_ACCOUNT_SID ? [`TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}`] : []),
+        ...(TWILIO_AUTH_TOKEN ? [`TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}`] : []),
         `ENCRYPTION_KEY=${deriveEmployeeEncryptionKey(employeeId)}`,
+        `EMPLOYEE_ID=${employeeId}`,
         `EMPLOYEE_EMAIL=${emailAddress}`,
         `EMPLOYEE_NAME=${employee.name}`,
         `EMPLOYEE_JOB_TITLE=${employee.jobTitle}`,
         // Task API — internal endpoint for employees to log tasks
-        `EMPLOYEE_ID=${employeeId}`,
         `COMPANY_ID=${data.companyId}`,
         `TASK_API_URL=http://host.docker.internal:${process.env.API_PORT || "3001"}`,
+        // Internal API URL — used by the restart-gateway skill
+        `BLITZ_API_URL=http://api:${process.env.API_PORT || "3001"}`,
         // Email IMAP/SMTP credentials (if configured by company owner)
         ...buildEmailEnvVars(employee.provisionedAccounts as Record<string, unknown>),
       ],
@@ -233,7 +262,7 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
 
     // Wait for the OpenClaw gateway to be ready before marking active
     if (containerIp) {
-      await waitForGateway(containerIp, 18789, 60_000);
+      await waitForGateway(containerIp, 18789, 120_000);
     }
 
     await db
@@ -291,7 +320,11 @@ export async function startEmployee(employeeId: string): Promise<void> {
 
   if (ip) {
     await db.update(employees).set({ containerHost: ip, updatedAt: new Date() }).where(eq(employees.id, employeeId));
-    await waitForGateway(ip, 18789, 30_000);
+    try {
+      await waitForGateway(ip, 18789, 30_000);
+    } catch {
+      console.log(`[start] Gateway not ready for ${employeeId} after restart, marking active anyway (container is running)`);
+    }
   }
 
   await db
@@ -395,7 +428,7 @@ export async function cleanupOrphanedContainers(): Promise<void> {
   }
 }
 
-/** Poll the gateway until it responds or timeout is reached */
+/** Poll the gateway until it responds or timeout is reached. Throws on timeout. */
 async function waitForGateway(host: string, port: number, timeoutMs: number): Promise<void> {
   const start = Date.now();
   const interval = 2000;
@@ -413,9 +446,7 @@ async function waitForGateway(host: string, port: number, timeoutMs: number): Pr
     }
     await new Promise((r) => setTimeout(r, interval));
   }
-  // Timed out — mark active anyway so the user isn't stuck in provisioning forever.
-  // The chat proxy will retry with IP refresh if needed.
-  console.log(`[provision] Gateway health check timed out after ${timeoutMs}ms, marking active anyway`);
+  throw new Error(`Gateway at ${host}:${port} did not respond within ${timeoutMs}ms`);
 }
 
 function parseMemory(mem: string): number {
@@ -546,6 +577,22 @@ CREDEOF
         apt-get install -y -qq oathtool 2>/dev/null || true
       '`,
       timeout: 30_000,
+    },
+    {
+      name: "media generation CLI wrappers",
+      cmd: `docker exec -u root ${containerName} bash -c '
+        cp /home/node/.openclaw/generate-image.sh /usr/local/bin/generate-image 2>/dev/null &&
+        cp /home/node/.openclaw/generate-video.sh /usr/local/bin/generate-video 2>/dev/null &&
+        chmod +x /usr/local/bin/generate-image /usr/local/bin/generate-video
+      '`,
+      timeout: 10_000,
+    },
+    {
+      name: "Python deps for media generation",
+      cmd: `docker exec ${containerName} bash -c '
+        pip3 install -q google-genai Pillow 2>/dev/null || true
+      '`,
+      timeout: 60_000,
     },
   ];
 

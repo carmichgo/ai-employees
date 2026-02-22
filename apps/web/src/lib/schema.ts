@@ -20,6 +20,8 @@ export const companies = pgTable("companies", {
   maxEmployees: integer("max_employees").notNull().default(5),
   status: varchar("status", { length: 20 }).notNull().default("active"),
   settings: jsonb("settings").notNull().default({}),
+  // Stripe billing
+  stripeCustomerId: varchar("stripe_customer_id", { length: 255 }),
   // Per-company DigitalOcean droplet
   dropletId: varchar("droplet_id", { length: 50 }),
   dropletIp: varchar("droplet_ip", { length: 45 }),
@@ -56,7 +58,18 @@ export const employees = pgTable("employees", {
   avatar: varchar("avatar", { length: 500 }),
   emoji: varchar("emoji", { length: 10 }).default("🤖"),
   tier: varchar("tier", { length: 20 }).notNull().default("junior"),
+  /** Stripe subscription item ID — links this employee to a line item on the company subscription */
+  stripeSubscriptionItemId: varchar("stripe_subscription_item_id", { length: 255 }),
+  /** Monthly price in dollars for this employee (base + add-ons) */
+  priceMonthly: integer("price_monthly"),
   status: varchar("status", { length: 20 }).notNull().default("provisioning"),
+  // Per-employee DigitalOcean droplet
+  dropletId: varchar("droplet_id", { length: 50 }),
+  dropletIp: varchar("droplet_ip", { length: 45 }),
+  dropletRegion: varchar("droplet_region", { length: 20 }),
+  dropletSize: varchar("droplet_size", { length: 50 }),
+  dropletStatus: varchar("droplet_status", { length: 20 }).default("none"),
+  interserviceSecret: varchar("interservice_secret", { length: 255 }),
   containerId: varchar("container_id", { length: 100 }),
   containerName: varchar("container_name", { length: 255 }),
   containerHost: varchar("container_host", { length: 255 }),
@@ -74,6 +87,10 @@ export const employees = pgTable("employees", {
   }),
   toolsConfig: jsonb("tools_config").notNull().default({}),
   sandboxConfig: jsonb("sandbox_config").notNull().default({}),
+  authorityConfig: jsonb("authority_config").notNull().default({
+    defaultRole: "manager",
+    members: [],
+  }),
   emailAddress: varchar("email_address", { length: 255 }),
   provisionedAccounts: jsonb("provisioned_accounts").notNull().default({}),
   credentials: jsonb("credentials").notNull().default([]),
@@ -178,9 +195,23 @@ export const tasks = pgTable("tasks", {
   status: varchar("status", { length: 20 }).notNull().default("pending"),
   priority: varchar("priority", { length: 20 }).notNull().default("medium"),
   source: varchar("source", { length: 20 }).notNull().default("manager"),
+  category: varchar("category", { length: 100 }),
+  dueDate: timestamp("due_date", { withTimezone: true }),
   completedAt: timestamp("completed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ── Task Comments ──────────────────────────────────────
+export const taskComments = pgTable("task_comments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  taskId: uuid("task_id")
+    .notNull()
+    .references(() => tasks.id, { onDelete: "cascade" }),
+  authorType: varchar("author_type", { length: 20 }).notNull(),
+  authorName: varchar("author_name", { length: 200 }).notNull(),
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 // ── Usage Records ──────────────────────────────────────
@@ -195,4 +226,31 @@ export const usageRecords = pgTable("usage_records", {
   periodStart: timestamp("period_start", { withTimezone: true }).notNull(),
   periodEnd: timestamp("period_end", { withTimezone: true }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ── Pending Hires (stores hire payload while Stripe Checkout is in progress) ──
+export const pendingHires = pgTable("pending_hires", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  companyId: uuid("company_id")
+    .notNull()
+    .references(() => companies.id),
+  payload: jsonb("payload").notNull(),
+  status: varchar("status", { length: 20 }).notNull().default("pending"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ── Subscriptions (one per company — employees are line items) ──
+export const subscriptions = pgTable("subscriptions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  companyId: uuid("company_id")
+    .notNull()
+    .references(() => companies.id),
+  stripeSubscriptionId: varchar("stripe_subscription_id", { length: 255 }).notNull().unique(),
+  stripeCustomerId: varchar("stripe_customer_id", { length: 255 }).notNull(),
+  status: varchar("status", { length: 30 }).notNull().default("incomplete"),
+  currentPeriodStart: timestamp("current_period_start", { withTimezone: true }),
+  currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+  cancelAtPeriodEnd: boolean("cancel_at_period_end").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
