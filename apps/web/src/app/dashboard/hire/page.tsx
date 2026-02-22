@@ -56,6 +56,8 @@ import {
   Users,
   Plus,
   Trash2,
+  ImageIcon,
+  Video,
 } from "lucide-react";
 
 // ── Steps ──────────────────────────────────────
@@ -88,7 +90,8 @@ const CAPABILITY_ICONS: Record<string, any> = {
   "code-execution": Code,
   scheduling: Calendar,
   memory: Sparkles,
-  "visual-media": Palette,
+  "image-generation": ImageIcon,
+  "video-generation": Video,
   "phone-calls": Headphones,
 };
 
