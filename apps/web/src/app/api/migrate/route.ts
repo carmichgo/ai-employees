@@ -76,7 +76,9 @@ export async function POST(request: NextRequest) {
       const stuck = await sql`
         UPDATE employees
         SET droplet_id = NULL, droplet_ip = NULL, droplet_status = 'none',
-            status = 'provisioning', interservice_secret = NULL
+            status = 'provisioning', interservice_secret = NULL,
+            container_id = NULL, container_host = NULL, container_port = NULL,
+            error_message = NULL
         WHERE (droplet_status = 'active' OR droplet_status = 'error')
           AND status != 'terminated'
           AND droplet_id IS NOT NULL
@@ -156,6 +158,51 @@ export async function POST(request: NextRequest) {
           results.push(`rebuild-container: reprovision ${provRes.status} ${JSON.stringify(provData)}`);
         } catch (err: any) {
           results.push(`rebuild-container: FAILED — ${err.message}`);
+        }
+      }
+    }
+
+    // Admin action: reset a specific employee's container fields and trigger reprovision
+    if (action === "reset-employee") {
+      const empId = request.nextUrl.searchParams.get("employeeId");
+      if (!empId) {
+        return NextResponse.json({ error: "employeeId required" }, { status: 400 });
+      }
+      // Clear ALL stale container fields and reset status
+      const [emp] = await sql`
+        UPDATE employees
+        SET status = 'provisioning',
+            container_id = NULL,
+            container_host = NULL,
+            container_port = NULL,
+            error_message = NULL
+        WHERE id = ${empId}
+        RETURNING id, name, droplet_ip, interservice_secret
+      `;
+      if (!emp) {
+        results.push(`reset-employee: employee ${empId} not found`);
+      } else {
+        results.push(`reset-employee: cleared container fields for ${emp.name}`);
+
+        // Trigger reprovision on the droplet
+        if (emp.droplet_ip && emp.interservice_secret) {
+          try {
+            const provRes = await fetch(`http://${emp.droplet_ip}:3001/internal/employees/${empId}/reprovision`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "X-INTERSERVICE-SECRET": emp.interservice_secret,
+              },
+              body: JSON.stringify({}),
+              signal: AbortSignal.timeout(15000),
+            });
+            const provData = await provRes.json().catch(() => ({}));
+            results.push(`reset-employee: reprovision ${provRes.status} ${JSON.stringify(provData)}`);
+          } catch (err: any) {
+            results.push(`reset-employee: reprovision FAILED — ${err.message}`);
+          }
+        } else {
+          results.push(`reset-employee: no droplet IP or secret — cannot trigger reprovision`);
         }
       }
     }
