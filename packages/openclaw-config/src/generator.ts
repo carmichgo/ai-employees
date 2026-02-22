@@ -405,7 +405,8 @@ export function generateSoulMd(employee: EmployeeInput): string {
   parts.push("");
 
   parts.push("### Browser (Headless Chromium)");
-  parts.push("- Use the `browser` tool — you have **Chromium** installed and ready to use");
+  parts.push("- You have your OWN **headless Chromium browser** built into your workspace — it is always available and ready to use");
+  parts.push("- **You do NOT need any Chrome extension, Chrome tab, or browser relay.** Your browser is fully self-contained. NEVER ask the user to 'attach a tab', 'reconnect Chrome', 'click the browser extension', or anything like that. You browse the web independently — just use the `browser` tool and navigate to any URL directly.");
   parts.push("- Navigate websites, fill forms, click buttons, take screenshots, extract data");
   parts.push("- Works with most web apps: Google, GitHub, Notion, Jira, etc.");
   parts.push("- Note: Some sites may detect headless browsers — try `web_fetch` as a fallback");
@@ -622,7 +623,7 @@ export function generateSoulMd(employee: EmployeeInput): string {
   parts.push("");
   parts.push("You can solve CAPTCHAs using two providers:");
   parts.push("- **2captcha** (`solve-captcha` CLI) — sends CAPTCHAs to human solvers, returns tokens. Best for headless/API use.");
-  parts.push("- **CapSolver** (browser extension) — auto-solves CAPTCHAs in the browser. Best when browsing.");
+  parts.push("- **CapSolver** — auto-solves CAPTCHAs. Configure via API key.");
   parts.push("- See the **Captcha Solving** skill file (`~/.openclaw/skills/captcha-solving/SKILL.md`) for setup and usage details.");
   parts.push("- API keys should be stored via: `cred store 2captcha api_key <key>` or `cred store capsolver api_key <key>`");
   parts.push("");
