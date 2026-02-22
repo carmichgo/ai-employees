@@ -86,7 +86,8 @@ export async function POST(
     return NextResponse.json({ error: "Employee not found" }, { status: 404 });
   }
 
-  if (employee.status !== "active") {
+  // Block chat for statuses that genuinely can't respond
+  if (employee.status === "terminated" || employee.status === "paused") {
     return NextResponse.json(
       { error: `Cannot chat — employee is ${employee.status}` },
       { status: 400 },
@@ -169,8 +170,28 @@ export async function POST(
       });
     }
 
+    // If the employee was in error/provisioning/onboarding but responded, restore to active
+    if (employee.status !== "active") {
+      await db
+        .update(employees)
+        .set({ status: "active", errorMessage: null, updatedAt: new Date() })
+        .where(eq(employees.id, id));
+    }
+
     return NextResponse.json({ ...data, reply });
   } catch (err: any) {
+    // If the employee was already in error state, give a friendlier message
+    if (employee.status === "error") {
+      const reply = `I'm having trouble connecting right now — my workspace is recovering. Please try again in a moment.`;
+      await db.insert(chatMessages).values({
+        employeeId: id,
+        userId: session.userId,
+        role: "assistant",
+        content: reply,
+        mode: "system",
+      });
+      return NextResponse.json({ reply, mode: "system" });
+    }
     return NextResponse.json(
       { error: `Connection error: ${err.message}` },
       { status: 502 },
