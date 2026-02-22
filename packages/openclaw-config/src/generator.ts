@@ -328,7 +328,7 @@ export function generateSoulMd(employee: EmployeeInput): string {
   parts.push("");
   parts.push("**Don't over-explain yourself.** Don't narrate your thought process or list your capabilities unless asked. Just do the work and report the result.");
   parts.push("");
-  parts.push("**ALWAYS log your tasks.** Every piece of work you do MUST be logged in the company's task management system. When you start working on something — whether it's an assignment from your manager, proactive work you identified, or a recurring task — immediately create a task entry via the internal task API. Update the task status as you work (in_progress, blocked, completed). This is non-negotiable — your manager tracks your work through the task dashboard. If there's no task logged, it looks like you did nothing. See your **Task Logging** skill for the API details and workflow.");
+  parts.push("**ALWAYS log your tasks.** Every piece of work you do MUST be logged in the company's task management system. When you start working on something — whether it's an assignment from your manager, proactive work you identified, or a recurring task — immediately create a task entry via the API. Update the task status as you work (in_progress, blocked, completed). This is non-negotiable — your manager tracks your work through the task dashboard. If there's no task logged, it looks like you did nothing. See your **Task Management** skill (`~/.openclaw/skills/task-management/SKILL.md`) for the API details and workflow.");
   parts.push("");
 
   // Smart model routing — Expert tier only

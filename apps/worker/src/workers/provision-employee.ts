@@ -179,11 +179,9 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
         `EMPLOYEE_EMAIL=${emailAddress}`,
         `EMPLOYEE_NAME=${employee.name}`,
         `EMPLOYEE_JOB_TITLE=${employee.jobTitle}`,
-        // Task API — internal endpoint for employees to log tasks
         `COMPANY_ID=${data.companyId}`,
-        `TASK_API_URL=http://host.docker.internal:${process.env.API_PORT || "3001"}`,
-        // Internal API URL — used by the restart-gateway skill
-        `BLITZ_API_URL=http://api:${process.env.API_PORT || "3001"}`,
+        // Internal API URL — used by task-management, restart-gateway, team-communication skills
+        `BLITZ_API_URL=http://host.docker.internal:${process.env.API_PORT || "3001"}`,
         // Email IMAP/SMTP credentials (if configured by company owner)
         ...buildEmailEnvVars(employee.provisionedAccounts as Record<string, unknown>),
       ],

@@ -1,101 +1,131 @@
 /**
- * Task Management Skill — lets AI employees view, create, and update their tasks.
+ * Task Management Skill — the single source of truth for how AI employees
+ * log, view, create, and update tasks in the company task board.
  *
- * Employees can see their assigned tasks, update progress, create self-reported tasks,
- * and add comments — all visible on the company's centralized task board.
+ * Uses the BLITZ_API_URL + /employee/tasks endpoints (supports categories & comments).
  */
 
 export function generateTaskManagementSkill(): string {
-  return `# Task Management
+  return `# Task Management & Logging
 
-You have a centralized task board that your managers use to track your work. You should keep it updated so they always know what you're doing.
+You MUST log every piece of work you do to the company's task management system. This is not optional — your manager tracks your work through the task dashboard. If you don't log tasks, it looks like you're doing nothing.
 
-## View Your Tasks
+## When to Log Tasks
 
-List all tasks assigned to you:
+**Always log a task when you:**
+- Receive a new assignment or request from your manager or any channel
+- Start working on something proactively (research, monitoring, maintenance, etc.)
+- Pick up a recurring task (email checks, social media posting, report generation, etc.)
+- Begin a significant sub-task within a larger project
+
+**The rule is simple: if you're doing work, there should be a task for it.**
+
+## API Reference
+
+All requests use your gateway token for authentication:
 \`\`\`bash
-curl -s "$BLITZ_API_URL/employee/tasks" \\
-  -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" | jq .
+AUTH="Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN"
+CT="Content-Type: application/json"
 \`\`\`
 
-Returns:
-\`\`\`json
-{
-  "tasks": [
-    {
-      "id": "uuid",
-      "title": "Write blog post about Q1 results",
-      "description": "Include revenue numbers and customer growth",
-      "status": "in_progress",
-      "priority": "high",
-      "source": "manager",
-      "category": "content",
-      "dueDate": "2026-02-20T00:00:00.000Z",
-      "createdAt": "2026-02-17T10:00:00.000Z"
-    }
-  ]
-}
+### List Your Tasks
+\`\`\`bash
+curl -s "$BLITZ_API_URL/employee/tasks" -H "$AUTH" | jq .
 \`\`\`
 
-## Create a Task (Self-Reported)
-
-When you start working on something significant, log it as a task so your managers can see it:
+### Create a Task
 \`\`\`bash
 curl -s -X POST "$BLITZ_API_URL/employee/tasks" \\
-  -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" \\
-  -H "Content-Type: application/json" \\
+  -H "$AUTH" -H "$CT" \\
   -d '{
-    "title": "Researching competitor pricing pages",
-    "description": "Analyzing top 5 competitors for pricing strategy",
+    "title": "Brief description of what you are doing",
+    "description": "More details about the task",
     "priority": "medium",
     "category": "research",
     "status": "in_progress"
   }' | jq .
 \`\`\`
 
-## Update a Task
+The response includes the task ID — save it so you can update the task later:
+\`\`\`json
+{ "task": { "id": "uuid-here", "title": "...", "status": "in_progress" } }
+\`\`\`
 
-Update status or add a progress comment:
+**Priority values:** \`low\`, \`medium\`, \`high\`, \`urgent\`
+**Category examples:** \`research\`, \`marketing\`, \`engineering\`, \`content\`, \`admin\`, \`support\`, \`outreach\`
+
+### Update a Task
 \`\`\`bash
 curl -s -X PATCH "$BLITZ_API_URL/employee/tasks/TASK_ID" \\
-  -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" \\
-  -H "Content-Type: application/json" \\
+  -H "$AUTH" -H "$CT" \\
   -d '{
     "status": "completed",
-    "comment": "Finished the blog post — 1,200 words covering all Q1 metrics."
+    "comment": "Summary of what was done and the result."
   }' | jq .
 \`\`\`
 
 **Status values:** \`pending\`, \`in_progress\`, \`completed\`, \`blocked\`
 
-**Priority values:** \`low\`, \`medium\`, \`high\`, \`urgent\`
+## Standard Task Lifecycle
 
-## When to Update Tasks
+1. **Receive work** — your manager asks you to do something, or you identify work to do
+2. **Create task immediately** — log it with status \`in_progress\` and appropriate priority
+3. **Do the work** — complete the task using your tools and capabilities
+4. **Mark complete** — update the task status to \`completed\` with a comment summarizing the result
+5. **Report back** — tell your manager what you did (the task is also visible in the dashboard)
 
-- **Starting work:** Change status from \`pending\` to \`in_progress\` and add a comment about your approach
-- **Making progress:** Add comments with updates (e.g., "Draft completed, reviewing now")
-- **Hitting a blocker:** Change status to \`blocked\` and add a comment explaining the issue
-- **Finishing:** Change status to \`completed\` and add a summary of what was done
-- **Starting something new:** Create a self-reported task so your manager sees it on the board
+### Example: Manager Asks You to Research Competitors
+
+\`\`\`bash
+# Step 1: Create the task immediately
+TASK=$(curl -s -X POST "$BLITZ_API_URL/employee/tasks" \\
+  -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d '{"title": "Research top 5 competitors", "description": "Analyze competitor pricing, features, and positioning", "priority": "high", "category": "research"}')
+
+TASK_ID=$(echo "$TASK" | jq -r '.task.id')
+
+# Step 2: Do the research...
+# (web search, browse competitor sites, compile findings)
+
+# Step 3: Mark complete when done
+curl -s -X PATCH "$BLITZ_API_URL/employee/tasks/$TASK_ID" \\
+  -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d '{"status": "completed", "comment": "Completed analysis of 5 competitors with pricing comparison."}'
+\`\`\`
+
+### Blocked Tasks
+
+If you can't complete a task because you need something:
+
+\`\`\`bash
+curl -s -X PATCH "$BLITZ_API_URL/employee/tasks/$TASK_ID" \\
+  -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d '{"status": "blocked", "comment": "Need API credentials for the analytics platform to proceed"}'
+\`\`\`
+
+Then tell your manager what you need.
 
 ## Periodic Task Checking
 
-Your system will periodically remind you to check your task board. When you receive a task board check message:
+Check your task board proactively between tasks or when you finish something. When you receive a task board check:
 
-1. **Review the listed tasks** — understand what's been assigned
-2. **Pick up tasks** you can start — change their status to \`in_progress\`
-3. **Add a comment** explaining your approach for each task you start
-4. **Don't drop current work** — finish what you're doing first if it's urgent, then pick up new tasks
-
-You should also check your task board proactively between tasks or when you finish something.
+1. Review the listed tasks — understand what's been assigned
+2. Pick up tasks you can start — change their status to \`in_progress\`
+3. Add a comment explaining your approach for each task you start
+4. Don't drop current work — finish what you're doing first if it's urgent
 
 ## Best Practices
 
-- **Always check your tasks** when you start working — see if there's anything assigned to you
-- **Keep tasks current** — don't leave stale "in progress" tasks hanging around
+- **Log tasks immediately** — don't wait until you're done. Create the task as soon as you start working.
+- **Use clear, descriptive titles** — "Research competitors" is better than "Research". "Draft Q4 blog post on AI trends" is better than "Write blog post".
+- **Update status in real time** — if you get blocked, mark it blocked. When you finish, mark it complete.
+- **One task per logical unit of work** — don't create one mega-task for everything. If you're doing three different things, create three tasks.
 - **Add meaningful comments** — "Done" is less useful than "Published blog post to /blog/q1-results, 1,200 words"
-- **Self-report substantial work** — if you're doing something that takes more than a few minutes, create a task for it
-- **Use categories** to help organize work (e.g., "marketing", "research", "engineering", "admin")
-- **Prioritize wisely** — if you have multiple pending tasks, start with the highest priority or earliest due date
+- **Always mark tasks complete** — don't leave tasks hanging. If you finished the work, close the task.
+- **Use categories** to help organize work on the dashboard
+- If the API is temporarily unreachable, retry after a few seconds. Don't skip logging the task.
 `;
 }
