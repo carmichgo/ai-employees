@@ -217,8 +217,8 @@ export const CAPABILITY_OPTIONS: CapabilityOption[] = [
   { id: "code-execution", label: "Write & run code", desc: "Execute scripts, install packages, use the terminal", toolsAllow: ["group:runtime"] },
   { id: "scheduling", label: "Schedule recurring tasks", desc: "Set up automated routines and reminders", toolsAllow: ["group:automation"] },
   { id: "memory", label: "Remember past work", desc: "Recall previous conversations, contacts, and context", toolsAllow: ["group:memory", "group:sessions"] },
-  { id: "image-generation", label: "AI Image Generation", desc: "Create images, illustrations, and designs (Nano Banana)", toolsAllow: ["image", "canvas", "group:runtime"], skills: ["openai-image-gen", "gifgrep", "media-generation"] },
-  { id: "video-generation", label: "AI Video Generation", desc: "Generate video clips and animations (Veo 3)", toolsAllow: ["group:runtime"], skills: ["video-frames", "media-generation"] },
+  { id: "image-generation", label: "AI Image Generation", desc: "Create images, illustrations, and designs on demand", toolsAllow: ["image", "canvas", "group:runtime"], skills: ["openai-image-gen", "gifgrep", "media-generation"] },
+  { id: "video-generation", label: "AI Video Generation", desc: "Generate video clips and animations from text prompts", toolsAllow: ["group:runtime"], skills: ["video-frames", "media-generation"] },
   { id: "phone-calls", label: "Make phone calls", desc: "Place and receive voice calls", toolsAllow: [], plugins: ["voice-call"] },
 ];
 
