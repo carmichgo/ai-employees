@@ -376,6 +376,157 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     }
   });
 
+  // POST /internal/hot-update — pull latest code, rebuild, restart services + regenerate employee configs
+  fastify.post("/internal/hot-update", async (request, reply) => {
+    const body = request.body as { branch?: string } | undefined;
+    const branch = body?.branch || "main";
+
+    const steps: string[] = [];
+    const errors: string[] = [];
+
+    const run = (label: string, cmd: string, timeout = 120_000): boolean => {
+      try {
+        const output = execSync(cmd, { timeout, cwd: "/opt/ai-employees/app", stdio: "pipe" }).toString().trim();
+        steps.push(`✓ ${label}`);
+        if (output) steps.push(`  ${output.split("\n").pop()}`);
+        return true;
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message.slice(0, 300) : String(err).slice(0, 300);
+        errors.push(`✗ ${label}: ${msg}`);
+        return false;
+      }
+    };
+
+    // 1. Git pull latest code
+    run("git fetch", `git fetch origin ${branch}`, 30_000);
+    if (!run("git reset", `git reset --hard origin/${branch}`, 15_000)) {
+      return reply.status(500).send({ error: "Git pull failed", steps, errors });
+    }
+
+    // 2. Install dependencies
+    run("pnpm install", "pnpm install --frozen-lockfile 2>&1 || pnpm install 2>&1", 180_000);
+
+    // 3. Build API + worker
+    if (!run("build", "pnpm turbo build --filter=@ai-employees/api --filter=@ai-employees/worker 2>&1", 180_000)) {
+      return reply.status(500).send({ error: "Build failed", steps, errors });
+    }
+
+    // 4. Patch package.json main fields for ESM runtime
+    run("patch package.json", `sed -i 's|"main": "src/index.ts"|"main": "dist/index.js"|g' packages/*/package.json`, 5_000);
+
+    // 5. Regenerate OpenClaw configs for all active employees
+    const activeEmployees = await db.query.employees.findMany({
+      where: eq(employees.status, "active"),
+    });
+
+    for (const emp of activeEmployees) {
+      const configDir = `/opt/ai-employees/openclaw-configs/${emp.id}`;
+      if (!existsSync(configDir)) continue;
+
+      try {
+        // Dynamically import the config generators (freshly built)
+        const {
+          generateSoulMd: genSoul,
+          generateOpenClawConfig: genConfig,
+          generateCaptchaSolvingSkill: genCaptcha,
+          generateAccountCreationSkill: genAccount,
+          generateTaskLoggingSkill: genTaskLog,
+          generateMediaGenerationSkill: genMedia,
+          generateRestartGatewaySkill: genRestart,
+          generateTeamCommunicationSkill: genTeamComm,
+          generateTaskManagementSkill: genTaskMgmt,
+          generateCredentialManagerScript: genCred,
+          generateImageScript: genImage,
+          generateVideoScript: genVideo,
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        } = require("@ai-employees/openclaw-config");
+
+        const company = await db.query.companies.findFirst({ where: eq(companies.id, emp.companyId) });
+
+        const employeeInput = {
+          id: emp.id,
+          name: emp.name,
+          jobTitle: emp.jobTitle,
+          emoji: emp.emoji || undefined,
+          tier: emp.tier || "junior",
+          persona: emp.persona,
+          goals: emp.goals,
+          personalityConfig: emp.personalityConfig,
+          authorityConfig: emp.authorityConfig,
+          companySlug: company?.slug || "unknown",
+          companyName: company?.name || "Unknown",
+          modelConfig: emp.modelConfig as { primary: string; fallbacks?: string[] },
+          toolsConfig: emp.toolsConfig as Record<string, unknown>,
+          sandboxConfig: emp.sandboxConfig as Record<string, unknown>,
+          channels: [],
+        };
+
+        const soulMd = genSoul(employeeInput);
+        const config = genConfig(employeeInput, emp.gatewayToken!, soulMd);
+
+        // Write updated configs
+        writeFileSync(`${configDir}/openclaw.json`, JSON.stringify(config, null, 2));
+        writeFileSync(`${configDir}/SOUL.md`, soulMd);
+        writeFileSync(`${configDir}/workspace/SOUL.md`, soulMd);
+        writeFileSync(`${configDir}/cred.js`, genCred(), { mode: 0o755 });
+
+        // Write updated skills
+        const skillDir = `${configDir}/skills`;
+        writeFileSync(`${skillDir}/captcha-solving/SKILL.md`, genCaptcha());
+        writeFileSync(`${skillDir}/account-creation/SKILL.md`, genAccount());
+        writeFileSync(`${skillDir}/task-logging/SKILL.md`, genTaskLog());
+        writeFileSync(`${skillDir}/media-generation/SKILL.md`, genMedia());
+        writeFileSync(`${skillDir}/restart-gateway/SKILL.md`, genRestart());
+        writeFileSync(`${skillDir}/team-communication/SKILL.md`, genTeamComm());
+        writeFileSync(`${skillDir}/task-management/SKILL.md`, genTaskMgmt());
+        writeFileSync(`${configDir}/generate-image.sh`, genImage(), { mode: 0o755 });
+        writeFileSync(`${configDir}/generate-video.sh`, genVideo(), { mode: 0o755 });
+
+        // Fix permissions
+        execSync(`chown -R 1000:1000 ${configDir}`, { timeout: 5000 });
+
+        // Restart the OpenClaw container
+        if (emp.containerName) {
+          execSync(`docker restart ${emp.containerName}`, { timeout: 30_000 });
+          // Wait for container and update IP
+          await new Promise((r) => setTimeout(r, 3000));
+          try {
+            const newIp = execSync(
+              `docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ${emp.containerName}`,
+              { timeout: 5000 },
+            ).toString().trim();
+            if (newIp) {
+              await db.update(employees).set({ containerHost: newIp, updatedAt: new Date() }).where(eq(employees.id, emp.id));
+            }
+          } catch { /* non-fatal */ }
+        }
+
+        steps.push(`✓ Updated config for ${emp.name}`);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message.slice(0, 200) : String(err).slice(0, 200);
+        errors.push(`✗ Config update for ${emp.name}: ${msg}`);
+      }
+    }
+
+    // 6. Restart systemd services (API + worker)
+    // Use a delayed restart so this response can be sent first
+    setTimeout(() => {
+      try {
+        execSync("systemctl restart ai-employees-api ai-employees-worker", { timeout: 15_000 });
+      } catch { /* service restart is fire-and-forget */ }
+    }, 2000);
+
+    steps.push("✓ Service restart scheduled (2s delay)");
+
+    return {
+      success: errors.length === 0,
+      branch,
+      employeesUpdated: activeEmployees.length,
+      steps,
+      errors,
+    };
+  });
+
   // POST /internal/employees/:id/chat — proxy chat to container or call Anthropic directly
   fastify.post<{ Params: { id: string } }>("/internal/employees/:id/chat", async (request, reply) => {
     const { id } = request.params;
