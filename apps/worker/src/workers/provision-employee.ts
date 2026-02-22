@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, not, inArray } from "drizzle-orm";
 import crypto from "node:crypto";
 import { execSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -188,7 +188,6 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
       HostConfig: {
         Binds: [
           `${configDir}:/home/node/.openclaw`,
-          `${configDir}/workspace:/home/node/.openclaw/workspace`,
         ],
         ExtraHosts: ["host.docker.internal:host-gateway"],
         NetworkMode: OPENCLAW_NETWORK,
@@ -392,13 +391,13 @@ export async function cleanupOrphanedContainers(): Promise<void> {
 
   if (containers.length === 0) return;
 
-  // Get active employee IDs from DB
-  const activeEmployees = await db.query.employees.findMany({
-    where: eq(employees.status, "active"),
+  // Keep containers for employees that are active, provisioning, or paused
+  const keepEmployees = await db.query.employees.findMany({
+    where: not(inArray(employees.status, ["terminated"])),
     columns: { id: true, containerName: true },
   });
-  const activeIds = new Set(activeEmployees.map((e) => e.id));
-  const activeNames = new Set(activeEmployees.map((e) => e.containerName).filter(Boolean));
+  const activeIds = new Set(keepEmployees.map((e) => e.id));
+  const activeNames = new Set(keepEmployees.map((e) => e.containerName).filter(Boolean));
 
   let removed = 0;
   for (const info of containers) {

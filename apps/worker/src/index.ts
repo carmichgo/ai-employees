@@ -87,7 +87,10 @@ process.on("SIGTERM", shutdown);
 
 console.log("AI Employees Worker started — listening for provisioning jobs");
 
-// Clean up any orphaned containers from terminated employees on startup
-cleanupOrphanedContainers().catch((err) =>
-  console.error("[cleanup] Startup cleanup failed:", err.message),
-);
+// Clean up orphaned containers 30s after startup — delay to avoid killing
+// containers that are still being provisioned by in-flight jobs.
+setTimeout(() => {
+  cleanupOrphanedContainers().catch((err) =>
+    console.error("[cleanup] Startup cleanup failed:", err.message),
+  );
+}, 30_000);
