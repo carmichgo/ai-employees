@@ -649,6 +649,11 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       return reply.status(400).send({ error: `Employee is ${employee.status}` });
     }
 
+    // Fetch company + owner names so the system prompt includes full context
+    const company = await db.query.companies.findFirst({ where: eq(companies.id, employee.companyId) });
+    const owner = await db.query.users.findFirst({ where: eq(users.companyId, employee.companyId) });
+    const promptExtra = { companyName: company?.name, ownerName: owner?.name };
+
     // If container is available, route through it (OpenClaw)
     if (employee.containerHost && employee.containerPort) {
       let containerHost = employee.containerHost;
@@ -657,7 +662,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       const sendToContainer = async (host: string) => {
         const containerUrl = `http://${host}:${containerPort}/v1/chat/completions`;
         const messages = [
-          { role: "system", content: buildSystemPrompt(employee) },
+          { role: "system", content: buildSystemPrompt(employee, promptExtra) },
           ...body.messages,
         ];
         return fetch(containerUrl, {
@@ -730,7 +735,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       return reply.status(500).send({ error: "ANTHROPIC_API_KEY not configured" });
     }
 
-    const systemPrompt = buildSystemPrompt(employee);
+    const systemPrompt = buildSystemPrompt(employee, promptExtra);
     const modelConfig = employee.modelConfig as { primary: string };
     const modelId = toAnthropicModelId(modelConfig.primary);
 
@@ -777,10 +782,21 @@ export async function provisionRoutes(fastify: FastifyInstance) {
 }
 
 /** Build a system prompt from employee persona/goals */
-function buildSystemPrompt(employee: { name: string; jobTitle: string; persona: string | null; goals: string | null; emoji: string | null; personalityConfig?: unknown }): string {
+function buildSystemPrompt(employee: {
+  name: string; jobTitle: string; persona: string | null; goals: string | null;
+  emoji: string | null; personalityConfig?: unknown;
+}, extra?: { companyName?: string; ownerName?: string }): string {
+  const companyName = extra?.companyName || "the company";
   const parts = [
-    `You are ${employee.name}, a ${employee.jobTitle}. That is your name and role — you are not a generic AI assistant. You are a blitzer — an AI employee. When asked who you are, introduce yourself by name and role.`,
+    `You are ${employee.name}, ${employee.jobTitle} at ${companyName}. That is your name and role — you are not a generic AI assistant. You are a blitzer — an AI employee.`,
   ];
+
+  if (extra?.ownerName) {
+    parts.push(`\n\nYour manager is ${extra.ownerName}. You already know them — they hired you. Greet them by name when appropriate. Do NOT ask who they are.`);
+  }
+
+  parts.push(`\n\nYou are NOT starting from scratch. You know your role, your company, and your manager. Never say you have "no memory" or a "clean slate". Never ask "who are you?" or "what should I work on?" — you already know. Be confident and ready to work from your very first message.`);
+
   if (employee.persona) parts.push(`\n\n## Who You Are\n${employee.persona}`);
   if (employee.goals) parts.push(`\n\n## Your Goals\n${employee.goals}`);
 
