@@ -455,6 +455,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
           authorityConfig: emp.authorityConfig,
           companySlug: company?.slug || "unknown",
           companyName: company?.name || "Unknown",
+          ownerName: emp.ownerName,
           modelConfig: emp.modelConfig as { primary: string; fallbacks?: string[] },
           toolsConfig: emp.toolsConfig as Record<string, unknown>,
           sandboxConfig: emp.sandboxConfig as Record<string, unknown>,
@@ -525,6 +526,104 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       steps,
       errors,
     };
+  });
+
+  // POST /internal/regenerate-configs — regenerate SOUL.md and skills for all active employees
+  // Lightweight alternative to hot-update when code is already deployed
+  fastify.post("/internal/regenerate-configs", async (_request, reply) => {
+    const steps: string[] = [];
+    const errors: string[] = [];
+
+    const activeEmps = await db.query.employees.findMany({
+      where: eq(employees.status, "active"),
+    });
+
+    for (const emp of activeEmps) {
+      const configDir = `/opt/ai-employees/openclaw-configs/${emp.id}`;
+      if (!existsSync(configDir)) { errors.push(`Config dir missing for ${emp.name}`); continue; }
+
+      try {
+        const {
+          generateSoulMd: genSoul,
+          generateOpenClawConfig: genConfig,
+          generateCaptchaSolvingSkill: genCaptcha,
+          generateAccountCreationSkill: genAccount,
+          generateTaskLoggingSkill: genTaskLog,
+          generateMediaGenerationSkill: genMedia,
+          generateRestartGatewaySkill: genRestart,
+          generateTeamCommunicationSkill: genTeamComm,
+          generateTaskManagementSkill: genTaskMgmt,
+          generateCredentialManagerScript: genCred,
+          generateImageScript: genImage,
+          generateVideoScript: genVideo,
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        } = require("@ai-employees/openclaw-config");
+
+        const company = await db.query.companies.findFirst({ where: eq(companies.id, emp.companyId) });
+
+        const employeeInput = {
+          id: emp.id,
+          name: emp.name,
+          jobTitle: emp.jobTitle,
+          emoji: emp.emoji || undefined,
+          tier: emp.tier || "junior",
+          persona: emp.persona,
+          goals: emp.goals,
+          personalityConfig: emp.personalityConfig,
+          authorityConfig: emp.authorityConfig,
+          companySlug: company?.slug || "unknown",
+          companyName: company?.name || "Unknown",
+          ownerName: emp.ownerName,
+          modelConfig: emp.modelConfig as { primary: string; fallbacks?: string[] },
+          toolsConfig: emp.toolsConfig as Record<string, unknown>,
+          sandboxConfig: emp.sandboxConfig as Record<string, unknown>,
+          channels: [],
+        };
+
+        const soulMd = genSoul(employeeInput);
+        const config = genConfig(employeeInput, emp.gatewayToken!, soulMd);
+
+        writeFileSync(`${configDir}/openclaw.json`, JSON.stringify(config, null, 2));
+        writeFileSync(`${configDir}/SOUL.md`, soulMd);
+        writeFileSync(`${configDir}/workspace/SOUL.md`, soulMd);
+        writeFileSync(`${configDir}/cred.js`, genCred(), { mode: 0o755 });
+
+        const skillDir = `${configDir}/skills`;
+        writeFileSync(`${skillDir}/captcha-solving/SKILL.md`, genCaptcha());
+        writeFileSync(`${skillDir}/account-creation/SKILL.md`, genAccount());
+        writeFileSync(`${skillDir}/task-logging/SKILL.md`, genTaskLog());
+        writeFileSync(`${skillDir}/media-generation/SKILL.md`, genMedia());
+        writeFileSync(`${skillDir}/restart-gateway/SKILL.md`, genRestart());
+        writeFileSync(`${skillDir}/team-communication/SKILL.md`, genTeamComm());
+        writeFileSync(`${skillDir}/task-management/SKILL.md`, genTaskMgmt());
+        writeFileSync(`${configDir}/generate-image.sh`, genImage(), { mode: 0o755 });
+        writeFileSync(`${configDir}/generate-video.sh`, genVideo(), { mode: 0o755 });
+
+        execSync(`chown -R 1000:1000 ${configDir}`, { timeout: 5000 });
+
+        // Restart container to pick up new configs
+        if (emp.containerName) {
+          execSync(`docker restart ${emp.containerName}`, { timeout: 30_000 });
+          await new Promise((r) => setTimeout(r, 3000));
+          try {
+            const newIp = execSync(
+              `docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ${emp.containerName}`,
+              { timeout: 5000 },
+            ).toString().trim();
+            if (newIp) {
+              await db.update(employees).set({ containerHost: newIp, updatedAt: new Date() }).where(eq(employees.id, emp.id));
+            }
+          } catch { /* non-fatal */ }
+        }
+
+        steps.push(`✓ Regenerated configs for ${emp.name}`);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message.slice(0, 200) : String(err).slice(0, 200);
+        errors.push(`✗ ${emp.name}: ${msg}`);
+      }
+    }
+
+    return { success: errors.length === 0, employeesUpdated: activeEmps.length, steps, errors };
   });
 
   // POST /internal/employees/:id/chat — proxy chat to container or call Anthropic directly

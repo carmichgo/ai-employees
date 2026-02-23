@@ -127,8 +127,15 @@ export async function buildServer(config: Env) {
       echo "[$(date -Iseconds)] Restarting services..." >> ${logFile} && \
       systemctl restart ai-employees-worker && \
       echo "[$(date -Iseconds)] Worker restarted" >> ${logFile} && \
-      echo "[$(date -Iseconds)] UPDATE COMPLETE" >> ${logFile} && \
-      systemctl restart ai-employees-api || \
+      systemctl restart ai-employees-api && \
+      echo "[$(date -Iseconds)] API restarted, waiting for ready..." >> ${logFile} && \
+      sleep 8 && \
+      curl -sf -X POST http://localhost:3001/internal/regenerate-configs \
+        -H "x-interservice-secret: \${INTERSERVICE_SECRET}" \
+        -H "Content-Type: application/json" >> ${logFile} 2>&1 && \
+      echo "" >> ${logFile} && \
+      echo "[$(date -Iseconds)] Configs regenerated" >> ${logFile} && \
+      echo "[$(date -Iseconds)] UPDATE COMPLETE" >> ${logFile} || \
       echo "[$(date -Iseconds)] UPDATE FAILED" >> ${logFile}
     `;
 
