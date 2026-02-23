@@ -216,6 +216,35 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Admin action: hot-update — pull latest code and restart worker/containers on a droplet
+    if (action === "hot-update") {
+      const empId = request.nextUrl.searchParams.get("employeeId");
+      if (!empId) {
+        return NextResponse.json({ error: "employeeId required" }, { status: 400 });
+      }
+      const [emp] = await sql`SELECT id, name, droplet_ip, interservice_secret FROM employees WHERE id = ${empId}`;
+      if (!emp || !emp.droplet_ip || !emp.interservice_secret) {
+        results.push(`hot-update: employee not found or no droplet`);
+      } else {
+        try {
+          const branch = process.env.REPO_BRANCH || "main";
+          const hotRes = await fetch(`http://${emp.droplet_ip}:3001/internal/hot-update`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-INTERSERVICE-SECRET": emp.interservice_secret,
+            },
+            body: JSON.stringify({ branch }),
+            signal: AbortSignal.timeout(120000),
+          });
+          const hotData = await hotRes.text().catch(() => "no body");
+          results.push(`hot-update: ${hotRes.status} — ${hotData.substring(0, 500)}`);
+        } catch (err: any) {
+          results.push(`hot-update: FAILED — ${err.message}`);
+        }
+      }
+    }
+
     // Always include employee diagnostics
     const empRows = await sql`
       SELECT id, name, status, droplet_id, droplet_ip, droplet_status,
