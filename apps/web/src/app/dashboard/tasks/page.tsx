@@ -115,6 +115,7 @@ export default function TasksPage() {
   const [newComment, setNewComment] = useState("");
   const [newTask, setNewTask] = useState({
     employeeId: "", title: "", description: "", priority: "medium", category: "", dueDate: "",
+    recurring: false, cron: "0 9 * * 1-5",
   });
   const [creating, setCreating] = useState(false);
 
@@ -194,15 +195,27 @@ export default function TasksPage() {
     if (!newTask.employeeId || !newTask.title) return;
     setCreating(true);
     try {
-      await api.createTask({
-        employeeId: newTask.employeeId,
-        title: newTask.title,
-        description: newTask.description || undefined,
-        priority: newTask.priority,
-        category: newTask.category || undefined,
-        dueDate: newTask.dueDate || undefined,
-      });
-      setNewTask({ employeeId: "", title: "", description: "", priority: "medium", category: "", dueDate: "" });
+      if (newTask.recurring) {
+        // Create a schedule trigger instead of a one-off task
+        const message = newTask.description
+          ? `${newTask.title}\n\n${newTask.description}`
+          : newTask.title;
+        await api.createTrigger(newTask.employeeId, {
+          type: "schedule",
+          name: newTask.title,
+          config: { cron: newTask.cron, message },
+        });
+      } else {
+        await api.createTask({
+          employeeId: newTask.employeeId,
+          title: newTask.title,
+          description: newTask.description || undefined,
+          priority: newTask.priority,
+          category: newTask.category || undefined,
+          dueDate: newTask.dueDate || undefined,
+        });
+      }
+      setNewTask({ employeeId: "", title: "", description: "", priority: "medium", category: "", dueDate: "", recurring: false, cron: "0 9 * * 1-5" });
       setShowCreate(false);
       loadData();
     } catch { /* ignore */ }
@@ -948,10 +961,68 @@ export default function TasksPage() {
                     type="date"
                     value={newTask.dueDate}
                     onChange={(e) => setNewTask({ ...newTask, dueDate: e.target.value })}
-                    style={{ width: "100%", height: 36, padding: "0 10px", fontSize: 13, border: "1px solid #e5e5e5", borderRadius: 6, boxSizing: "border-box", color: "#0a0a0a" }}
+                    disabled={newTask.recurring}
+                    style={{ width: "100%", height: 36, padding: "0 10px", fontSize: 13, border: "1px solid #e5e5e5", borderRadius: 6, boxSizing: "border-box", color: "#0a0a0a", opacity: newTask.recurring ? 0.4 : 1 }}
                   />
                 </div>
               </div>
+
+              {/* Recurring toggle */}
+              <div>
+                <label
+                  style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 500, color: "#0a0a0a", cursor: "pointer" }}
+                  onClick={() => setNewTask({ ...newTask, recurring: !newTask.recurring, dueDate: !newTask.recurring ? "" : newTask.dueDate })}
+                >
+                  <div style={{
+                    width: 18, height: 18, borderRadius: 4, border: `1.5px solid ${newTask.recurring ? "#0a0a0a" : "#d4d4d4"}`,
+                    background: newTask.recurring ? "#0a0a0a" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s",
+                  }}>
+                    {newTask.recurring && <Check size={12} color="#fff" />}
+                  </div>
+                  <RefreshCw size={14} style={{ color: "#737373" }} />
+                  Recurring task (runs on a schedule)
+                </label>
+              </div>
+
+              {/* Cron schedule — shown when recurring */}
+              {newTask.recurring && (
+                <div style={{ background: "#fafafa", border: "1px solid #e5e5e5", borderRadius: 8, padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "#525252" }}>Schedule</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {[
+                      { label: "Every weekday 9am", cron: "0 9 * * 1-5" },
+                      { label: "Every hour", cron: "0 * * * *" },
+                      { label: "Every 30 min", cron: "*/30 * * * *" },
+                      { label: "Daily 9am", cron: "0 9 * * *" },
+                      { label: "Weekly Monday 9am", cron: "0 9 * * 1" },
+                      { label: "Weekly Friday 5pm", cron: "0 17 * * 5" },
+                    ].map((preset) => (
+                      <button
+                        key={preset.cron}
+                        type="button"
+                        onClick={() => setNewTask({ ...newTask, cron: preset.cron })}
+                        style={{
+                          padding: "4px 10px", fontSize: 11, fontWeight: 500, borderRadius: 6, cursor: "pointer",
+                          border: newTask.cron === preset.cron ? "1.5px solid #0a0a0a" : "1px solid #e5e5e5",
+                          background: newTask.cron === preset.cron ? "#0a0a0a" : "#fff",
+                          color: newTask.cron === preset.cron ? "#fff" : "#525252",
+                          transition: "all 0.15s",
+                        }}
+                      >{preset.label}</button>
+                    ))}
+                  </div>
+                  <div>
+                    <label style={{ display: "block", fontSize: 11, color: "#737373", marginBottom: 4 }}>Cron expression</label>
+                    <input
+                      value={newTask.cron}
+                      onChange={(e) => setNewTask({ ...newTask, cron: e.target.value })}
+                      placeholder="*/30 * * * *"
+                      style={{ width: "100%", height: 32, padding: "0 10px", fontSize: 12, fontFamily: "monospace", border: "1px solid #e5e5e5", borderRadius: 6, boxSizing: "border-box", color: "#0a0a0a" }}
+                    />
+                    <div style={{ fontSize: 10, color: "#a3a3a3", marginTop: 4 }}>min hour day month weekday — e.g. &quot;0 9 * * 1-5&quot; = weekdays at 9am</div>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 28 }}>
@@ -968,7 +1039,7 @@ export default function TasksPage() {
                   cursor: (!newTask.employeeId || !newTask.title || creating) ? "not-allowed" : "pointer",
                   opacity: (!newTask.employeeId || !newTask.title || creating) ? 0.4 : 1,
                 }}
-              >{creating ? "Creating..." : "Create Task"}</button>
+              >{creating ? "Creating..." : newTask.recurring ? "Create Recurring Task" : "Create Task"}</button>
             </div>
           </div>
         </div>

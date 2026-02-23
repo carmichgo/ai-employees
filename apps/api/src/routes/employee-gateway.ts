@@ -248,6 +248,7 @@ export async function employeeGatewayRoutes(fastify: FastifyInstance) {
       priority?: string;
       category?: string;
       status?: string;
+      dueDate?: string;
     };
 
     if (!body.title) {
@@ -265,6 +266,7 @@ export async function employeeGatewayRoutes(fastify: FastifyInstance) {
         category: body.category || null,
         status: body.status || "in_progress",
         source: "employee",
+        dueDate: body.dueDate ? new Date(body.dueDate) : null,
       })
       .returning();
 
@@ -283,6 +285,7 @@ export async function employeeGatewayRoutes(fastify: FastifyInstance) {
       title?: string;
       description?: string;
       category?: string;
+      dueDate?: string;
       comment?: string; // optional progress note
     };
 
@@ -305,6 +308,7 @@ export async function employeeGatewayRoutes(fastify: FastifyInstance) {
     if (body.title) updates.title = body.title;
     if (body.description !== undefined) updates.description = body.description;
     if (body.category !== undefined) updates.category = body.category;
+    if (body.dueDate !== undefined) updates.dueDate = body.dueDate ? new Date(body.dueDate) : null;
 
     const [task] = await db
       .update(tasks)
