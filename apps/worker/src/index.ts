@@ -44,6 +44,11 @@ const provisionWorker = new Worker(
   {
     connection,
     concurrency: 5,
+    // Provisioning jobs pull Docker images & create containers — can take several
+    // minutes.  The default lockDuration (30 s) causes BullMQ to mark them as
+    // stalled and re-queue, leading to duplicate container creation (409 conflict).
+    lockDuration: 600_000,       // 10 min — prevent false stalls
+    stalledInterval: 120_000,    // check every 2 min instead of 30 s
   },
 );
 

@@ -58,6 +58,13 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
   });
   if (!employee) throw new Error(`Employee ${employeeId} not found`);
 
+  // Guard against duplicate runs (e.g. BullMQ stalled-job retry).
+  // If the employee already has a running container, skip silently.
+  if (employee.status === "active" && employee.containerHost && employee.containerPort) {
+    console.log(`[provision] Employee ${employeeId} is already active — skipping duplicate job`);
+    return;
+  }
+
   // Get company for slug and plan
   const company = await db.query.companies.findFirst({
     where: eq(companies.id, data.companyId),
@@ -165,7 +172,7 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     execSync(`chown -R 1000:1000 ${configDir}`);
 
     // Create the container — OpenClaw starts directly with all built-in tools enabled
-    const containerOpts = {
+    const container = await docker.createContainer({
       Image: OPENCLAW_IMAGE,
       name: employee.containerName!,
       Cmd: ["node", "openclaw.mjs", "gateway", "--bind", "lan", "--allow-unconfigured"],
@@ -203,25 +210,7 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
         "ai-employees.employee-id": employeeId,
         "ai-employees.company-id": data.companyId,
       },
-    };
-
-    let container: Awaited<ReturnType<typeof docker.createContainer>>;
-    try {
-      container = await docker.createContainer(containerOpts);
-    } catch (createErr: any) {
-      // 409 = container name already in use — remove the stale one and retry
-      if (createErr?.statusCode === 409) {
-        console.warn(`[provision] Container name "${employee.containerName}" already exists, removing stale container…`);
-        try {
-          const stale = docker.getContainer(employee.containerName!);
-          await stale.stop().catch(() => {});
-          await stale.remove({ force: true });
-        } catch { /* already gone */ }
-        container = await docker.createContainer(containerOpts);
-      } else {
-        throw createErr;
-      }
-    }
+    });
 
     // Start the container
     await container.start();
