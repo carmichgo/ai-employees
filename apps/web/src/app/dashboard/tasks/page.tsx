@@ -1011,16 +1011,7 @@ export default function TasksPage() {
                       >{preset.label}</button>
                     ))}
                   </div>
-                  <div>
-                    <label style={{ display: "block", fontSize: 11, color: "#737373", marginBottom: 4 }}>Cron expression</label>
-                    <input
-                      value={newTask.cron}
-                      onChange={(e) => setNewTask({ ...newTask, cron: e.target.value })}
-                      placeholder="*/30 * * * *"
-                      style={{ width: "100%", height: 32, padding: "0 10px", fontSize: 12, fontFamily: "monospace", border: "1px solid #e5e5e5", borderRadius: 6, boxSizing: "border-box", color: "#0a0a0a" }}
-                    />
-                    <div style={{ fontSize: 10, color: "#a3a3a3", marginTop: 4 }}>min hour day month weekday — e.g. &quot;0 9 * * 1-5&quot; = weekdays at 9am</div>
-                  </div>
+                  <input type="hidden" value={newTask.cron} />
                 </div>
               )}
             </div>
