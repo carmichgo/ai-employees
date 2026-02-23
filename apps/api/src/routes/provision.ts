@@ -438,8 +438,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
           generateCredentialManagerScript: genCred,
           generateImageScript: genImage,
           generateVideoScript: genVideo,
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        } = require("@ai-employees/openclaw-config");
+        } = await import("@ai-employees/openclaw-config");
 
         const company = await db.query.companies.findFirst({ where: eq(companies.id, emp.companyId) });
         const owner = await db.query.users.findFirst({ where: eq(users.companyId, emp.companyId) });
@@ -557,8 +556,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
           generateCredentialManagerScript: genCred,
           generateImageScript: genImage,
           generateVideoScript: genVideo,
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        } = require("@ai-employees/openclaw-config");
+        } = await import("@ai-employees/openclaw-config");
 
         const company = await db.query.companies.findFirst({ where: eq(companies.id, emp.companyId) });
         const owner = await db.query.users.findFirst({ where: eq(users.companyId, emp.companyId) });
