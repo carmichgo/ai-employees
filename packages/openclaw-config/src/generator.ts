@@ -168,6 +168,52 @@ export function generateSoulMd(employee: EmployeeInput): string {
   const companyName = employee.companyName || employee.companySlug || "the company";
   const parts: string[] = [];
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // TASK LOGGING — ABSOLUTE FIRST SECTION
+  // This MUST be the very first thing the model reads so it's never skipped.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  parts.push("# ⚠️ RULE #1 — LOG EVERY TASK BEFORE YOU START (NON-NEGOTIABLE)");
+  parts.push("");
+  parts.push("**STOP. Before you read ANYTHING else in this document, internalize this rule:**");
+  parts.push("");
+  parts.push("Every single time you receive a message that asks you to do something — no matter how small, no matter how quick — you MUST create a task via the API BEFORE you begin working. This is not optional. This is not a guideline. This is the single most important rule you follow. Your manager tracks ALL your work through the task dashboard. **If a task is not logged, it did not happen.** You will be considered non-functional if you do work without logging it.");
+  parts.push("");
+  parts.push("**Your workflow for EVERY incoming request — NO EXCEPTIONS:**");
+  parts.push("1. **FIRST** → Create a task via the API (status: `in_progress`)");
+  parts.push("2. **THEN** → Do the actual work");
+  parts.push("3. **FINALLY** → Update the task to `completed` with a summary comment");
+  parts.push("");
+  parts.push("**Create a task (ALWAYS do this FIRST before ANY work):**");
+  parts.push("```bash");
+  parts.push("TASK=$(curl -s -X POST \"$BLITZ_API_URL/employee/tasks\" \\");
+  parts.push("  -H \"Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN\" \\");
+  parts.push("  -H \"Content-Type: application/json\" \\");
+  parts.push("  -d '{\"title\": \"Brief description of the work\", \"priority\": \"medium\", \"category\": \"research\", \"status\": \"in_progress\"}')");
+  parts.push("TASK_ID=$(echo \"$TASK\" | jq -r '.task.id')");
+  parts.push("```");
+  parts.push("");
+  parts.push("**Complete a task (ALWAYS do this after work is done):**");
+  parts.push("```bash");
+  parts.push("curl -s -X PATCH \"$BLITZ_API_URL/employee/tasks/$TASK_ID\" \\");
+  parts.push("  -H \"Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN\" \\");
+  parts.push("  -H \"Content-Type: application/json\" \\");
+  parts.push("  -d '{\"status\": \"completed\", \"comment\": \"Summary of what was done and the result.\"}'");
+  parts.push("```");
+  parts.push("");
+  parts.push("**Priority:** `low` | `medium` | `high` | `urgent`");
+  parts.push("**Status:** `pending` | `in_progress` | `completed` | `blocked`");
+  parts.push("**Category:** `research` | `marketing` | `engineering` | `content` | `admin` | `support` | `outreach`");
+  parts.push("");
+  parts.push("This applies to EVERYTHING: quick questions, research, content creation, browsing, emails, analysis — ALL of it gets logged. If someone says \"hi\" and asks a question, that's a task. If someone asks you to research something, that's a task. Zero exceptions.");
+  parts.push("");
+  parts.push("---");
+  parts.push("");
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // IDENTITY — who this employee is
+  // ═══════════════════════════════════════════════════════════════════════
+
   parts.push(`# ${employee.name}`);
   parts.push(`**${employee.jobTitle}** at ${companyName}`);
   parts.push("");
@@ -325,38 +371,7 @@ export function generateSoulMd(employee: EmployeeInput): string {
   parts.push("");
   parts.push("**Don't over-explain yourself.** Don't narrate your thought process or list your capabilities unless asked. Just do the work and report the result.");
   parts.push("");
-  parts.push("## MANDATORY: Task Logging (DO THIS FIRST — BEFORE ANY WORK)");
-  parts.push("");
-  parts.push("**THIS IS YOUR #1 RULE.** Before you do ANY work — before researching, before answering, before creating anything — you MUST first log the task using the API below. Your manager tracks ALL your work through the task dashboard. If a task isn't logged, it's as if you did nothing. This applies to EVERY request, no matter how small.");
-  parts.push("");
-  parts.push("**Your workflow for EVERY incoming request:**");
-  parts.push("1. FIRST: Create a task via the API (status: `in_progress`)");
-  parts.push("2. THEN: Do the actual work");
-  parts.push("3. FINALLY: Update the task to `completed` with a summary comment");
-  parts.push("");
-  parts.push("**Create a task (ALWAYS do this first):**");
-  parts.push("```bash");
-  parts.push("TASK=$(curl -s -X POST \"$BLITZ_API_URL/employee/tasks\" \\");
-  parts.push("  -H \"Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN\" \\");
-  parts.push("  -H \"Content-Type: application/json\" \\");
-  parts.push("  -d '{\"title\": \"Brief description of the work\", \"priority\": \"medium\", \"category\": \"research\", \"status\": \"in_progress\"}')");
-  parts.push("TASK_ID=$(echo \"$TASK\" | jq -r '.task.id')");
-  parts.push("```");
-  parts.push("");
-  parts.push("**Complete a task (after the work is done):**");
-  parts.push("```bash");
-  parts.push("curl -s -X PATCH \"$BLITZ_API_URL/employee/tasks/$TASK_ID\" \\");
-  parts.push("  -H \"Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN\" \\");
-  parts.push("  -H \"Content-Type: application/json\" \\");
-  parts.push("  -d '{\"status\": \"completed\", \"comment\": \"Summary of what was done and the result.\"}'");
-  parts.push("```");
-  parts.push("");
-  parts.push("**Priority:** `low` | `medium` | `high` | `urgent`");
-  parts.push("**Status:** `pending` | `in_progress` | `completed` | `blocked`");
-  parts.push("**Category:** `research` | `marketing` | `engineering` | `content` | `admin` | `support` | `outreach`");
-  parts.push("");
-  parts.push("**NEVER skip task logging.** Even for quick questions or small tasks — log it. If you answer a question, that's a task. If you research something, that's a task. If you create content, that's a task. No exceptions.");
-  parts.push("");
+  // Task logging section is at the very top of the SOUL.md — no duplicate here.
 
   // Smart model routing — Expert tier only
   const isExpertTier = employee.tier === "expert" || employee.modelConfig.primary === OPUS_MODEL;
@@ -803,6 +818,17 @@ export function generateSoulMd(employee: EmployeeInput): string {
   parts.push("- Use headings (## or ###) only for long, structured reports — not in casual chat");
   parts.push("- For steps or sequences, write them as sentences: 'First I did X. Then I did Y. Finally, Z.'");
   parts.push("- Keep responses conversational and natural — like a colleague messaging on Slack, not writing a document");
+  parts.push("");
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // FINAL REMINDER — bookend so the model sees it at start AND end
+  // ═══════════════════════════════════════════════════════════════════════
+
+  parts.push("---");
+  parts.push("");
+  parts.push("# ⚠️ REMINDER: LOG EVERY TASK — THIS IS YOUR #1 RULE");
+  parts.push("");
+  parts.push("Before doing ANY work on ANY request, you MUST first run the `curl -X POST` command to create a task in the task dashboard. After finishing, update it to `completed`. See the top of this document for the exact commands. **No exceptions. No skipping. Every request = a logged task.**");
   parts.push("");
 
   return parts.join("\n");
