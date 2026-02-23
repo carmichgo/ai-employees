@@ -223,11 +223,12 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "employeeId required" }, { status: 400 });
       }
       const [emp] = await sql`
-        SELECT id, name, container_host, container_port, gateway_token, model_config
+        SELECT id, name, container_host, container_port, gateway_token, model_config,
+               droplet_ip, interservice_secret
         FROM employees WHERE id = ${empId} AND status = 'active'
       `;
-      if (!emp || !emp.container_host) {
-        results.push(`nudge: employee not found or no container`);
+      if (!emp || !emp.droplet_ip || !emp.interservice_secret) {
+        results.push(`nudge: employee not found or no droplet`);
       } else {
         const empTasks = await sql`
           SELECT id, title, status, priority, source, updated_at
@@ -250,11 +251,14 @@ export async function POST(request: NextRequest) {
           msgParts.push("For each task above:", "- If pending: start working on it (update to in_progress)", "- If in_progress but finished: mark it completed", "- If in_progress but stuck: mark it blocked", "- If in_progress and you lost context: review and continue", "", "Do NOT create new tasks. Update the existing ones:", 'curl -s -X PATCH "$BLITZ_API_URL/employee/tasks/<TASK_ID>" -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" -H "Content-Type: application/json" -d \'{"status": "completed", "comment": "Summary."}\'');
           try {
             await sql`UPDATE employees SET last_request_sent_at = NOW() WHERE id = ${empId}`;
-            const model = (emp.model_config as any)?.primary || "anthropic/claude-sonnet-4-5-20250929";
-            const chatRes = await fetch(`http://${emp.container_host}:${emp.container_port}/v1/chat/completions`, {
+            // Route through the droplet's API proxy (Vercel can't reach Docker internal IPs)
+            const chatRes = await fetch(`http://${emp.droplet_ip}:3001/internal/employees/${empId}/chat`, {
               method: "POST",
-              headers: { "Content-Type": "application/json", Authorization: `Bearer ${emp.gateway_token}` },
-              body: JSON.stringify({ model, messages: [{ role: "user", content: msgParts.join("\n") }] }),
+              headers: {
+                "Content-Type": "application/json",
+                "X-INTERSERVICE-SECRET": emp.interservice_secret,
+              },
+              body: JSON.stringify({ message: msgParts.join("\n") }),
               signal: AbortSignal.timeout(120_000),
             });
             await sql`UPDATE employees SET last_response_at = NOW() WHERE id = ${empId}`;
