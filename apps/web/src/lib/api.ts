@@ -431,6 +431,9 @@ class ApiClient {
         priority: string;
         source: string;
         category: string | null;
+        triggerId: string | null;
+        triggerName: string | null;
+        triggerCron: { cron?: string; message?: string } | null;
         dueDate: string | null;
         completedAt: string | null;
         createdAt: string;
