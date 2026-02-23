@@ -216,6 +216,61 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Admin action: nudge-employee — send a task board check message directly to an employee's container
+    if (action === "nudge-employee") {
+      const empId = request.nextUrl.searchParams.get("employeeId");
+      if (!empId) {
+        return NextResponse.json({ error: "employeeId required" }, { status: 400 });
+      }
+      const [emp] = await sql`
+        SELECT id, name, container_host, container_port, gateway_token, model_config
+        FROM employees WHERE id = ${empId} AND status = 'active'
+      `;
+      if (!emp || !emp.container_host) {
+        results.push(`nudge: employee not found or no container`);
+      } else {
+        const empTasks = await sql`
+          SELECT id, title, status, priority, source, updated_at
+          FROM tasks WHERE employee_id = ${empId} AND status IN ('pending', 'in_progress')
+          ORDER BY status, updated_at DESC
+        `;
+        if (empTasks.length === 0) {
+          results.push(`nudge: ${emp.name} has no pending/in_progress tasks`);
+        } else {
+          const pendingLines = empTasks.filter((t: any) => t.status === "pending").map((t: any) =>
+            `- **${t.title}** (ID: ${t.id}, ${t.priority}) [pending]`
+          );
+          const staleLines = empTasks.filter((t: any) => t.status === "in_progress").map((t: any) => {
+            const mins = Math.floor((Date.now() - new Date(t.updated_at).getTime()) / 60_000);
+            return `- **${t.title}** (ID: ${t.id}) — in_progress, last updated ${mins} min ago`;
+          });
+          const msgParts = ["[Task Board Check]", ""];
+          if (pendingLines.length > 0) msgParts.push(`**${pendingLines.length} pending tasks:**`, "", ...pendingLines, "");
+          if (staleLines.length > 0) msgParts.push(`**${staleLines.length} in-progress tasks that need attention:**`, "", ...staleLines, "");
+          msgParts.push("For each task above:", "- If pending: start working on it (update to in_progress)", "- If in_progress but finished: mark it completed", "- If in_progress but stuck: mark it blocked", "- If in_progress and you lost context: review and continue", "", "Do NOT create new tasks. Update the existing ones:", 'curl -s -X PATCH "$BLITZ_API_URL/employee/tasks/<TASK_ID>" -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" -H "Content-Type: application/json" -d \'{"status": "completed", "comment": "Summary."}\'');
+          try {
+            await sql`UPDATE employees SET last_request_sent_at = NOW() WHERE id = ${empId}`;
+            const model = (emp.model_config as any)?.primary || "anthropic/claude-sonnet-4-5-20250929";
+            const chatRes = await fetch(`http://${emp.container_host}:${emp.container_port}/v1/chat/completions`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${emp.gateway_token}` },
+              body: JSON.stringify({ model, messages: [{ role: "user", content: msgParts.join("\n") }] }),
+              signal: AbortSignal.timeout(120_000),
+            });
+            await sql`UPDATE employees SET last_response_at = NOW() WHERE id = ${empId}`;
+            if (chatRes.ok) {
+              results.push(`nudge: Sent task board check to ${emp.name} — ${empTasks.length} tasks (HTTP ${chatRes.status})`);
+            } else {
+              const errText = await chatRes.text().catch(() => "no body");
+              results.push(`nudge: Failed — HTTP ${chatRes.status}: ${errText.substring(0, 200)}`);
+            }
+          } catch (err: any) {
+            results.push(`nudge: FAILED — ${err.message}`);
+          }
+        }
+      }
+    }
+
     // Admin action: hot-update — pull latest code and restart worker/containers on a droplet
     if (action === "hot-update") {
       const empId = request.nextUrl.searchParams.get("employeeId");
