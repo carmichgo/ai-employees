@@ -20,40 +20,79 @@ export async function GET(request: NextRequest) {
   const employeeId = request.nextUrl.searchParams.get("employeeId");
   const status = request.nextUrl.searchParams.get("status");
 
-  let query = db
-    .select({
-      id: tasks.id,
-      employeeId: tasks.employeeId,
-      companyId: tasks.companyId,
-      title: tasks.title,
-      description: tasks.description,
-      status: tasks.status,
-      priority: tasks.priority,
-      source: tasks.source,
-      category: tasks.category,
-      triggerId: tasks.triggerId,
-      dueDate: tasks.dueDate,
-      completedAt: tasks.completedAt,
-      createdAt: tasks.createdAt,
-      updatedAt: tasks.updatedAt,
-      employeeName: employees.name,
-      employeeEmoji: employees.emoji,
-      employeeJobTitle: employees.jobTitle,
-      triggerName: triggers.name,
-      triggerCron: triggers.config,
-    })
-    .from(tasks)
-    .leftJoin(employees, eq(tasks.employeeId, employees.id))
-    .leftJoin(triggers, eq(tasks.triggerId, triggers.id))
-    .where(eq(tasks.companyId, session.companyId))
-    .orderBy(desc(tasks.createdAt))
-    .$dynamic();
+  // Try the full query with trigger info first; fall back to basic query
+  // if the trigger_id column doesn't exist yet (migration not run)
+  let result: Array<Record<string, unknown>>;
+  try {
+    let query = db
+      .select({
+        id: tasks.id,
+        employeeId: tasks.employeeId,
+        companyId: tasks.companyId,
+        title: tasks.title,
+        description: tasks.description,
+        status: tasks.status,
+        priority: tasks.priority,
+        source: tasks.source,
+        category: tasks.category,
+        triggerId: tasks.triggerId,
+        dueDate: tasks.dueDate,
+        completedAt: tasks.completedAt,
+        createdAt: tasks.createdAt,
+        updatedAt: tasks.updatedAt,
+        employeeName: employees.name,
+        employeeEmoji: employees.emoji,
+        employeeJobTitle: employees.jobTitle,
+        triggerName: triggers.name,
+        triggerCron: triggers.config,
+      })
+      .from(tasks)
+      .leftJoin(employees, eq(tasks.employeeId, employees.id))
+      .leftJoin(triggers, eq(tasks.triggerId, triggers.id))
+      .where(eq(tasks.companyId, session.companyId))
+      .orderBy(desc(tasks.createdAt))
+      .$dynamic();
 
-  if (employeeId) {
-    query = query.where(and(eq(tasks.companyId, session.companyId), eq(tasks.employeeId, employeeId)));
+    if (employeeId) {
+      query = query.where(and(eq(tasks.companyId, session.companyId), eq(tasks.employeeId, employeeId)));
+    }
+
+    result = await query;
+  } catch {
+    // Fallback: query without trigger fields (trigger_id column may not exist)
+    let query = db
+      .select({
+        id: tasks.id,
+        employeeId: tasks.employeeId,
+        companyId: tasks.companyId,
+        title: tasks.title,
+        description: tasks.description,
+        status: tasks.status,
+        priority: tasks.priority,
+        source: tasks.source,
+        category: tasks.category,
+        dueDate: tasks.dueDate,
+        completedAt: tasks.completedAt,
+        createdAt: tasks.createdAt,
+        updatedAt: tasks.updatedAt,
+        employeeName: employees.name,
+        employeeEmoji: employees.emoji,
+        employeeJobTitle: employees.jobTitle,
+      })
+      .from(tasks)
+      .leftJoin(employees, eq(tasks.employeeId, employees.id))
+      .where(eq(tasks.companyId, session.companyId))
+      .orderBy(desc(tasks.createdAt))
+      .$dynamic();
+
+    if (employeeId) {
+      query = query.where(and(eq(tasks.companyId, session.companyId), eq(tasks.employeeId, employeeId)));
+    }
+
+    const rows = await query;
+    // Add null trigger fields so the frontend type is satisfied
+    result = rows.map((r) => ({ ...r, triggerId: null, triggerName: null, triggerCron: null }));
   }
-
-  const result = await query;
 
   // Filter by status client-side if needed (drizzle dynamic where chaining can be tricky)
   const filtered = status ? result.filter((t) => t.status === status) : result;
