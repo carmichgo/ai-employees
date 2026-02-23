@@ -32,8 +32,9 @@ export const createEmployeeSchema = z.object({
       fallbacks: z.array(z.string()).optional(),
     })
     .optional(),
+  phoneNumber: z.string().max(20).optional(),
   channels: z
-    .array(z.enum(["slack", "discord", "telegram", "whatsapp", "email", "webchat", "signal", "teams", "google-chat", "matrix"]))
+    .array(z.enum(["slack", "discord", "telegram", "whatsapp", "email", "webchat", "voice-chat", "phone", "signal", "teams", "google-chat", "matrix"]))
     .optional(),
   toolsAllow: z
     .array(z.string())

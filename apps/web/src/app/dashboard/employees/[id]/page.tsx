@@ -7,7 +7,7 @@ import {
   ArrowLeft, Pause, Play, Trash2, Loader2, Server, Mail, Cpu, Clock, Calendar,
   MessageCircle, Save, X, Eye, EyeOff, ChevronDown, Upload, FileText, Zap,
   Webhook, Timer, Plus, ToggleLeft, ToggleRight, Copy, Check, KeyRound, Globe, Edit3,
-  MessageSquare, Send, Smartphone, Gamepad2, Shield, MonitorSmartphone, Hash, Radio,
+  MessageSquare, Send, Smartphone, Gamepad2, Shield, MonitorSmartphone, Hash, Radio, Phone, Headphones,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -103,6 +103,18 @@ const CHANNEL_META: Record<string, {
     icon: Mail,
     fields: [],
     helpText: "Email is configured in the Email Account section below.",
+  },
+  phone: {
+    label: "Phone (Twilio)",
+    icon: Phone,
+    fields: [],
+    helpText: "Phone calling is configured in the Phone Number section below.",
+  },
+  "voice-chat": {
+    label: "Web Voice Call",
+    icon: Headphones,
+    fields: [],
+    helpText: "Voice calling through the dashboard — speak and your employee responds with voice in real time.",
   },
 };
 

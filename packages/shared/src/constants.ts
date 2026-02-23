@@ -190,6 +190,8 @@ export const CHANNEL_TYPES = [
   "whatsapp",
   "email",
   "webchat",
+  "voice-chat",
+  "phone",
   "signal",
   "teams",
   "google-chat",

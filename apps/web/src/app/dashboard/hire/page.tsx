@@ -58,6 +58,7 @@ import {
   Trash2,
   ImageIcon,
   Video,
+  Phone,
 } from "lucide-react";
 
 // ── Steps ──────────────────────────────────────
@@ -78,6 +79,8 @@ const CHANNEL_OPTIONS = [
   { id: "teams", label: "Microsoft Teams", desc: "Teams channels & chats", Icon: MonitorSmartphone },
   { id: "google-chat", label: "Google Chat", desc: "Google Workspace messaging", Icon: MessageSquare },
   { id: "matrix", label: "Matrix", desc: "Decentralized chat (Element)", Icon: Hash },
+  { id: "voice-chat", label: "Web Voice Call", desc: "Speak with your employee via the dashboard", Icon: Headphones },
+  { id: "phone", label: "Phone Number", desc: "Twilio-powered voice calls", Icon: Phone },
 ];
 
 // ── Capability icons ───────────────────────────
