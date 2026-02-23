@@ -7,7 +7,7 @@ import crypto from "node:crypto";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { eq, and } from "drizzle-orm";
-import { db, employees, companies } from "@ai-employees/db";
+import { db, employees, companies, users } from "@ai-employees/db";
 import { getJobTemplate, PLAN_LIMITS, type PlanTier, getModelForTier, type EmployeeTier } from "@ai-employees/shared";
 import { regenerateChannelConfig, type ChannelInput } from "@ai-employees/openclaw-config";
 import { getProvisionQueue } from "../queues.js";
@@ -442,6 +442,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
         } = require("@ai-employees/openclaw-config");
 
         const company = await db.query.companies.findFirst({ where: eq(companies.id, emp.companyId) });
+        const owner = await db.query.users.findFirst({ where: eq(users.companyId, emp.companyId) });
 
         const employeeInput = {
           id: emp.id,
@@ -455,7 +456,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
           authorityConfig: emp.authorityConfig,
           companySlug: company?.slug || "unknown",
           companyName: company?.name || "Unknown",
-          ownerName: emp.ownerName,
+          ownerName: owner?.name,
           modelConfig: emp.modelConfig as { primary: string; fallbacks?: string[] },
           toolsConfig: emp.toolsConfig as Record<string, unknown>,
           sandboxConfig: emp.sandboxConfig as Record<string, unknown>,
@@ -560,6 +561,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
         } = require("@ai-employees/openclaw-config");
 
         const company = await db.query.companies.findFirst({ where: eq(companies.id, emp.companyId) });
+        const owner = await db.query.users.findFirst({ where: eq(users.companyId, emp.companyId) });
 
         const employeeInput = {
           id: emp.id,
@@ -573,7 +575,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
           authorityConfig: emp.authorityConfig,
           companySlug: company?.slug || "unknown",
           companyName: company?.name || "Unknown",
-          ownerName: emp.ownerName,
+          ownerName: owner?.name,
           modelConfig: emp.modelConfig as { primary: string; fallbacks?: string[] },
           toolsConfig: emp.toolsConfig as Record<string, unknown>,
           sandboxConfig: emp.sandboxConfig as Record<string, unknown>,
