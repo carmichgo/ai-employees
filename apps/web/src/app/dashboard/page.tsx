@@ -23,13 +23,13 @@ export default function DashboardOverview() {
   const [error, setError] = useState<string | null>(null);
   const [user, setUser] = useState<any>(null);
   const [company, setCompany] = useState<any>(null);
-  const [activityMap, setActivityMap] = useState<Record<string, { activityStatus: string; currentTask: string | null; inProgressCount: number }>>({});
+  const [activityMap, setActivityMap] = useState<Record<string, { activityStatus: string; currentTask: string | null; inProgressCount: number; pendingCount: number }>>({});
 
   const fetchActivity = () => {
     api.getEmployeeActivity().then((res) => {
       const map: typeof activityMap = {};
       for (const a of res.activity) {
-        map[a.employeeId] = { activityStatus: a.activityStatus, currentTask: a.currentTask, inProgressCount: a.inProgressCount };
+        map[a.employeeId] = { activityStatus: a.activityStatus, currentTask: a.currentTask, inProgressCount: a.inProgressCount, pendingCount: a.pendingCount || 0 };
       }
       setActivityMap(map);
     }).catch(() => {});
@@ -451,9 +451,11 @@ export default function DashboardOverview() {
                         }} />
                         {act.activityStatus === "working"
                           ? `Working (${act.inProgressCount})`
-                          : act.activityStatus === "idle"
-                            ? "Idle"
-                            : "Offline"}
+                          : act.activityStatus === "idle" && act.pendingCount > 0
+                            ? `Idle — ${act.pendingCount} pending`
+                            : act.activityStatus === "idle"
+                              ? "Idle"
+                              : "Offline"}
                       </div>
                     )}
                   </div>

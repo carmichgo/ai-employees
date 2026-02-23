@@ -294,6 +294,7 @@ class ApiClient {
         activityStatus: "working" | "idle" | "offline";
         currentTask: string | null;
         inProgressCount: number;
+        pendingCount: number;
         lastHealthAt: string | null;
         lastRequestSentAt: string | null;
         lastResponseAt: string | null;

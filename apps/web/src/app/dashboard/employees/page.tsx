@@ -61,6 +61,7 @@ type ActivityInfo = {
   activityStatus: ActivityStatus;
   currentTask: string | null;
   inProgressCount: number;
+  pendingCount: number;
   lastActiveAt: string | null;
   tasks: Array<{ taskId: string; title: string; lastUpdated: string; minutesSinceUpdate: number }>;
 };
@@ -82,6 +83,7 @@ export default function EmployeesPage() {
           activityStatus: a.activityStatus,
           currentTask: a.currentTask,
           inProgressCount: a.inProgressCount,
+          pendingCount: a.pendingCount || 0,
           lastActiveAt: a.lastActiveAt,
           tasks: a.tasks || [],
         };
@@ -384,7 +386,7 @@ function EmployeeCard({ emp, activity }: { emp: any; activity?: ActivityInfo }) 
   const model = getModelLabel(emp.modelConfig);
   const tier = TIER_LABELS[emp.tier] || emp.tier;
   const statusStyle = getStatusStyle(emp.status);
-  const act = activity || { activityStatus: "offline" as ActivityStatus, currentTask: null, inProgressCount: 0, lastActiveAt: null, tasks: [] };
+  const act = activity || { activityStatus: "offline" as ActivityStatus, currentTask: null, inProgressCount: 0, pendingCount: 0, lastActiveAt: null, tasks: [] };
 
   return (
     <Link
@@ -444,7 +446,7 @@ function EmployeeCard({ emp, activity }: { emp: any; activity?: ActivityInfo }) 
 
         {/* Activity bar — shows current work */}
         {emp.status === "active" && (
-          <ActivityBar activityStatus={act.activityStatus} currentTask={act.currentTask} inProgressCount={act.inProgressCount} />
+          <ActivityBar activityStatus={act.activityStatus} currentTask={act.currentTask} inProgressCount={act.inProgressCount} pendingCount={act.pendingCount} />
         )}
 
         {/* Info rows — fixed 3 lines so all cards are same height */}
@@ -506,7 +508,7 @@ function EmployeeRow({ emp, isLast, activity }: { emp: any; isLast: boolean; act
   const [hovered, setHovered] = useState(false);
   const model = getModelLabel(emp.modelConfig);
   const tier = TIER_LABELS[emp.tier] || emp.tier;
-  const act = activity || { activityStatus: "offline" as ActivityStatus, currentTask: null, inProgressCount: 0, lastActiveAt: null, tasks: [] };
+  const act = activity || { activityStatus: "offline" as ActivityStatus, currentTask: null, inProgressCount: 0, pendingCount: 0, lastActiveAt: null, tasks: [] };
 
   return (
     <Link
@@ -561,7 +563,7 @@ function EmployeeRow({ emp, isLast, activity }: { emp: any; isLast: boolean; act
 
         {/* Activity label */}
         {emp.status === "active" && (
-          <ActivityLabel activityStatus={act.activityStatus} inProgressCount={act.inProgressCount} />
+          <ActivityLabel activityStatus={act.activityStatus} inProgressCount={act.inProgressCount} pendingCount={act.pendingCount} />
         )}
 
         {/* Tier + Model */}
@@ -644,12 +646,16 @@ function ActivityDot({ status }: { status: ActivityStatus }) {
   );
 }
 
-function ActivityBar({ activityStatus, currentTask, inProgressCount }: {
+function ActivityBar({ activityStatus, currentTask, inProgressCount, pendingCount }: {
   activityStatus: ActivityStatus;
   currentTask: string | null;
   inProgressCount: number;
+  pendingCount: number;
 }) {
-  const c = ACTIVITY_COLORS[activityStatus];
+  const isIdleWithTasks = activityStatus === "idle" && pendingCount > 0;
+  const c = isIdleWithTasks
+    ? { dot: "#dc2626", bg: "rgba(220, 38, 38, 0.06)", text: "#dc2626" }
+    : ACTIVITY_COLORS[activityStatus];
   return (
     <div style={{
       display: "flex", alignItems: "center", gap: 6,
@@ -667,8 +673,10 @@ function ActivityBar({ activityStatus, currentTask, inProgressCount }: {
         <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
           {currentTask || `Working on ${inProgressCount} task${inProgressCount !== 1 ? "s" : ""}`}
         </span>
+      ) : activityStatus === "idle" && pendingCount > 0 ? (
+        <span>Idle — {pendingCount} task{pendingCount !== 1 ? "s" : ""} pending</span>
       ) : activityStatus === "idle" ? (
-        <span>Standing by — no active requests</span>
+        <span>Standing by</span>
       ) : (
         <span>Not reachable</span>
       )}
@@ -676,11 +684,15 @@ function ActivityBar({ activityStatus, currentTask, inProgressCount }: {
   );
 }
 
-function ActivityLabel({ activityStatus, inProgressCount }: {
+function ActivityLabel({ activityStatus, inProgressCount, pendingCount }: {
   activityStatus: ActivityStatus;
   inProgressCount: number;
+  pendingCount: number;
 }) {
-  const c = ACTIVITY_COLORS[activityStatus];
+  const isIdleWithTasks = activityStatus === "idle" && pendingCount > 0;
+  const c = isIdleWithTasks
+    ? { dot: "#dc2626", bg: "rgba(220, 38, 38, 0.06)", text: "#dc2626", label: "Idle" }
+    : ACTIVITY_COLORS[activityStatus];
   return (
     <span style={{
       display: "inline-flex", alignItems: "center", gap: 4,
@@ -689,7 +701,7 @@ function ActivityLabel({ activityStatus, inProgressCount }: {
       background: c.bg, flexShrink: 0, whiteSpace: "nowrap",
     }}>
       <span style={{ width: 5, height: 5, borderRadius: "50%", background: c.dot, flexShrink: 0 }} />
-      {c.label}
+      {isIdleWithTasks ? `${pendingCount} pending` : c.label}
       {activityStatus === "working" && inProgressCount > 0 && (
         <span style={{ opacity: 0.7 }}>({inProgressCount})</span>
       )}

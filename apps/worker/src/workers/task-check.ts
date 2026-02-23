@@ -1,19 +1,20 @@
 /**
- * Periodic task checker — nudges employees who have pending manager-assigned tasks.
+ * Periodic task checker — nudges employees about:
+ * 1. Pending manager-assigned tasks they haven't started
+ * 2. Stale in_progress tasks that haven't been updated in 30+ min
  *
- * Runs every 5 minutes from the worker process. For each active employee with
- * unstarted tasks, sends a gentle "check your task board" message to their
- * container. Throttled to max one nudge per employee per 30 minutes to avoid
- * interrupting ongoing work.
+ * Runs every 5 minutes from the worker process. Throttled to max one nudge
+ * per employee per 15 minutes to avoid interrupting ongoing work.
  */
 
-import { eq, and, not } from "drizzle-orm";
+import { eq, and, not, sql } from "drizzle-orm";
 import { db, employees, tasks } from "@ai-employees/db";
 
 /** Track last nudge time per employee to avoid spamming. Resets on worker restart. */
 const lastNudge = new Map<string, number>();
 
-const NUDGE_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes
+const NUDGE_COOLDOWN_MS = 15 * 60 * 1000; // 15 minutes
+const STALE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes — tasks not updated in this long are stale
 
 export async function checkPendingTasks(): Promise<void> {
   // Get all active employees
@@ -53,13 +54,13 @@ async function checkEmployeeTasks(employee: {
     return; // No container to talk to
   }
 
-  // Check cooldown — don't nudge more than once per 30 minutes
+  // Check cooldown — don't nudge more than once per 15 minutes
   const lastTime = lastNudge.get(employee.id) || 0;
   if (Date.now() - lastTime < NUDGE_COOLDOWN_MS) {
     return;
   }
 
-  // Find pending manager-assigned tasks for this employee
+  // Find pending tasks (any source) for this employee
   const pendingTasks = await db
     .select({
       id: tasks.id,
@@ -67,41 +68,72 @@ async function checkEmployeeTasks(employee: {
       priority: tasks.priority,
       category: tasks.category,
       dueDate: tasks.dueDate,
+      source: tasks.source,
     })
     .from(tasks)
     .where(
       and(
         eq(tasks.employeeId, employee.id),
         eq(tasks.status, "pending"),
-        eq(tasks.source, "manager"),
       ),
     );
 
-  if (pendingTasks.length === 0) {
-    return; // No pending tasks — nothing to do
+  // Find stale in_progress tasks (not updated in 30+ min)
+  const staleThreshold = new Date(Date.now() - STALE_THRESHOLD_MS);
+  const staleTasks = await db
+    .select({
+      id: tasks.id,
+      title: tasks.title,
+      priority: tasks.priority,
+      category: tasks.category,
+      updatedAt: tasks.updatedAt,
+    })
+    .from(tasks)
+    .where(
+      and(
+        eq(tasks.employeeId, employee.id),
+        eq(tasks.status, "in_progress"),
+        sql`${tasks.updatedAt} < ${staleThreshold}`,
+      ),
+    );
+
+  if (pendingTasks.length === 0 && staleTasks.length === 0) {
+    return; // Nothing to nudge about
   }
 
-  // Build a summary message with task IDs so the employee can update them directly
-  const taskLines = pendingTasks.map((t) => {
-    let line = `- **${t.title}** (ID: ${t.id}, ${t.priority} priority)`;
-    if (t.category) line += ` [${t.category}]`;
-    if (t.dueDate) line += ` — due ${new Date(t.dueDate).toLocaleDateString()}`;
-    return line;
-  });
+  // Build the message
+  const parts: string[] = ["[Task Board Check]", ""];
 
-  const message = [
-    `[Task Board Check]`,
-    ``,
-    `You have ${pendingTasks.length} pending task${pendingTasks.length > 1 ? "s" : ""} assigned to you:`,
-    ``,
-    ...taskLines,
-    ``,
-    `Pick up these existing tasks — update their status to "in_progress" and start working on them.`,
-    `Do NOT create new tasks for this notification. These tasks already exist in your task board.`,
-    ``,
-    `Update a task:`,
-    `curl -s -X PATCH "$BLITZ_API_URL/employee/tasks/<TASK_ID>" -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" -H "Content-Type: application/json" -d '{"status": "in_progress", "comment": "Starting work on this."}'`,
-  ].join("\n");
+  if (pendingTasks.length > 0) {
+    parts.push(`**${pendingTasks.length} pending task${pendingTasks.length > 1 ? "s" : ""}** waiting for you:`);
+    parts.push("");
+    for (const t of pendingTasks) {
+      let line = `- **${t.title}** (ID: ${t.id}, ${t.priority} priority)`;
+      if (t.category) line += ` [${t.category}]`;
+      if (t.dueDate) line += ` — due ${new Date(t.dueDate).toLocaleDateString()}`;
+      parts.push(line);
+    }
+    parts.push("");
+    parts.push(`Pick up these tasks — update their status to "in_progress" and start working on them.`);
+    parts.push("");
+  }
+
+  if (staleTasks.length > 0) {
+    parts.push(`**${staleTasks.length} in-progress task${staleTasks.length > 1 ? "s" : ""}** with no updates for 30+ minutes:`);
+    parts.push("");
+    for (const t of staleTasks) {
+      const mins = Math.floor((Date.now() - new Date(t.updatedAt).getTime()) / 60_000);
+      parts.push(`- **${t.title}** (ID: ${t.id}) — last updated ${mins} min ago`);
+    }
+    parts.push("");
+    parts.push(`For each stale task: either continue working on it (add a progress comment), or mark it completed/blocked if it's done or stuck.`);
+    parts.push("");
+  }
+
+  parts.push(`Do NOT create new tasks for this notification. Update the existing ones:`);
+  parts.push(`curl -s -X PATCH "$BLITZ_API_URL/employee/tasks/<TASK_ID>" -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" -H "Content-Type: application/json" -d '{"status": "in_progress", "comment": "Progress update..."}'`);
+
+  const message = parts.join("\n");
 
   try {
     // Mark request sent
@@ -130,7 +162,8 @@ async function checkEmployeeTasks(employee: {
 
     if (res.ok) {
       lastNudge.set(employee.id, Date.now());
-      console.log(`[task-check] Nudged ${employee.name} about ${pendingTasks.length} pending task(s)`);
+      const total = pendingTasks.length + staleTasks.length;
+      console.log(`[task-check] Nudged ${employee.name} about ${total} task(s) (${pendingTasks.length} pending, ${staleTasks.length} stale)`);
     } else {
       console.log(`[task-check] Failed to nudge ${employee.name}: HTTP ${res.status}`);
     }

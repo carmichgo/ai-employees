@@ -218,11 +218,24 @@ export async function POST(request: NextRequest) {
 
     // Always include employee diagnostics
     const empRows = await sql`
-      SELECT id, name, status, droplet_id, droplet_ip, droplet_status, interservice_secret IS NOT NULL as has_secret, created_at, updated_at
+      SELECT id, name, status, droplet_id, droplet_ip, droplet_status,
+             container_host, container_port,
+             last_health_at, last_request_sent_at, last_response_at,
+             interservice_secret IS NOT NULL as has_secret,
+             created_at, updated_at
       FROM employees
       WHERE status != 'terminated'
       ORDER BY created_at DESC
       LIMIT 10
+    `;
+
+    // Pending/in_progress tasks per employee
+    const taskStats = await sql`
+      SELECT employee_id, status, source, count(*)::int as count
+      FROM tasks
+      WHERE status IN ('pending', 'in_progress')
+      GROUP BY employee_id, status, source
+      ORDER BY employee_id
     `;
 
     // Check current table columns
@@ -241,6 +254,7 @@ export async function POST(request: NextRequest) {
       success: true,
       migrations: results,
       employees: empRows,
+      taskStats,
       employeeColumns: empCols.map((c: any) => c.column_name),
       taskColumns: taskCols.map((c: any) => c.column_name),
     });

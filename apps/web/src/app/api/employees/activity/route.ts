@@ -54,12 +54,13 @@ export async function GET(request: NextRequest) {
       emps = rows.map((r) => ({ ...r, lastRequestSentAt: null, lastResponseAt: null }));
     }
 
-    // Get in_progress tasks per employee
-    const inProgressTasks = await db
+    // Get in_progress AND pending tasks per employee
+    const activeTasks = await db
       .select({
         employeeId: tasks.employeeId,
         taskId: tasks.id,
         title: tasks.title,
+        status: tasks.status,
         updatedAt: tasks.updatedAt,
         createdAt: tasks.createdAt,
       })
@@ -67,20 +68,25 @@ export async function GET(request: NextRequest) {
       .where(
         and(
           eq(tasks.companyId, session.companyId),
-          eq(tasks.status, "in_progress"),
+          sql`${tasks.status} IN ('in_progress', 'pending')`,
         ),
       );
 
-    // Build task map
+    // Build task maps: in_progress and pending
     const taskMap = new Map<string, Array<{ taskId: string; title: string; updatedAt: Date; createdAt: Date }>>();
-    for (const t of inProgressTasks) {
-      if (!taskMap.has(t.employeeId)) taskMap.set(t.employeeId, []);
-      taskMap.get(t.employeeId)!.push({
-        taskId: t.taskId,
-        title: t.title,
-        updatedAt: t.updatedAt ? new Date(t.updatedAt) : new Date(t.createdAt),
-        createdAt: new Date(t.createdAt),
-      });
+    const pendingMap = new Map<string, number>();
+    for (const t of activeTasks) {
+      if (t.status === "in_progress") {
+        if (!taskMap.has(t.employeeId)) taskMap.set(t.employeeId, []);
+        taskMap.get(t.employeeId)!.push({
+          taskId: t.taskId,
+          title: t.title,
+          updatedAt: t.updatedAt ? new Date(t.updatedAt) : new Date(t.createdAt),
+          createdAt: new Date(t.createdAt),
+        });
+      } else if (t.status === "pending") {
+        pendingMap.set(t.employeeId, (pendingMap.get(t.employeeId) || 0) + 1);
+      }
     }
 
     const now = Date.now();
@@ -126,11 +132,14 @@ export async function GET(request: NextRequest) {
         minutesSinceUpdate: Math.floor((now - t.updatedAt.getTime()) / 60_000),
       }));
 
+      const pendingCount = pendingMap.get(emp.id) || 0;
+
       return {
         employeeId: emp.id,
         activityStatus,
         currentTask,
         inProgressCount: empTasks.length,
+        pendingCount,
         lastHealthAt: emp.lastHealthAt?.toISOString() || null,
         lastRequestSentAt: emp.lastRequestSentAt?.toISOString() || null,
         lastResponseAt: emp.lastResponseAt?.toISOString() || null,
