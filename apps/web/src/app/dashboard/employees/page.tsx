@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
-import { Plus, Users, MessageCircle, Search, Mail, Cpu, Calendar, LayoutGrid, List, ChevronRight } from "lucide-react";
+import { Plus, Users, MessageCircle, Search, Mail, Cpu, Calendar, LayoutGrid, List, ChevronRight, Activity } from "lucide-react";
 
 const STATUS_OPTIONS = [
   { value: "all", label: "All" },
@@ -63,6 +63,17 @@ export default function EmployeesPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
+  const [activityMap, setActivityMap] = useState<Record<string, { activityStatus: "working" | "idle" | "offline"; currentTask: string | null; inProgressCount: number }>>({});
+
+  const fetchActivity = () => {
+    api.getEmployeeActivity().then((res) => {
+      const map: typeof activityMap = {};
+      for (const a of res.activity) {
+        map[a.employeeId] = { activityStatus: a.activityStatus, currentTask: a.currentTask, inProgressCount: a.inProgressCount };
+      }
+      setActivityMap(map);
+    }).catch(() => {});
+  };
 
   const fetchEmployees = () => {
     setLoading(true);
@@ -81,6 +92,10 @@ export default function EmployeesPage() {
 
   useEffect(() => {
     fetchEmployees();
+    fetchActivity();
+    // Poll activity every 15 seconds
+    const interval = setInterval(fetchActivity, 15_000);
+    return () => clearInterval(interval);
   }, []);
 
   // Auto-poll while any employee is provisioning
@@ -326,7 +341,7 @@ export default function EmployeesPage() {
               gap: 12,
             }}>
               {filtered.map((emp) => (
-                <EmployeeCard key={emp.id} emp={emp} />
+                <EmployeeCard key={emp.id} emp={emp} activity={activityMap[emp.id]} />
               ))}
             </div>
           ) : (
@@ -337,7 +352,7 @@ export default function EmployeesPage() {
               boxShadow: "var(--shadow-sm, 0 1px 3px rgba(0,0,0,0.06))",
             }}>
               {filtered.map((emp, i) => (
-                <EmployeeRow key={emp.id} emp={emp} isLast={i === filtered.length - 1} />
+                <EmployeeRow key={emp.id} emp={emp} isLast={i === filtered.length - 1} activity={activityMap[emp.id]} />
               ))}
             </div>
           )}
@@ -349,11 +364,12 @@ export default function EmployeesPage() {
 
 /* ── Grid Card ──────────────────────────────────────────── */
 
-function EmployeeCard({ emp }: { emp: any }) {
+function EmployeeCard({ emp, activity }: { emp: any; activity?: { activityStatus: "working" | "idle" | "offline"; currentTask: string | null; inProgressCount: number } }) {
   const [hovered, setHovered] = useState(false);
   const model = getModelLabel(emp.modelConfig);
   const tier = TIER_LABELS[emp.tier] || emp.tier;
   const statusStyle = getStatusStyle(emp.status);
+  const act = activity || { activityStatus: "offline" as const, currentTask: null, inProgressCount: 0 };
 
   return (
     <Link
@@ -379,16 +395,19 @@ function EmployeeCard({ emp }: { emp: any }) {
       >
         {/* Top row: avatar + name + status */}
         <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 12 }}>
-          <div
-            style={{
-              width: 42, height: 42, borderRadius: "var(--radius-md, 8px)",
-              background: "var(--bg-secondary, #f5f5f5)",
-              border: "1px solid var(--border, #e5e5e5)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 20, flexShrink: 0,
-            }}
-          >
-            {emp.emoji || "A"}
+          <div style={{ position: "relative", flexShrink: 0 }}>
+            <div
+              style={{
+                width: 42, height: 42, borderRadius: "var(--radius-md, 8px)",
+                background: "var(--bg-secondary, #f5f5f5)",
+                border: "1px solid var(--border, #e5e5e5)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 20,
+              }}
+            >
+              {emp.emoji || "A"}
+            </div>
+            {emp.status === "active" && <ActivityDot status={act.activityStatus} />}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{
@@ -407,6 +426,11 @@ function EmployeeCard({ emp }: { emp: any }) {
           </div>
           <StatusBadge status={emp.status} />
         </div>
+
+        {/* Activity bar — shows current work */}
+        {emp.status === "active" && (
+          <ActivityBar activityStatus={act.activityStatus} currentTask={act.currentTask} inProgressCount={act.inProgressCount} />
+        )}
 
         {/* Info rows — fixed 3 lines so all cards are same height */}
         <div style={{
@@ -463,10 +487,11 @@ function EmployeeCard({ emp }: { emp: any }) {
 
 /* ── List Row ──────────────────────────────────────────── */
 
-function EmployeeRow({ emp, isLast }: { emp: any; isLast: boolean }) {
+function EmployeeRow({ emp, isLast, activity }: { emp: any; isLast: boolean; activity?: { activityStatus: "working" | "idle" | "offline"; currentTask: string | null; inProgressCount: number } }) {
   const [hovered, setHovered] = useState(false);
   const model = getModelLabel(emp.modelConfig);
   const tier = TIER_LABELS[emp.tier] || emp.tier;
+  const act = activity || { activityStatus: "offline" as const, currentTask: null, inProgressCount: 0 };
 
   return (
     <Link
@@ -485,18 +510,21 @@ function EmployeeRow({ emp, isLast }: { emp: any; isLast: boolean }) {
           cursor: "pointer",
         }}
       >
-        {/* Avatar */}
-        <div style={{
-          width: 34, height: 34, borderRadius: "var(--radius-md, 8px)",
-          background: "var(--bg-secondary, #f5f5f5)",
-          border: "1px solid var(--border, #e5e5e5)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 16, flexShrink: 0,
-        }}>
-          {emp.emoji || "A"}
+        {/* Avatar with activity dot */}
+        <div style={{ position: "relative", flexShrink: 0 }}>
+          <div style={{
+            width: 34, height: 34, borderRadius: "var(--radius-md, 8px)",
+            background: "var(--bg-secondary, #f5f5f5)",
+            border: "1px solid var(--border, #e5e5e5)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 16,
+          }}>
+            {emp.emoji || "A"}
+          </div>
+          {emp.status === "active" && <ActivityDot status={act.activityStatus} />}
         </div>
 
-        {/* Name + role */}
+        {/* Name + role / current task */}
         <div style={{ flex: "1 1 160px", minWidth: 0 }}>
           <div style={{
             fontWeight: 500, fontSize: 13, color: "var(--text, #0a0a0a)",
@@ -505,12 +533,20 @@ function EmployeeRow({ emp, isLast }: { emp: any; isLast: boolean }) {
             {emp.name}
           </div>
           <div style={{
-            fontSize: 12, color: "var(--text-secondary, #525252)", lineHeight: 1.3, marginTop: 1,
+            fontSize: 12, color: act.activityStatus === "working" ? "#16a34a" : "var(--text-secondary, #525252)",
+            lineHeight: 1.3, marginTop: 1,
             whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
           }}>
-            {emp.jobTitle}
+            {act.activityStatus === "working" && act.currentTask
+              ? act.currentTask
+              : emp.jobTitle}
           </div>
         </div>
+
+        {/* Activity label */}
+        {emp.status === "active" && (
+          <ActivityLabel activityStatus={act.activityStatus} inProgressCount={act.inProgressCount} />
+        )}
 
         {/* Tier + Model */}
         <div style={{
@@ -519,23 +555,6 @@ function EmployeeRow({ emp, isLast }: { emp: any; isLast: boolean }) {
         }}>
           <Cpu size={11} strokeWidth={1.5} />
           {tier} &middot; {model}
-        </div>
-
-        {/* Email */}
-        <div style={{
-          flex: "0 1 180px", fontSize: 12, color: "var(--text-tertiary, #a3a3a3)",
-          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-          display: "flex", alignItems: "center", gap: 4,
-          minWidth: 0,
-        }}>
-          {emp.emailAddress ? (
-            <>
-              <Mail size={11} strokeWidth={1.5} style={{ flexShrink: 0 }} />
-              {emp.emailAddress}
-            </>
-          ) : (
-            <span style={{ opacity: 0.5 }}>&mdash;</span>
-          )}
         </div>
 
         {/* Status */}
@@ -563,6 +582,102 @@ function EmployeeRow({ emp, isLast }: { emp: any; isLast: boolean }) {
         </div>
       </div>
     </Link>
+  );
+}
+
+/* ── Activity Indicators ──────────────────────────────── */
+
+const ACTIVITY_COLORS = {
+  working: { dot: "#16a34a", bg: "rgba(22, 163, 74, 0.08)", text: "#16a34a", label: "Working" },
+  idle: { dot: "#d97706", bg: "rgba(217, 119, 6, 0.08)", text: "#d97706", label: "Idle" },
+  offline: { dot: "#a3a3a3", bg: "rgba(163, 163, 163, 0.08)", text: "#a3a3a3", label: "Offline" },
+};
+
+function ActivityDot({ status }: { status: "working" | "idle" | "offline" }) {
+  const c = ACTIVITY_COLORS[status];
+  return (
+    <>
+      <span
+        style={{
+          position: "absolute", bottom: -2, right: -2,
+          width: 10, height: 10, borderRadius: "50%",
+          background: c.dot, border: "2px solid #fff",
+          zIndex: 1,
+        }}
+      />
+      {status === "working" && (
+        <span
+          className="activity-pulse"
+          style={{
+            position: "absolute", bottom: -2, right: -2,
+            width: 10, height: 10, borderRadius: "50%",
+            background: c.dot, opacity: 0.4,
+            zIndex: 0,
+          }}
+        />
+      )}
+      <style>{`
+        @keyframes activityPulse {
+          0% { transform: scale(1); opacity: 0.4; }
+          50% { transform: scale(2); opacity: 0; }
+          100% { transform: scale(1); opacity: 0; }
+        }
+        .activity-pulse { animation: activityPulse 2s ease-in-out infinite; }
+      `}</style>
+    </>
+  );
+}
+
+function ActivityBar({ activityStatus, currentTask, inProgressCount }: {
+  activityStatus: "working" | "idle" | "offline";
+  currentTask: string | null;
+  inProgressCount: number;
+}) {
+  const c = ACTIVITY_COLORS[activityStatus];
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: 6,
+      padding: "5px 8px", marginBottom: 8,
+      borderRadius: "var(--radius-sm, 6px)",
+      background: c.bg,
+      fontSize: 11, fontWeight: 500, color: c.text,
+      lineHeight: 1.3,
+    }}>
+      <span style={{
+        width: 6, height: 6, borderRadius: "50%",
+        background: c.dot, flexShrink: 0,
+      }} />
+      {activityStatus === "working" ? (
+        <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          {currentTask || `Working on ${inProgressCount} task${inProgressCount !== 1 ? "s" : ""}`}
+        </span>
+      ) : activityStatus === "idle" ? (
+        <span>Standing by</span>
+      ) : (
+        <span>Not reachable</span>
+      )}
+    </div>
+  );
+}
+
+function ActivityLabel({ activityStatus, inProgressCount }: {
+  activityStatus: "working" | "idle" | "offline";
+  inProgressCount: number;
+}) {
+  const c = ACTIVITY_COLORS[activityStatus];
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 4,
+      fontSize: 11, fontWeight: 500, color: c.text,
+      padding: "2px 8px", borderRadius: 99,
+      background: c.bg, flexShrink: 0, whiteSpace: "nowrap",
+    }}>
+      <span style={{ width: 5, height: 5, borderRadius: "50%", background: c.dot, flexShrink: 0 }} />
+      {c.label}
+      {activityStatus === "working" && inProgressCount > 0 && (
+        <span style={{ opacity: 0.7 }}>({inProgressCount})</span>
+      )}
+    </span>
   );
 }
 

@@ -286,6 +286,19 @@ class ApiClient {
     );
   }
 
+  // Employee activity status
+  async getEmployeeActivity() {
+    return this.request<{
+      activity: Array<{
+        employeeId: string;
+        activityStatus: "working" | "idle" | "offline";
+        currentTask: string | null;
+        inProgressCount: number;
+        lastHealthAt: string | null;
+      }>;
+    }>("/api/employees/activity");
+  }
+
   // Dashboard
   async getDashboard() {
     return this.request<{ company: any; employees: any }>("/api/dashboard/overview");
