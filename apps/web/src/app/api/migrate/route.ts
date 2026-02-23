@@ -53,6 +53,15 @@ export async function POST(request: NextRequest) {
     await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS interservice_secret VARCHAR(255)`;
     results.push("0005: employee droplet fields — OK");
 
+    // Migration 0006: Add trigger_id to tasks table (links tasks to cron triggers)
+    await sql`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS trigger_id UUID REFERENCES triggers(id) ON DELETE SET NULL`;
+    results.push("0006: task trigger_id column — OK");
+
+    // Migration 0007: Add activity tracking columns to employees
+    await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS last_request_sent_at TIMESTAMPTZ`;
+    await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS last_response_at TIMESTAMPTZ`;
+    results.push("0007: employee activity tracking columns — OK");
+
     // Admin actions
     const action = request.nextUrl.searchParams.get("action");
 
@@ -216,10 +225,15 @@ export async function POST(request: NextRequest) {
       LIMIT 10
     `;
 
-    // Check current employees columns
-    const cols = await sql`
+    // Check current table columns
+    const empCols = await sql`
       SELECT column_name FROM information_schema.columns
       WHERE table_name = 'employees'
+      ORDER BY ordinal_position
+    `;
+    const taskCols = await sql`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_name = 'tasks'
       ORDER BY ordinal_position
     `;
 
@@ -227,7 +241,8 @@ export async function POST(request: NextRequest) {
       success: true,
       migrations: results,
       employees: empRows,
-      employeeColumns: cols.map((c: any) => c.column_name),
+      employeeColumns: empCols.map((c: any) => c.column_name),
+      taskColumns: taskCols.map((c: any) => c.column_name),
     });
   } catch (err: any) {
     return NextResponse.json(

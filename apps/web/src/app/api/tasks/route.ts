@@ -20,9 +20,12 @@ export async function GET(request: NextRequest) {
   const employeeId = request.nextUrl.searchParams.get("employeeId");
   const status = request.nextUrl.searchParams.get("status");
 
-  // Try the full query with trigger info first; fall back to basic query
-  // if the trigger_id column doesn't exist yet (migration not run)
+  // Try progressively simpler queries to handle missing columns gracefully:
+  // 1. Full query with triggers join
+  // 2. Without triggers (trigger_id column may not exist)
+  // 3. Raw SQL as last resort (handles any schema mismatch)
   let result: Array<Record<string, unknown>>;
+
   try {
     let query = db
       .select({
@@ -59,39 +62,96 @@ export async function GET(request: NextRequest) {
 
     result = await query;
   } catch {
-    // Fallback: query without trigger fields (trigger_id column may not exist)
-    let query = db
-      .select({
-        id: tasks.id,
-        employeeId: tasks.employeeId,
-        companyId: tasks.companyId,
-        title: tasks.title,
-        description: tasks.description,
-        status: tasks.status,
-        priority: tasks.priority,
-        source: tasks.source,
-        category: tasks.category,
-        dueDate: tasks.dueDate,
-        completedAt: tasks.completedAt,
-        createdAt: tasks.createdAt,
-        updatedAt: tasks.updatedAt,
-        employeeName: employees.name,
-        employeeEmoji: employees.emoji,
-        employeeJobTitle: employees.jobTitle,
-      })
-      .from(tasks)
-      .leftJoin(employees, eq(tasks.employeeId, employees.id))
-      .where(eq(tasks.companyId, session.companyId))
-      .orderBy(desc(tasks.createdAt))
-      .$dynamic();
+    // Attempt 2: Without trigger fields
+    try {
+      let query = db
+        .select({
+          id: tasks.id,
+          employeeId: tasks.employeeId,
+          companyId: tasks.companyId,
+          title: tasks.title,
+          description: tasks.description,
+          status: tasks.status,
+          priority: tasks.priority,
+          source: tasks.source,
+          category: tasks.category,
+          dueDate: tasks.dueDate,
+          completedAt: tasks.completedAt,
+          createdAt: tasks.createdAt,
+          updatedAt: tasks.updatedAt,
+          employeeName: employees.name,
+          employeeEmoji: employees.emoji,
+          employeeJobTitle: employees.jobTitle,
+        })
+        .from(tasks)
+        .leftJoin(employees, eq(tasks.employeeId, employees.id))
+        .where(eq(tasks.companyId, session.companyId))
+        .orderBy(desc(tasks.createdAt))
+        .$dynamic();
 
-    if (employeeId) {
-      query = query.where(and(eq(tasks.companyId, session.companyId), eq(tasks.employeeId, employeeId)));
+      if (employeeId) {
+        query = query.where(and(eq(tasks.companyId, session.companyId), eq(tasks.employeeId, employeeId)));
+      }
+
+      const rows = await query;
+      result = rows.map((r) => ({ ...r, triggerId: null, triggerName: null, triggerCron: null }));
+    } catch {
+      // Attempt 3: Raw SQL — handles any schema mismatch
+      try {
+        const { neon } = await import("@neondatabase/serverless");
+        const sql = neon(process.env.DATABASE_URL!.trim());
+
+        let rows;
+        if (employeeId) {
+          rows = await sql`
+            SELECT t.id, t.employee_id, t.company_id, t.title, t.description,
+                   t.status, t.priority, t.source, t.due_date, t.completed_at,
+                   t.created_at, t.updated_at,
+                   e.name as employee_name, e.emoji as employee_emoji, e.job_title as employee_job_title
+            FROM tasks t
+            LEFT JOIN employees e ON t.employee_id = e.id
+            WHERE t.company_id = ${session.companyId} AND t.employee_id = ${employeeId}
+            ORDER BY t.created_at DESC
+          `;
+        } else {
+          rows = await sql`
+            SELECT t.id, t.employee_id, t.company_id, t.title, t.description,
+                   t.status, t.priority, t.source, t.due_date, t.completed_at,
+                   t.created_at, t.updated_at,
+                   e.name as employee_name, e.emoji as employee_emoji, e.job_title as employee_job_title
+            FROM tasks t
+            LEFT JOIN employees e ON t.employee_id = e.id
+            WHERE t.company_id = ${session.companyId}
+            ORDER BY t.created_at DESC
+          `;
+        }
+
+        result = rows.map((r: any) => ({
+          id: r.id,
+          employeeId: r.employee_id,
+          companyId: r.company_id,
+          title: r.title,
+          description: r.description,
+          status: r.status,
+          priority: r.priority,
+          source: r.source,
+          category: r.category || null,
+          triggerId: null,
+          triggerName: null,
+          triggerCron: null,
+          dueDate: r.due_date,
+          completedAt: r.completed_at,
+          createdAt: r.created_at,
+          updatedAt: r.updated_at,
+          employeeName: r.employee_name,
+          employeeEmoji: r.employee_emoji,
+          employeeJobTitle: r.employee_job_title,
+        }));
+      } catch (err) {
+        console.error("[tasks] All query attempts failed:", err);
+        return NextResponse.json({ tasks: [], _error: "Database query failed" });
+      }
     }
-
-    const rows = await query;
-    // Add null trigger fields so the frontend type is satisfied
-    result = rows.map((r) => ({ ...r, triggerId: null, triggerName: null, triggerCron: null }));
   }
 
   // Filter by status client-side if needed (drizzle dynamic where chaining can be tricky)
