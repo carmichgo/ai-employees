@@ -469,6 +469,10 @@ export async function provisionRoutes(fastify: FastifyInstance) {
         writeFileSync(`${configDir}/openclaw.json`, JSON.stringify(config, null, 2));
         writeFileSync(`${configDir}/SOUL.md`, soulMd);
         writeFileSync(`${configDir}/workspace/SOUL.md`, soulMd);
+        // OpenClaw creates workspace-main at runtime — must update there too
+        if (existsSync(`${configDir}/workspace-main`)) {
+          writeFileSync(`${configDir}/workspace-main/SOUL.md`, soulMd);
+        }
         writeFileSync(`${configDir}/cred.js`, genCred(), { mode: 0o755 });
 
         // Write updated skills
@@ -586,6 +590,10 @@ export async function provisionRoutes(fastify: FastifyInstance) {
         writeFileSync(`${configDir}/openclaw.json`, JSON.stringify(config, null, 2));
         writeFileSync(`${configDir}/SOUL.md`, soulMd);
         writeFileSync(`${configDir}/workspace/SOUL.md`, soulMd);
+        // OpenClaw creates workspace-main at runtime — must update there too
+        if (existsSync(`${configDir}/workspace-main`)) {
+          writeFileSync(`${configDir}/workspace-main/SOUL.md`, soulMd);
+        }
         writeFileSync(`${configDir}/cred.js`, genCred(), { mode: 0o755 });
 
         const skillDir = `${configDir}/skills`;

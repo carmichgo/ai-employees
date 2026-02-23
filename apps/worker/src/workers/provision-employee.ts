@@ -1,7 +1,7 @@
 import { eq, not, inArray } from "drizzle-orm";
 import crypto from "node:crypto";
 import { execSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { db, employees, companies, users } from "@ai-employees/db";
 import { getResourcesForTier, type EmployeeTier } from "@ai-employees/shared";
 import {
@@ -140,6 +140,10 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     writeFileSync(`${configDir}/openclaw.json`, JSON.stringify(config, null, 2));
     writeFileSync(`${configDir}/SOUL.md`, soulMd);
     writeFileSync(`${configDir}/workspace/SOUL.md`, soulMd);
+    // OpenClaw creates workspace-main at runtime — write there too if it exists
+    if (existsSync(`${configDir}/workspace-main`)) {
+      writeFileSync(`${configDir}/workspace-main/SOUL.md`, soulMd);
+    }
 
     // Write credential manager CLI script
     writeFileSync(`${configDir}/cred.js`, generateCredentialManagerScript(), { mode: 0o755 });
