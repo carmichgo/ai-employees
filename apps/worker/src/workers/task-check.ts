@@ -81,9 +81,9 @@ async function checkEmployeeTasks(employee: {
     return; // No pending tasks — nothing to do
   }
 
-  // Build a summary message
+  // Build a summary message with task IDs so the employee can update them directly
   const taskLines = pendingTasks.map((t) => {
-    let line = `- **${t.title}** (${t.priority} priority)`;
+    let line = `- **${t.title}** (ID: ${t.id}, ${t.priority} priority)`;
     if (t.category) line += ` [${t.category}]`;
     if (t.dueDate) line += ` — due ${new Date(t.dueDate).toLocaleDateString()}`;
     return line;
@@ -96,8 +96,11 @@ async function checkEmployeeTasks(employee: {
     ``,
     ...taskLines,
     ``,
-    `Please check your task board, pick up any tasks you can start, update their status to "in_progress", and add a comment about your approach.`,
-    `Use the Task Management skill commands to update your tasks.`,
+    `Pick up these existing tasks — update their status to "in_progress" and start working on them.`,
+    `Do NOT create new tasks for this notification. These tasks already exist in your task board.`,
+    ``,
+    `Update a task:`,
+    `curl -s -X PATCH "$BLITZ_API_URL/employee/tasks/<TASK_ID>" -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" -H "Content-Type: application/json" -d '{"status": "in_progress", "comment": "Starting work on this."}'`,
   ].join("\n");
 
   try {

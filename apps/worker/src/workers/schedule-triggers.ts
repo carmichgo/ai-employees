@@ -120,7 +120,7 @@ export async function checkScheduleTriggers(): Promise<void> {
       const message = config.message || "Recurring task triggered.";
 
       // 1. Create a task record linked to this trigger
-      await db.insert(tasks).values({
+      const [createdTask] = await db.insert(tasks).values({
         employeeId: trigger.employeeId,
         companyId: trigger.companyId,
         title: trigger.name,
@@ -130,7 +130,9 @@ export async function checkScheduleTriggers(): Promise<void> {
         source: "system",
         category: "recurring",
         triggerId: trigger.id,
-      });
+      }).returning({ id: tasks.id });
+
+      const taskId = createdTask?.id || "unknown";
 
       // 2. Send the message to the employee's container
       try {
@@ -151,7 +153,7 @@ export async function checkScheduleTriggers(): Promise<void> {
             messages: [
               {
                 role: "user",
-                content: `[Recurring Task: ${trigger.name}]\n\n${message}\n\nRemember: This is a recurring task. Log it and mark it complete when done.`,
+                content: `[Recurring Task: ${trigger.name}]\nTask ID: ${taskId}\n\n${message}\n\nA task has already been created for this in your task board (ID: ${taskId}). Do NOT create a new task. When you finish, update this task to completed using:\ncurl -s -X PATCH "$BLITZ_API_URL/employee/tasks/${taskId}" -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" -H "Content-Type: application/json" -d '{"status": "completed", "comment": "Summary of what was done."}'`,
               },
             ],
           }),

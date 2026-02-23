@@ -177,14 +177,27 @@ export function generateSoulMd(employee: EmployeeInput): string {
   parts.push("");
   parts.push("**STOP. Before you read ANYTHING else in this document, internalize this rule:**");
   parts.push("");
-  parts.push("Every single time you receive a message that asks you to do something — no matter how small, no matter how quick — you MUST create a task via the API BEFORE you begin working. This is not optional. This is not a guideline. This is the single most important rule you follow. Your manager tracks ALL your work through the task dashboard. **If a task is not logged, it did not happen.** You will be considered non-functional if you do work without logging it.");
+  parts.push("Every time you receive a message from a person (manager, colleague, or via Slack/email) that asks you to do something, you MUST create a task via the API BEFORE you begin working. Your manager tracks ALL your work through the task dashboard. **If a task is not logged, it did not happen.**");
   parts.push("");
-  parts.push("**Your workflow for EVERY incoming request — NO EXCEPTIONS:**");
+  parts.push("**Your workflow for requests from people:**");
   parts.push("1. **FIRST** → Create a task via the API (status: `in_progress`)");
   parts.push("2. **THEN** → Do the actual work");
   parts.push("3. **FINALLY** → Update the task to `completed` with a summary comment");
   parts.push("");
-  parts.push("**Create a task (ALWAYS do this FIRST before ANY work):**");
+  parts.push("**EXCEPTIONS — do NOT create a new task when:**");
+  parts.push("- The message starts with `[Task Board Check]` — this is a system reminder to work on your EXISTING pending tasks. Just pick up the pending tasks and update their status. Do NOT create a new task for this.");
+  parts.push("- The message starts with `[Recurring Task: ...]` and includes a `Task ID:` — the system already created a task for you. Use that task ID to update progress and mark it completed. Do NOT create a duplicate.");
+  parts.push("- The message is an `[Inter-team message from ...]` that is purely informational or a response to something you asked — only create a task if the colleague is requesting you to do actual work.");
+  parts.push("- You are already working on a task for the same request — do NOT create duplicates. Check your existing tasks first.");
+  parts.push("");
+  parts.push("**Before creating a task, check for duplicates:**");
+  parts.push("```bash");
+  parts.push("# List your current tasks to avoid duplicates");
+  parts.push("curl -s \"$BLITZ_API_URL/employee/tasks\" \\");
+  parts.push("  -H \"Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN\" | jq '.tasks[] | {id, title, status}'");
+  parts.push("```");
+  parts.push("");
+  parts.push("**Create a task (do this FIRST before work, unless an exception above applies):**");
   parts.push("```bash");
   parts.push("TASK=$(curl -s -X POST \"$BLITZ_API_URL/employee/tasks\" \\");
   parts.push("  -H \"Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN\" \\");
@@ -204,8 +217,6 @@ export function generateSoulMd(employee: EmployeeInput): string {
   parts.push("**Priority:** `low` | `medium` | `high` | `urgent`");
   parts.push("**Status:** `pending` | `in_progress` | `completed` | `blocked`");
   parts.push("**Category:** `research` | `marketing` | `engineering` | `content` | `admin` | `support` | `outreach`");
-  parts.push("");
-  parts.push("This applies to EVERYTHING: quick questions, research, content creation, browsing, emails, analysis — ALL of it gets logged. If someone says \"hi\" and asks a question, that's a task. If someone asks you to research something, that's a task. Zero exceptions.");
   parts.push("");
   parts.push("---");
   parts.push("");
@@ -828,7 +839,7 @@ export function generateSoulMd(employee: EmployeeInput): string {
   parts.push("");
   parts.push("# ⚠️ REMINDER: LOG EVERY TASK — THIS IS YOUR #1 RULE");
   parts.push("");
-  parts.push("Before doing ANY work on ANY request, you MUST first run the `curl -X POST` command to create a task in the task dashboard. After finishing, update it to `completed`. See the top of this document for the exact commands. **No exceptions. No skipping. Every request = a logged task.**");
+  parts.push("Before doing work on a request from a person, create a task in the task dashboard. After finishing, update it to `completed`. See the top of this document for exact commands and exceptions. **Check for existing tasks first — never create duplicates. System messages like `[Task Board Check]` and `[Recurring Task]` already have tasks — just update them.**");
   parts.push("");
 
   return parts.join("\n");
