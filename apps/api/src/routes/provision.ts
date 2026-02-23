@@ -7,7 +7,7 @@ import crypto from "node:crypto";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { eq, and } from "drizzle-orm";
-import { db, employees, companies, users } from "@ai-employees/db";
+import { db, employees, companies, users, tasks } from "@ai-employees/db";
 import { getJobTemplate, PLAN_LIMITS, type PlanTier, getModelForTier, type EmployeeTier } from "@ai-employees/shared";
 import { regenerateChannelConfig, type ChannelInput } from "@ai-employees/openclaw-config";
 import { getProvisionQueue } from "../queues.js";
@@ -653,6 +653,25 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     const company = await db.query.companies.findFirst({ where: eq(companies.id, employee.companyId) });
     const owner = await db.query.users.findFirst({ where: eq(users.companyId, employee.companyId) });
     const promptExtra = { companyName: company?.name, ownerName: owner?.name };
+
+    // Auto-create a task for the user's message so work is always tracked,
+    // regardless of whether the AI model executes its own task-logging curl.
+    const lastUserMsg = body.messages.filter((m) => m.role === "user").pop()?.content || "";
+    if (lastUserMsg.trim()) {
+      try {
+        await db.insert(tasks).values({
+          employeeId: id,
+          companyId: employee.companyId,
+          title: lastUserMsg.length > 200 ? lastUserMsg.slice(0, 197) + "..." : lastUserMsg,
+          description: lastUserMsg.length > 200 ? lastUserMsg : null,
+          priority: "medium",
+          status: "in_progress",
+          source: "manager",
+        });
+      } catch (taskErr) {
+        fastify.log.warn(`[chat] Failed to auto-create task: ${taskErr}`);
+      }
+    }
 
     // If container is available, route through it (OpenClaw)
     if (employee.containerHost && employee.containerPort) {

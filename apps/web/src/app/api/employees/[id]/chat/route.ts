@@ -12,7 +12,7 @@ import { NextRequest, NextResponse } from "next/server";
 export const maxDuration = 120; // Chat responses from AI can take time
 import { eq, and, desc } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { employees, chatMessages } from "@/lib/schema";
+import { employees, chatMessages, tasks } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
 
 async function authenticate(request: NextRequest) {
@@ -111,6 +111,22 @@ export async function POST(
     role: "user",
     content: message,
   });
+
+  // Auto-create a task for the user's message so work is always tracked,
+  // regardless of whether the AI model executes its own task-logging curl.
+  try {
+    await db.insert(tasks).values({
+      employeeId: id,
+      companyId: employee.companyId,
+      title: message.length > 200 ? message.slice(0, 197) + "..." : message,
+      description: message.length > 200 ? message : null,
+      priority: "medium",
+      status: "in_progress",
+      source: "manager",
+    });
+  } catch {
+    // Task creation is best-effort — don't block chat if it fails
+  }
 
   // Check if employee has an active droplet
   if (employee.dropletStatus !== "active" || !employee.dropletIp || !employee.interserviceSecret) {
