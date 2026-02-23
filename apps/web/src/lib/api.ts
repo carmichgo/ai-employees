@@ -291,10 +291,18 @@ class ApiClient {
     return this.request<{
       activity: Array<{
         employeeId: string;
-        activityStatus: "working" | "idle" | "offline";
+        activityStatus: "working" | "idle" | "offline" | "may_be_stuck";
         currentTask: string | null;
         inProgressCount: number;
         lastHealthAt: string | null;
+        lastActiveAt: string | null;
+        tasks: Array<{
+          taskId: string;
+          title: string;
+          inProgressSince: string;
+          lastUpdated: string;
+          minutesSinceUpdate: number;
+        }>;
       }>;
     }>("/api/employees/activity");
   }

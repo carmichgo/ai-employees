@@ -56,6 +56,15 @@ function getStatusStyle(status: string) {
 
 type ViewMode = "grid" | "list";
 
+type ActivityStatus = "working" | "idle" | "offline" | "may_be_stuck";
+type ActivityInfo = {
+  activityStatus: ActivityStatus;
+  currentTask: string | null;
+  inProgressCount: number;
+  lastActiveAt: string | null;
+  tasks: Array<{ taskId: string; title: string; lastUpdated: string; minutesSinceUpdate: number }>;
+};
+
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,13 +72,19 @@ export default function EmployeesPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
-  const [activityMap, setActivityMap] = useState<Record<string, { activityStatus: "working" | "idle" | "offline"; currentTask: string | null; inProgressCount: number }>>({});
+  const [activityMap, setActivityMap] = useState<Record<string, ActivityInfo>>({});
 
   const fetchActivity = () => {
     api.getEmployeeActivity().then((res) => {
-      const map: typeof activityMap = {};
+      const map: Record<string, ActivityInfo> = {};
       for (const a of res.activity) {
-        map[a.employeeId] = { activityStatus: a.activityStatus, currentTask: a.currentTask, inProgressCount: a.inProgressCount };
+        map[a.employeeId] = {
+          activityStatus: a.activityStatus,
+          currentTask: a.currentTask,
+          inProgressCount: a.inProgressCount,
+          lastActiveAt: a.lastActiveAt,
+          tasks: a.tasks || [],
+        };
       }
       setActivityMap(map);
     }).catch(() => {});
@@ -364,12 +379,12 @@ export default function EmployeesPage() {
 
 /* ── Grid Card ──────────────────────────────────────────── */
 
-function EmployeeCard({ emp, activity }: { emp: any; activity?: { activityStatus: "working" | "idle" | "offline"; currentTask: string | null; inProgressCount: number } }) {
+function EmployeeCard({ emp, activity }: { emp: any; activity?: ActivityInfo }) {
   const [hovered, setHovered] = useState(false);
   const model = getModelLabel(emp.modelConfig);
   const tier = TIER_LABELS[emp.tier] || emp.tier;
   const statusStyle = getStatusStyle(emp.status);
-  const act = activity || { activityStatus: "offline" as const, currentTask: null, inProgressCount: 0 };
+  const act = activity || { activityStatus: "offline" as ActivityStatus, currentTask: null, inProgressCount: 0, lastActiveAt: null, tasks: [] };
 
   return (
     <Link
@@ -429,7 +444,7 @@ function EmployeeCard({ emp, activity }: { emp: any; activity?: { activityStatus
 
         {/* Activity bar — shows current work */}
         {emp.status === "active" && (
-          <ActivityBar activityStatus={act.activityStatus} currentTask={act.currentTask} inProgressCount={act.inProgressCount} />
+          <ActivityBar activityStatus={act.activityStatus} currentTask={act.currentTask} inProgressCount={act.inProgressCount} lastActiveAt={act.lastActiveAt} tasks={act.tasks || []} />
         )}
 
         {/* Info rows — fixed 3 lines so all cards are same height */}
@@ -487,11 +502,11 @@ function EmployeeCard({ emp, activity }: { emp: any; activity?: { activityStatus
 
 /* ── List Row ──────────────────────────────────────────── */
 
-function EmployeeRow({ emp, isLast, activity }: { emp: any; isLast: boolean; activity?: { activityStatus: "working" | "idle" | "offline"; currentTask: string | null; inProgressCount: number } }) {
+function EmployeeRow({ emp, isLast, activity }: { emp: any; isLast: boolean; activity?: ActivityInfo }) {
   const [hovered, setHovered] = useState(false);
   const model = getModelLabel(emp.modelConfig);
   const tier = TIER_LABELS[emp.tier] || emp.tier;
-  const act = activity || { activityStatus: "offline" as const, currentTask: null, inProgressCount: 0 };
+  const act = activity || { activityStatus: "offline" as ActivityStatus, currentTask: null, inProgressCount: 0, lastActiveAt: null, tasks: [] };
 
   return (
     <Link
@@ -533,19 +548,22 @@ function EmployeeRow({ emp, isLast, activity }: { emp: any; isLast: boolean; act
             {emp.name}
           </div>
           <div style={{
-            fontSize: 12, color: act.activityStatus === "working" ? "#16a34a" : "var(--text-secondary, #525252)",
+            fontSize: 12,
+            color: act.activityStatus === "working" ? "#16a34a" : act.activityStatus === "may_be_stuck" ? "#dc2626" : "var(--text-secondary, #525252)",
             lineHeight: 1.3, marginTop: 1,
             whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
           }}>
             {act.activityStatus === "working" && act.currentTask
               ? act.currentTask
-              : emp.jobTitle}
+              : act.activityStatus === "may_be_stuck" && act.currentTask
+                ? `Stuck: ${act.currentTask}`
+                : emp.jobTitle}
           </div>
         </div>
 
         {/* Activity label */}
         {emp.status === "active" && (
-          <ActivityLabel activityStatus={act.activityStatus} inProgressCount={act.inProgressCount} />
+          <ActivityLabel activityStatus={act.activityStatus} inProgressCount={act.inProgressCount} lastActiveAt={act.lastActiveAt} tasks={act.tasks || []} />
         )}
 
         {/* Tier + Model */}
@@ -587,13 +605,23 @@ function EmployeeRow({ emp, isLast, activity }: { emp: any; isLast: boolean; act
 
 /* ── Activity Indicators ──────────────────────────────── */
 
-const ACTIVITY_COLORS = {
+const ACTIVITY_COLORS: Record<ActivityStatus, { dot: string; bg: string; text: string; label: string }> = {
   working: { dot: "#16a34a", bg: "rgba(22, 163, 74, 0.08)", text: "#16a34a", label: "Working" },
+  may_be_stuck: { dot: "#dc2626", bg: "rgba(220, 38, 38, 0.08)", text: "#dc2626", label: "May be stuck" },
   idle: { dot: "#d97706", bg: "rgba(217, 119, 6, 0.08)", text: "#d97706", label: "Idle" },
   offline: { dot: "#a3a3a3", bg: "rgba(163, 163, 163, 0.08)", text: "#a3a3a3", label: "Offline" },
 };
 
-function ActivityDot({ status }: { status: "working" | "idle" | "offline" }) {
+function formatDuration(minutes: number): string {
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m`;
+  const hrs = Math.floor(minutes / 60);
+  if (hrs < 24) return `${hrs}h ${minutes % 60}m`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ${hrs % 24}h`;
+}
+
+function ActivityDot({ status }: { status: ActivityStatus }) {
   const c = ACTIVITY_COLORS[status];
   return (
     <>
@@ -616,6 +644,16 @@ function ActivityDot({ status }: { status: "working" | "idle" | "offline" }) {
           }}
         />
       )}
+      {status === "may_be_stuck" && (
+        <span
+          className="activity-blink"
+          style={{
+            position: "absolute", bottom: -2, right: -2,
+            width: 10, height: 10, borderRadius: "50%",
+            background: c.dot, zIndex: 0,
+          }}
+        />
+      )}
       <style>{`
         @keyframes activityPulse {
           0% { transform: scale(1); opacity: 0.4; }
@@ -623,58 +661,86 @@ function ActivityDot({ status }: { status: "working" | "idle" | "offline" }) {
           100% { transform: scale(1); opacity: 0; }
         }
         .activity-pulse { animation: activityPulse 2s ease-in-out infinite; }
+        @keyframes activityBlink {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.3; }
+        }
+        .activity-blink { animation: activityBlink 1.5s ease-in-out infinite; }
       `}</style>
     </>
   );
 }
 
-function ActivityBar({ activityStatus, currentTask, inProgressCount }: {
-  activityStatus: "working" | "idle" | "offline";
+function ActivityBar({ activityStatus, currentTask, inProgressCount, lastActiveAt, tasks }: {
+  activityStatus: ActivityStatus;
   currentTask: string | null;
   inProgressCount: number;
+  lastActiveAt: string | null;
+  tasks: Array<{ title: string; minutesSinceUpdate: number }>;
 }) {
   const c = ACTIVITY_COLORS[activityStatus];
+  const oldestStaleTask = activityStatus === "may_be_stuck" && tasks.length > 0
+    ? tasks[tasks.length - 1]
+    : null;
   return (
     <div style={{
-      display: "flex", alignItems: "center", gap: 6,
+      display: "flex", flexDirection: "column", gap: 2,
       padding: "5px 8px", marginBottom: 8,
       borderRadius: "var(--radius-sm, 6px)",
       background: c.bg,
       fontSize: 11, fontWeight: 500, color: c.text,
       lineHeight: 1.3,
     }}>
-      <span style={{
-        width: 6, height: 6, borderRadius: "50%",
-        background: c.dot, flexShrink: 0,
-      }} />
-      {activityStatus === "working" ? (
-        <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-          {currentTask || `Working on ${inProgressCount} task${inProgressCount !== 1 ? "s" : ""}`}
-        </span>
-      ) : activityStatus === "idle" ? (
-        <span>Standing by</span>
-      ) : (
-        <span>Not reachable</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <span style={{
+          width: 6, height: 6, borderRadius: "50%",
+          background: c.dot, flexShrink: 0,
+        }} />
+        {activityStatus === "working" ? (
+          <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {currentTask || `Working on ${inProgressCount} task${inProgressCount !== 1 ? "s" : ""}`}
+          </span>
+        ) : activityStatus === "may_be_stuck" ? (
+          <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {inProgressCount} task{inProgressCount !== 1 ? "s" : ""} stale — no updates in {formatDuration(tasks[0]?.minutesSinceUpdate || 0)}
+          </span>
+        ) : activityStatus === "idle" ? (
+          <span>Standing by</span>
+        ) : (
+          <span>Not reachable</span>
+        )}
+      </div>
+      {activityStatus === "may_be_stuck" && lastActiveAt && (
+        <div style={{ fontSize: 10, opacity: 0.7, paddingLeft: 12 }}>
+          Last active {formatDuration(Math.floor((Date.now() - new Date(lastActiveAt).getTime()) / 60_000))} ago
+        </div>
       )}
     </div>
   );
 }
 
-function ActivityLabel({ activityStatus, inProgressCount }: {
-  activityStatus: "working" | "idle" | "offline";
+function ActivityLabel({ activityStatus, inProgressCount, lastActiveAt, tasks }: {
+  activityStatus: ActivityStatus;
   inProgressCount: number;
+  lastActiveAt: string | null;
+  tasks: Array<{ minutesSinceUpdate: number }>;
 }) {
   const c = ACTIVITY_COLORS[activityStatus];
   return (
-    <span style={{
-      display: "inline-flex", alignItems: "center", gap: 4,
-      fontSize: 11, fontWeight: 500, color: c.text,
-      padding: "2px 8px", borderRadius: 99,
-      background: c.bg, flexShrink: 0, whiteSpace: "nowrap",
-    }}>
+    <span
+      style={{
+        display: "inline-flex", alignItems: "center", gap: 4,
+        fontSize: 11, fontWeight: 500, color: c.text,
+        padding: "2px 8px", borderRadius: 99,
+        background: c.bg, flexShrink: 0, whiteSpace: "nowrap",
+      }}
+      title={activityStatus === "may_be_stuck"
+        ? `${inProgressCount} task${inProgressCount !== 1 ? "s" : ""} with no updates in ${formatDuration(tasks[0]?.minutesSinceUpdate || 0)}`
+        : undefined}
+    >
       <span style={{ width: 5, height: 5, borderRadius: "50%", background: c.dot, flexShrink: 0 }} />
       {c.label}
-      {activityStatus === "working" && inProgressCount > 0 && (
+      {(activityStatus === "working" || activityStatus === "may_be_stuck") && inProgressCount > 0 && (
         <span style={{ opacity: 0.7 }}>({inProgressCount})</span>
       )}
     </span>
