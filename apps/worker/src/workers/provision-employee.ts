@@ -587,7 +587,7 @@ CREDEOF
     {
       name: "Python deps for media generation",
       cmd: `docker exec ${containerName} bash -c '
-        pip3 install -q google-genai Pillow 2>/dev/null || true
+        pip3 install -q --break-system-packages google-genai Pillow 2>/dev/null || true
       '`,
       timeout: 60_000,
     },
