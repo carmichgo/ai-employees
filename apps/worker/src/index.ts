@@ -10,6 +10,7 @@ import {
 } from "./workers/provision-employee.js";
 import { pollAllEmployeeHealth } from "./workers/health-poll.js";
 import { checkPendingTasks } from "./workers/task-check.js";
+import { checkScheduleTriggers } from "./workers/schedule-triggers.js";
 
 const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
 
@@ -72,11 +73,21 @@ const taskCheckInterval = setInterval(async () => {
   }
 }, 5 * 60_000);
 
+// Schedule trigger checker — runs every 60 seconds, fires cron-based triggers
+const scheduleInterval = setInterval(async () => {
+  try {
+    await checkScheduleTriggers();
+  } catch (error) {
+    console.error("[schedule] Schedule trigger error:", error);
+  }
+}, 60_000);
+
 // Graceful shutdown
 async function shutdown() {
   console.log("[worker] Shutting down...");
   clearInterval(healthInterval);
   clearInterval(taskCheckInterval);
+  clearInterval(scheduleInterval);
   await provisionWorker.close();
   await connection.quit();
   process.exit(0);

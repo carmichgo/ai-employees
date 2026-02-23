@@ -196,6 +196,7 @@ export const tasks = pgTable("tasks", {
   priority: varchar("priority", { length: 20 }).notNull().default("medium"),
   source: varchar("source", { length: 20 }).notNull().default("manager"),
   category: varchar("category", { length: 100 }),
+  triggerId: uuid("trigger_id").references(() => triggers.id, { onDelete: "set null" }),
   dueDate: timestamp("due_date", { withTimezone: true }),
   completedAt: timestamp("completed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

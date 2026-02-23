@@ -23,6 +23,7 @@ import {
   ArrowUpRight,
   Minus,
   ArrowDown,
+  RefreshCw,
 } from "lucide-react";
 
 // ── Types ─────────────────────────────────────
@@ -36,6 +37,9 @@ type Task = {
   priority: string;
   source: string;
   category: string | null;
+  triggerId: string | null;
+  triggerName: string | null;
+  triggerCron: { cron?: string; message?: string } | null;
   dueDate: string | null;
   completedAt: string | null;
   createdAt: string;
@@ -368,6 +372,16 @@ export default function TasksPage() {
                               padding: "2px 6px", borderRadius: 4,
                             }}>self-reported</span>
                           )}
+                          {/* Recurring badge */}
+                          {task.triggerId && (
+                            <span style={{
+                              display: "inline-flex", alignItems: "center", gap: 3,
+                              fontSize: 10, color: "#7c3aed", background: "rgba(124,58,237,0.06)",
+                              padding: "2px 6px", borderRadius: 4,
+                            }}>
+                              <RefreshCw size={9} /> recurring
+                            </span>
+                          )}
                         </div>
                         {/* Assignee */}
                         <div style={{
@@ -460,6 +474,15 @@ export default function TasksPage() {
                         {task.source === "employee" && (
                           <span style={{ fontSize: 10, color: "#2563eb", background: "rgba(37,99,235,0.06)", padding: "1px 5px", borderRadius: 3 }}>
                             self-reported
+                          </span>
+                        )}
+                        {task.triggerId && (
+                          <span style={{
+                            display: "inline-flex", alignItems: "center", gap: 3,
+                            fontSize: 10, color: "#7c3aed", background: "rgba(124,58,237,0.06)",
+                            padding: "1px 5px", borderRadius: 3,
+                          }}>
+                            <RefreshCw size={9} /> recurring
                           </span>
                         )}
                       </div>
@@ -697,6 +720,21 @@ export default function TasksPage() {
                   <div style={{ fontSize: 11, fontWeight: 600, color: "#a3a3a3", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>Created by</div>
                   <div style={{ fontSize: 12, color: "#525252", textTransform: "capitalize" }}>{selectedTask.source}</div>
                 </div>
+                {/* Recurring trigger */}
+                {selectedTask.triggerId && selectedTask.triggerName && (
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "#a3a3a3", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>Trigger</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                      <RefreshCw size={11} style={{ color: "#7c3aed" }} />
+                      <span style={{ fontSize: 12, color: "#525252" }}>{selectedTask.triggerName}</span>
+                    </div>
+                    {selectedTask.triggerCron?.cron && (
+                      <div style={{ fontSize: 11, color: "#a3a3a3", marginTop: 3, fontFamily: "monospace" }}>
+                        {selectedTask.triggerCron.cron}
+                      </div>
+                    )}
+                  </div>
+                )}
                 {/* Due date */}
                 <div>
                   <div style={{ fontSize: 11, fontWeight: 600, color: "#a3a3a3", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>Due date</div>

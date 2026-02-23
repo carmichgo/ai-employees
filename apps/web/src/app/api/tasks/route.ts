@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq, and, desc } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { tasks, employees, taskComments } from "@/lib/schema";
+import { tasks, employees, taskComments, triggers } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
 
 async function authenticate(request: NextRequest) {
@@ -31,6 +31,7 @@ export async function GET(request: NextRequest) {
       priority: tasks.priority,
       source: tasks.source,
       category: tasks.category,
+      triggerId: tasks.triggerId,
       dueDate: tasks.dueDate,
       completedAt: tasks.completedAt,
       createdAt: tasks.createdAt,
@@ -38,9 +39,12 @@ export async function GET(request: NextRequest) {
       employeeName: employees.name,
       employeeEmoji: employees.emoji,
       employeeJobTitle: employees.jobTitle,
+      triggerName: triggers.name,
+      triggerCron: triggers.config,
     })
     .from(tasks)
     .leftJoin(employees, eq(tasks.employeeId, employees.id))
+    .leftJoin(triggers, eq(tasks.triggerId, triggers.id))
     .where(eq(tasks.companyId, session.companyId))
     .orderBy(desc(tasks.createdAt))
     .$dynamic();

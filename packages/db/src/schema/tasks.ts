@@ -1,6 +1,7 @@
 import { pgTable, uuid, varchar, text, timestamp } from "drizzle-orm/pg-core";
 import { employees } from "./employees.js";
 import { companies } from "./companies.js";
+import { triggers } from "./triggers.js";
 
 export const tasks = pgTable("tasks", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -26,6 +27,9 @@ export const tasks = pgTable("tasks", {
 
   // Category/label for grouping (e.g. "marketing", "engineering", "research")
   category: varchar("category", { length: 100 }),
+
+  // Link to trigger for recurring/cron-spawned tasks
+  triggerId: uuid("trigger_id").references(() => triggers.id, { onDelete: "set null" }),
 
   // Due date for the task
   dueDate: timestamp("due_date", { withTimezone: true }),
