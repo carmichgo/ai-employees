@@ -83,6 +83,7 @@ export async function buildServer(config: Env) {
     try { checks.soulMdTaskSection = execSync("docker exec $(docker ps -q --latest) grep -c 'MANDATORY.*Task Logging' /home/node/.openclaw/SOUL.md /home/node/.openclaw/workspace/SOUL.md /home/node/.openclaw/workspace-main/SOUL.md 2>&1 || echo 'not found'", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.soulMdTaskSection = `error: ${e.message}`; }
     try { checks.soulMdSize = execSync("docker exec $(docker ps -q --latest) wc -c /home/node/.openclaw/SOUL.md /home/node/.openclaw/workspace/SOUL.md /home/node/.openclaw/workspace-main/SOUL.md 2>&1", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.soulMdSize = `error: ${e.message}`; }
     try { checks.blitzApiUrl = execSync("docker exec $(docker ps -q --latest) bash -c 'echo BLITZ_API_URL=$BLITZ_API_URL' 2>&1", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.blitzApiUrl = `error: ${e.message}`; }
+    try { checks.workspaceMainSoul = execSync("docker exec $(docker ps -q --latest) cat /home/node/.openclaw/workspace-main/SOUL.md 2>&1", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.workspaceMainSoul = `error: ${e.message}`; }
     try { checks.skillsList = execSync("docker exec $(docker ps -q --latest) ls /home/node/.openclaw/skills/ 2>&1", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.skillsList = `error: ${e.message}`; }
     return checks;
   });
