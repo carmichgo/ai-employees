@@ -80,6 +80,9 @@ export async function buildServer(config: Env) {
     try { checks.geminiKeySet = execSync("docker exec $(docker ps -q --latest) bash -c '[ -n \"$GEMINI_API_KEY\" ] && echo yes || echo no'", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.geminiKeySet = `error: ${e.message}`; }
     try { checks.generateImagePath = execSync("docker exec $(docker ps -q --latest) which generate-image 2>&1 || echo 'not found'", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.generateImagePath = `error: ${e.message}`; }
     try { checks.mediaSkill = execSync("docker exec $(docker ps -q --latest) head -5 /home/node/.openclaw/skills/media-generation/SKILL.md 2>&1 || echo 'not found'", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.mediaSkill = `error: ${e.message}`; }
+    try { checks.soulMdTaskSection = execSync("docker exec $(docker ps -q --latest) grep -c 'MANDATORY.*Task Logging' /home/node/.openclaw/SOUL.md /home/node/.openclaw/workspace/SOUL.md /home/node/.openclaw/workspace-main/SOUL.md 2>&1 || echo 'not found'", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.soulMdTaskSection = `error: ${e.message}`; }
+    try { checks.soulMdSize = execSync("docker exec $(docker ps -q --latest) wc -c /home/node/.openclaw/SOUL.md /home/node/.openclaw/workspace/SOUL.md /home/node/.openclaw/workspace-main/SOUL.md 2>&1", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.soulMdSize = `error: ${e.message}`; }
+    try { checks.blitzApiUrl = execSync("docker exec $(docker ps -q --latest) bash -c 'echo BLITZ_API_URL=$BLITZ_API_URL' 2>&1", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.blitzApiUrl = `error: ${e.message}`; }
     try { checks.skillsList = execSync("docker exec $(docker ps -q --latest) ls /home/node/.openclaw/skills/ 2>&1", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.skillsList = `error: ${e.message}`; }
     return checks;
   });
