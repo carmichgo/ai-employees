@@ -258,7 +258,7 @@ export async function POST(request: NextRequest) {
                 "Content-Type": "application/json",
                 "X-INTERSERVICE-SECRET": emp.interservice_secret,
               },
-              body: JSON.stringify({ message: msgParts.join("\n") }),
+              body: JSON.stringify({ messages: [{ role: "user", content: msgParts.join("\n") }] }),
               signal: AbortSignal.timeout(120_000),
             });
             await sql`UPDATE employees SET last_response_at = NOW() WHERE id = ${empId}`;
