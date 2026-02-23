@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq, and, desc, asc } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { tasks, taskComments } from "@/lib/schema";
+import { tasks, taskComments, employees } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
 
 async function authenticate(request: NextRequest) {
@@ -72,5 +72,60 @@ export async function POST(request: NextRequest) {
     })
     .returning();
 
+  // Notify the employee about the new comment (fire-and-forget)
+  notifyEmployee(task, comment, authorName || "Manager").catch(() => {});
+
   return NextResponse.json({ comment }, { status: 201 });
+}
+
+/**
+ * Send a notification to the employee's container when a manager comments on their task.
+ * Fire-and-forget — failures are logged but don't block the API response.
+ */
+async function notifyEmployee(
+  task: { id: string; title: string; employeeId: string },
+  comment: { content: string },
+  managerName: string,
+) {
+  const [employee] = await db
+    .select()
+    .from(employees)
+    .where(eq(employees.id, task.employeeId))
+    .limit(1);
+
+  if (!employee || employee.status === "terminated" || employee.status === "paused") return;
+  if (!employee.dropletIp || !employee.interserviceSecret) return;
+
+  const message = [
+    `[Manager Comment on Task]`,
+    ``,
+    `**${managerName}** commented on your task **"${task.title}"** (ID: ${task.id}):`,
+    ``,
+    `> ${comment.content}`,
+    ``,
+    `Read the comment and respond if needed — update your task status or reply with a comment:`,
+    `curl -s -X PATCH "$BLITZ_API_URL/employee/tasks/${task.id}" -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" -H "Content-Type: application/json" -d '{"comment": "Your reply here..."}'`,
+  ].join("\n");
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30_000);
+
+  try {
+    await fetch(
+      `http://${employee.dropletIp}:3001/internal/employees/${employee.id}/chat`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-interservice-secret": employee.interserviceSecret,
+        },
+        body: JSON.stringify({
+          messages: [{ role: "user", content: message }],
+        }),
+        signal: controller.signal,
+      },
+    );
+  } finally {
+    clearTimeout(timeout);
+  }
 }
