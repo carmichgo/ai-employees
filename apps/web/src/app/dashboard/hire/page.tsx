@@ -470,6 +470,7 @@ function HireEmployeeWizard() {
         gap: 12,
         position: "relative",
         height: "100%",
+        boxSizing: "border-box",
       }}
       onMouseEnter={(e) => {
         if (!selected) {
@@ -1514,7 +1515,7 @@ function HireEmployeeWizard() {
               const selected = form.channels.includes(ch.id);
               const price = getAddonPrice("channels", ch.id, form.tier);
               return (
-                <div key={ch.id} style={{ height: "100%" }}>
+                <div key={ch.id} style={{ height: "100%", minHeight: 80 }}>
                   {renderSelectionCard({
                     selected,
                     onClick: () => toggleChannel(ch.id),
