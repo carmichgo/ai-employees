@@ -88,7 +88,6 @@ export function generateOpenClawConfig(
         name: employee.name,
         emoji: employee.emoji || "🤖",
       },
-      ...(soulMd ? { instructions: soulMd } : {}),
       tools: { allow: toolsAllow },
     });
 
@@ -101,7 +100,6 @@ export function generateOpenClawConfig(
         name: `${employee.name} (Fast)`,
         emoji: "⚡",
       },
-      ...(soulMd ? { instructions: soulMd } : {}),
       tools: { allow: toolsAllow },
     });
   } else {
@@ -115,7 +113,6 @@ export function generateOpenClawConfig(
         name: employee.name,
         emoji: employee.emoji || "🤖",
       },
-      ...(soulMd ? { instructions: soulMd } : {}),
       tools: { allow: toolsAllow },
     });
   }
