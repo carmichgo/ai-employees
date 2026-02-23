@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq, and, sql, desc, max } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { employees, tasks, taskComments, chatMessages } from "@/lib/schema";
+import { employees, tasks } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
 
 async function authenticate(request: NextRequest) {
@@ -18,18 +18,43 @@ export async function GET(request: NextRequest) {
     const session = await authenticate(request);
     if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    // Get all employees for this company
-    const emps = await db
-      .select({
-        id: employees.id,
-        name: employees.name,
-        status: employees.status,
-        lastHealthAt: employees.lastHealthAt,
-      })
-      .from(employees)
-      .where(eq(employees.companyId, session.companyId));
+    // Try to get employees with the new tracking columns; fall back gracefully
+    let emps: Array<{
+      id: string;
+      name: string;
+      status: string;
+      lastHealthAt: Date | null;
+      lastRequestSentAt: Date | null;
+      lastResponseAt: Date | null;
+    }>;
 
-    // Get in_progress tasks with their updatedAt
+    try {
+      emps = await db
+        .select({
+          id: employees.id,
+          name: employees.name,
+          status: employees.status,
+          lastHealthAt: employees.lastHealthAt,
+          lastRequestSentAt: employees.lastRequestSentAt,
+          lastResponseAt: employees.lastResponseAt,
+        })
+        .from(employees)
+        .where(eq(employees.companyId, session.companyId));
+    } catch {
+      // Columns may not exist yet — fall back to basic query
+      const rows = await db
+        .select({
+          id: employees.id,
+          name: employees.name,
+          status: employees.status,
+          lastHealthAt: employees.lastHealthAt,
+        })
+        .from(employees)
+        .where(eq(employees.companyId, session.companyId));
+      emps = rows.map((r) => ({ ...r, lastRequestSentAt: null, lastResponseAt: null }));
+    }
+
+    // Get in_progress tasks per employee
     const inProgressTasks = await db
       .select({
         employeeId: tasks.employeeId,
@@ -46,43 +71,7 @@ export async function GET(request: NextRequest) {
         ),
       );
 
-    // Get most recent task comment per employee (as a sign of activity)
-    let latestCommentByEmployee = new Map<string, Date>();
-    try {
-      const recentComments = await db
-        .select({
-          employeeId: tasks.employeeId,
-          latestComment: max(taskComments.createdAt),
-        })
-        .from(taskComments)
-        .innerJoin(tasks, eq(taskComments.taskId, tasks.id))
-        .where(eq(tasks.companyId, session.companyId))
-        .groupBy(tasks.employeeId);
-      for (const r of recentComments) {
-        if (r.latestComment) latestCommentByEmployee.set(r.employeeId, new Date(r.latestComment));
-      }
-    } catch {
-      // taskComments table may not exist yet
-    }
-
-    // Get most recent chat message per employee
-    let latestChatByEmployee = new Map<string, Date>();
-    try {
-      const recentChats = await db
-        .select({
-          employeeId: chatMessages.employeeId,
-          latestChat: max(chatMessages.createdAt),
-        })
-        .from(chatMessages)
-        .groupBy(chatMessages.employeeId);
-      for (const r of recentChats) {
-        if (r.latestChat) latestChatByEmployee.set(r.employeeId, new Date(r.latestChat));
-      }
-    } catch {
-      // chatMessages may not exist
-    }
-
-    // Build task map: employeeId -> list of in_progress tasks
+    // Build task map
     const taskMap = new Map<string, Array<{ taskId: string; title: string; updatedAt: Date; createdAt: Date }>>();
     for (const t of inProgressTasks) {
       if (!taskMap.has(t.employeeId)) taskMap.set(t.employeeId, []);
@@ -96,46 +85,39 @@ export async function GET(request: NextRequest) {
 
     const now = Date.now();
     const FIVE_MIN = 5 * 60 * 1000;
-    const THIRTY_MIN = 30 * 60 * 1000;
 
     const activity = emps.map((emp) => {
       const empTasks = taskMap.get(emp.id) || [];
       const lastHealth = emp.lastHealthAt ? new Date(emp.lastHealthAt).getTime() : 0;
-      const healthAge = now - lastHealth;
-      const isReachable = lastHealth > 0 && healthAge < FIVE_MIN;
+      const isReachable = lastHealth > 0 && (now - lastHealth) < FIVE_MIN;
 
-      // Find the most recent activity signal: task update, comment, or chat
-      const latestTaskUpdate = empTasks.length > 0
-        ? Math.max(...empTasks.map((t) => t.updatedAt.getTime()))
-        : 0;
-      const latestComment = latestCommentByEmployee.get(emp.id)?.getTime() || 0;
-      const latestChat = latestChatByEmployee.get(emp.id)?.getTime() || 0;
-      const lastActiveTime = Math.max(latestTaskUpdate, latestComment, latestChat);
-
-      // Determine if tasks are stale (no updates in 30+ minutes)
-      const hasRecentTaskActivity = latestTaskUpdate > 0 && (now - latestTaskUpdate) < THIRTY_MIN;
+      // Core signal: is a request currently in-flight?
+      const reqSent = emp.lastRequestSentAt ? new Date(emp.lastRequestSentAt).getTime() : 0;
+      const resRecv = emp.lastResponseAt ? new Date(emp.lastResponseAt).getTime() : 0;
+      const isProcessing = reqSent > 0 && reqSent > resRecv;
+      const lastResponseAge = resRecv > 0 ? now - resRecv : Infinity;
 
       // Sort tasks by updatedAt descending
       const sortedTasks = [...empTasks].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+      const currentTask = sortedTasks.length > 0 ? sortedTasks[0].title : null;
 
-      let activityStatus: "working" | "idle" | "offline" | "may_be_stuck";
-      let currentTask: string | null = null;
+      let activityStatus: "working" | "idle" | "offline";
 
       if (emp.status !== "active") {
         activityStatus = "offline";
-      } else if (isReachable && empTasks.length > 0 && hasRecentTaskActivity) {
-        activityStatus = "working";
-        currentTask = sortedTasks[0].title;
-      } else if (isReachable && empTasks.length > 0 && !hasRecentTaskActivity) {
-        activityStatus = "may_be_stuck";
-        currentTask = sortedTasks[0].title;
-      } else if (isReachable) {
-        activityStatus = "idle";
-      } else {
+      } else if (!isReachable) {
         activityStatus = "offline";
+      } else if (isProcessing) {
+        // Request sent but no response yet = actively working right now
+        activityStatus = "working";
+      } else if (lastResponseAge < FIVE_MIN) {
+        // Got a response recently = was just working
+        activityStatus = "working";
+      } else {
+        activityStatus = "idle";
       }
 
-      // Build per-task staleness info
+      // Build per-task info
       const taskDetails = sortedTasks.map((t) => ({
         taskId: t.taskId,
         title: t.title,
@@ -150,7 +132,9 @@ export async function GET(request: NextRequest) {
         currentTask,
         inProgressCount: empTasks.length,
         lastHealthAt: emp.lastHealthAt?.toISOString() || null,
-        lastActiveAt: lastActiveTime > 0 ? new Date(lastActiveTime).toISOString() : null,
+        lastRequestSentAt: emp.lastRequestSentAt?.toISOString() || null,
+        lastResponseAt: emp.lastResponseAt?.toISOString() || null,
+        lastActiveAt: resRecv > 0 ? new Date(resRecv).toISOString() : null,
         tasks: taskDetails,
       };
     });

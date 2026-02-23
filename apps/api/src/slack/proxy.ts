@@ -528,6 +528,9 @@ export class SlackProxy {
     };
 
     try {
+      // Track request sent
+      try { await db.update(employees).set({ lastRequestSentAt: new Date() } as any).where(eq(employees.id, employee.id)); } catch {}
+
       let res: Response;
       try {
         res = await sendToContainer(employee.containerHost!);
@@ -555,6 +558,9 @@ export class SlackProxy {
           throw new Error("No container name");
         }
       }
+
+      // Track response received
+      try { await db.update(employees).set({ lastResponseAt: new Date() } as any).where(eq(employees.id, employee.id)); } catch {}
 
       if (!res.ok) {
         const errText = await res.text();

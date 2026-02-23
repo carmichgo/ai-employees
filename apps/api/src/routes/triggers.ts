@@ -49,6 +49,9 @@ export async function triggerRoutes(fastify: FastifyInstance) {
 
       // Send to the employee's container as a chat message
       try {
+        // Track request sent
+        try { await db.update(employees).set({ lastRequestSentAt: new Date() } as any).where(eq(employees.id, trigger.employeeId)); } catch {}
+
         const containerUrl = `http://${employee.containerHost}:${employee.containerPort}/v1/chat/completions`;
         const res = await fetch(containerUrl, {
           method: "POST",
@@ -66,6 +69,9 @@ export async function triggerRoutes(fastify: FastifyInstance) {
             ],
           }),
         });
+
+        // Track response received
+        try { await db.update(employees).set({ lastResponseAt: new Date() } as any).where(eq(employees.id, trigger.employeeId)); } catch {}
 
         // Update last run
         await db

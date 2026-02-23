@@ -319,7 +319,6 @@ export default function DashboardOverview() {
             const act = activityMap[emp.id];
             const actColors: Record<string, { dot: string; bg: string; text: string }> = {
               working: { dot: "#16a34a", bg: "rgba(22, 163, 74, 0.08)", text: "#16a34a" },
-              may_be_stuck: { dot: "#dc2626", bg: "rgba(220, 38, 38, 0.08)", text: "#dc2626" },
               idle: { dot: "#d97706", bg: "rgba(217, 119, 6, 0.08)", text: "#d97706" },
               offline: { dot: "#a3a3a3", bg: "rgba(163, 163, 163, 0.08)", text: "#a3a3a3" },
             };
@@ -385,13 +384,6 @@ export default function DashboardOverview() {
                               background: ac!.dot, opacity: 0.4, zIndex: 0,
                             }} />
                           )}
-                          {act.activityStatus === "may_be_stuck" && (
-                            <span className="dash-blink" style={{
-                              position: "absolute", bottom: -2, right: -2,
-                              width: 10, height: 10, borderRadius: "50%",
-                              background: ac!.dot, zIndex: 0,
-                            }} />
-                          )}
                         </>
                       )}
                     </div>
@@ -409,18 +401,14 @@ export default function DashboardOverview() {
                       </div>
                       <div style={{
                         fontSize: 12,
-                        color: act?.activityStatus === "working" ? "#16a34a"
-                          : act?.activityStatus === "may_be_stuck" ? "#dc2626"
-                          : "var(--text-tertiary)",
+                        color: act?.activityStatus === "working" ? "#16a34a" : "var(--text-tertiary)",
                         whiteSpace: "nowrap",
                         overflow: "hidden",
                         textOverflow: "ellipsis",
                       }}>
                         {act?.activityStatus === "working" && act.currentTask
                           ? act.currentTask
-                          : act?.activityStatus === "may_be_stuck" && act.currentTask
-                            ? `Stuck: ${act.currentTask}`
-                            : emp.jobTitle}
+                          : emp.jobTitle}
                       </div>
                     </div>
                   </div>
@@ -463,11 +451,9 @@ export default function DashboardOverview() {
                         }} />
                         {act.activityStatus === "working"
                           ? `Working (${act.inProgressCount})`
-                          : act.activityStatus === "may_be_stuck"
-                            ? `Stuck (${act.inProgressCount})`
-                            : act.activityStatus === "idle"
-                              ? "Idle"
-                              : "Offline"}
+                          : act.activityStatus === "idle"
+                            ? "Idle"
+                            : "Offline"}
                       </div>
                     )}
                   </div>
@@ -482,11 +468,6 @@ export default function DashboardOverview() {
               100% { transform: scale(1); opacity: 0; }
             }
             .dash-pulse { animation: dashPulse 2s ease-in-out infinite; }
-            @keyframes dashBlink {
-              0%, 100% { opacity: 1; }
-              50% { opacity: 0.3; }
-            }
-            .dash-blink { animation: dashBlink 1.5s ease-in-out infinite; }
           `}</style>
         </div>
       )}

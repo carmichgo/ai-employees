@@ -134,6 +134,11 @@ export async function checkScheduleTriggers(): Promise<void> {
 
       // 2. Send the message to the employee's container
       try {
+        // Mark request sent
+        try {
+          await db.update(employees).set({ lastRequestSentAt: new Date() } as any).where(eq(employees.id, trigger.employeeId));
+        } catch { /* column may not exist yet */ }
+
         const containerUrl = `http://${employee.containerHost}:${employee.containerPort}/v1/chat/completions`;
         const res = await fetch(containerUrl, {
           method: "POST",
@@ -152,6 +157,11 @@ export async function checkScheduleTriggers(): Promise<void> {
           }),
           signal: AbortSignal.timeout(120_000),
         });
+
+        // Mark response received
+        try {
+          await db.update(employees).set({ lastResponseAt: new Date() } as any).where(eq(employees.id, trigger.employeeId));
+        } catch { /* column may not exist yet */ }
 
         if (!res.ok) {
           console.log(`[schedule] Trigger "${trigger.name}" delivery failed: HTTP ${res.status}`);

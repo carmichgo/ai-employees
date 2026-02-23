@@ -101,6 +101,11 @@ async function checkEmployeeTasks(employee: {
   ].join("\n");
 
   try {
+    // Mark request sent
+    try {
+      await db.update(employees).set({ lastRequestSentAt: new Date() } as any).where(eq(employees.id, employee.id));
+    } catch { /* column may not exist yet */ }
+
     const url = `http://${employee.containerHost}:${employee.containerPort}/v1/chat/completions`;
     const res = await fetch(url, {
       method: "POST",
@@ -114,6 +119,11 @@ async function checkEmployeeTasks(employee: {
       }),
       signal: AbortSignal.timeout(120_000), // 2 min timeout — employee may need to run commands
     });
+
+    // Mark response received
+    try {
+      await db.update(employees).set({ lastResponseAt: new Date() } as any).where(eq(employees.id, employee.id));
+    } catch { /* column may not exist yet */ }
 
     if (res.ok) {
       lastNudge.set(employee.id, Date.now());

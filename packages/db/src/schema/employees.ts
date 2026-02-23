@@ -75,6 +75,8 @@ export const employees = pgTable("employees", {
   // Metadata
   configHash: varchar("config_hash", { length: 64 }),
   lastHealthAt: timestamp("last_health_at", { withTimezone: true }),
+  lastRequestSentAt: timestamp("last_request_sent_at", { withTimezone: true }),
+  lastResponseAt: timestamp("last_response_at", { withTimezone: true }),
   errorMessage: text("error_message"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

@@ -132,6 +132,11 @@ export async function POST(
       { role: "user", content: message },
     ];
 
+    // Mark request as sent
+    try {
+      await db.update(employees).set({ lastRequestSentAt: new Date() }).where(eq(employees.id, id));
+    } catch { /* column may not exist yet */ }
+
     // Timeout slightly under maxDuration so we fail gracefully with a proper error
     // instead of Vercel killing the function and returning a generic non-JSON error
     const controller = new AbortController();
@@ -154,6 +159,11 @@ export async function POST(
     } finally {
       clearTimeout(timeout);
     }
+
+    // Mark response received
+    try {
+      await db.update(employees).set({ lastResponseAt: new Date() }).where(eq(employees.id, id));
+    } catch { /* column may not exist yet */ }
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: "Chat request failed" }));

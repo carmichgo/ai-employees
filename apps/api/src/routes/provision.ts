@@ -674,7 +674,13 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       };
 
       try {
+        // Track request sent
+        try { await db.update(employees).set({ lastRequestSentAt: new Date() } as any).where(eq(employees.id, id)); } catch {}
+
         let res = await sendToContainer(containerHost);
+
+        // Track response received
+        try { await db.update(employees).set({ lastResponseAt: new Date() } as any).where(eq(employees.id, id)); } catch {}
 
         if (!res.ok) {
           const err = await res.text();

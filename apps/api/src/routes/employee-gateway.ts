@@ -162,6 +162,9 @@ export async function employeeGatewayRoutes(fastify: FastifyInstance) {
     };
 
     try {
+      // Track request sent to target
+      try { await db.update(employees).set({ lastRequestSentAt: new Date() } as any).where(eq(employees.id, target.id)); } catch {}
+
       let res = await sendToTarget(target.containerHost);
 
       // If unreachable, try refreshing IP (container may have restarted)
@@ -180,6 +183,9 @@ export async function employeeGatewayRoutes(fastify: FastifyInstance) {
           // IP refresh failed
         }
       }
+
+      // Track response received
+      try { await db.update(employees).set({ lastResponseAt: new Date() } as any).where(eq(employees.id, target.id)); } catch {}
 
       if (!res.ok) {
         const err = await res.text();
