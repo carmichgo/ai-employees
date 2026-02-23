@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { api } from "@/lib/api";
 import {
   Plus,
@@ -24,6 +24,7 @@ import {
   Minus,
   ArrowDown,
   RefreshCw,
+  GripVertical,
 } from "lucide-react";
 
 // ── Types ─────────────────────────────────────
@@ -66,14 +67,29 @@ type Employee = {
   status: string;
 };
 
+type BoardColumn = {
+  key: string;
+  label: string;
+  color: string;
+  isDefault?: boolean;
+};
+
 // ── Constants ─────────────────────────────────
 
-const COLUMNS: { key: string; label: string; color: string; icon: any }[] = [
-  { key: "pending", label: "To Do", color: "#a3a3a3", icon: Clock },
-  { key: "in_progress", label: "In Progress", color: "#2563eb", icon: ArrowUpRight },
-  { key: "blocked", label: "Blocked", color: "#dc2626", icon: AlertTriangle },
-  { key: "completed", label: "Done", color: "#16a34a", icon: Check },
+const DEFAULT_COLUMNS: BoardColumn[] = [
+  { key: "pending", label: "To Do", color: "#a3a3a3", isDefault: true },
+  { key: "in_progress", label: "In Progress", color: "#2563eb", isDefault: true },
+  { key: "blocked", label: "Blocked", color: "#dc2626", isDefault: true },
+  { key: "completed", label: "Done", color: "#16a34a", isDefault: true },
 ];
+
+const COLUMN_COLORS = [
+  "#a3a3a3", "#2563eb", "#dc2626", "#16a34a", "#7c3aed",
+  "#ea580c", "#0891b2", "#d946ef", "#65a30d", "#e11d48",
+  "#4f46e5", "#0d9488",
+];
+
+const STORAGE_KEY = "task-board-columns";
 
 const PRIORITY_CONFIG: Record<string, { label: string; color: string; bg: string; icon: any }> = {
   urgent: { label: "Urgent", color: "#dc2626", bg: "rgba(220,38,38,0.06)", icon: ArrowUp },
@@ -102,6 +118,40 @@ export default function TasksPage() {
   });
   const [creating, setCreating] = useState(false);
 
+  // Board columns (persisted in localStorage)
+  const [columns, setColumns] = useState<BoardColumn[]>(DEFAULT_COLUMNS);
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) setColumns(parsed);
+      }
+    } catch {}
+  }, []);
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(columns));
+  }, [columns]);
+
+  // Drag-and-drop state
+  const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
+  const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
+
+  // Inline quick-add state
+  const [quickAddColumn, setQuickAddColumn] = useState<string | null>(null);
+  const [quickAddTitle, setQuickAddTitle] = useState("");
+  const [quickAddEmployee, setQuickAddEmployee] = useState("");
+  const quickAddRef = useRef<HTMLInputElement>(null);
+
+  // Add column state
+  const [showAddColumn, setShowAddColumn] = useState(false);
+  const [newColLabel, setNewColLabel] = useState("");
+  const [newColColor, setNewColColor] = useState(COLUMN_COLORS[4]);
+
+  // Inline column rename state
+  const [editingColumnKey, setEditingColumnKey] = useState<string | null>(null);
+  const [editingColumnLabel, setEditingColumnLabel] = useState("");
+
   const loadData = useCallback(() => {
     Promise.all([api.listTasks(), api.listEmployees()])
       .then(([tasksRes, empRes]) => {
@@ -113,6 +163,13 @@ export default function TasksPage() {
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  // Focus quick-add input when opened
+  useEffect(() => {
+    if (quickAddColumn && quickAddRef.current) {
+      quickAddRef.current.focus();
+    }
+  }, [quickAddColumn]);
 
   // Load comments when selecting a task
   const loadComments = async (taskId: string) => {
@@ -173,6 +230,80 @@ export default function TasksPage() {
     loadComments(selectedTask.id);
   };
 
+  // ── Quick-add in column ──
+  const handleQuickAdd = async (status: string) => {
+    if (!quickAddTitle.trim() || !quickAddEmployee) return;
+    try {
+      await api.createTask({
+        employeeId: quickAddEmployee,
+        title: quickAddTitle.trim(),
+        priority: "medium",
+        status,
+      });
+      setQuickAddTitle("");
+      setQuickAddColumn(null);
+      loadData();
+    } catch { /* ignore */ }
+  };
+
+  // ── Column management ──
+  const handleAddColumn = () => {
+    if (!newColLabel.trim()) return;
+    const key = newColLabel.trim().toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
+    if (!key || columns.some((c) => c.key === key)) return;
+    setColumns([...columns, { key, label: newColLabel.trim(), color: newColColor }]);
+    setNewColLabel("");
+    setNewColColor(COLUMN_COLORS[4]);
+    setShowAddColumn(false);
+  };
+
+  const handleDeleteColumn = async (columnKey: string) => {
+    const tasksInColumn = tasks.filter((t) => t.status === columnKey);
+    for (const task of tasksInColumn) {
+      await api.updateTask(task.id, { status: "pending" });
+    }
+    setColumns(columns.filter((c) => c.key !== columnKey));
+    loadData();
+  };
+
+  const handleRenameColumn = (key: string, newLabel: string) => {
+    if (!newLabel.trim()) { setEditingColumnKey(null); return; }
+    setColumns(columns.map((c) => c.key === key ? { ...c, label: newLabel.trim() } : c));
+    setEditingColumnKey(null);
+  };
+
+  // ── Drag and drop ──
+  const handleDragStart = (e: React.DragEvent, taskId: string) => {
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", taskId);
+    setDraggedTaskId(taskId);
+  };
+
+  const handleDragOver = (e: React.DragEvent, colKey: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverColumn(colKey);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setDragOverColumn(null);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent, colKey: string) => {
+    e.preventDefault();
+    const taskId = e.dataTransfer.getData("text/plain");
+    if (taskId) {
+      const task = tasks.find((t) => t.id === taskId);
+      if (task && task.status !== colKey) {
+        handleStatusChange(taskId, colKey);
+      }
+    }
+    setDragOverColumn(null);
+    setDraggedTaskId(null);
+  };
+
   // Filter tasks
   const filtered = tasks.filter((t) => {
     if (filterEmployee !== "all" && t.employeeId !== filterEmployee) return false;
@@ -208,13 +339,22 @@ export default function TasksPage() {
         @keyframes spin { to { transform: rotate(360deg) } }
         @keyframes slideIn { from { transform: translateX(100%); opacity: 0 } to { transform: translateX(0); opacity: 1 } }
         @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
-        .task-card { transition: box-shadow 0.15s, transform 0.1s; cursor: pointer; }
+        .task-card { transition: box-shadow 0.15s, transform 0.1s, opacity 0.15s; cursor: grab; }
         .task-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); transform: translateY(-1px); }
+        .task-card:active { cursor: grabbing; }
+        .task-card.dragging { opacity: 0.4; }
         .task-row { transition: background 0.1s; cursor: pointer; }
         .task-row:hover { background: #f5f5f5; }
         .delete-btn { opacity: 0; transition: opacity 0.15s; }
         .task-row:hover .delete-btn { opacity: 0.5; }
         .delete-btn:hover { opacity: 1 !important; color: #dc2626 !important; }
+        .col-header { position: relative; }
+        .col-delete-btn { opacity: 0; transition: opacity 0.15s; padding: 2px; background: none; border: none; cursor: pointer; color: #a3a3a3; display: flex; align-items: center; }
+        .col-header:hover .col-delete-btn { opacity: 0.5; }
+        .col-delete-btn:hover { opacity: 1 !important; color: #dc2626 !important; }
+        .quick-add-btn { opacity: 0; transition: opacity 0.15s; }
+        .board-col:hover .quick-add-btn { opacity: 1; }
+        .board-col.drag-over { background: rgba(37,99,235,0.03); border: 2px dashed rgba(37,99,235,0.3); border-radius: 10px; }
       `}</style>
 
       {/* ── Header ── */}
@@ -294,25 +434,72 @@ export default function TasksPage() {
 
       {/* ── Board View ── */}
       {view === "board" && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, minHeight: 400 }}>
-          {COLUMNS.map((col) => {
+        <div style={{ display: "flex", gap: 16, minHeight: 400, overflowX: "auto", paddingBottom: 8 }}>
+          {columns.map((col) => {
             const colTasks = getColumnTasks(col.key);
-            const ColIcon = col.icon;
+            const isDragOver = dragOverColumn === col.key;
             return (
-              <div key={col.key} style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+              <div
+                key={col.key}
+                className={`board-col${isDragOver ? " drag-over" : ""}`}
+                style={{ minWidth: 260, flex: "1 0 0%", display: "flex", flexDirection: "column" }}
+                onDragOver={(e) => handleDragOver(e, col.key)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, col.key)}
+              >
                 {/* Column header */}
-                <div style={{
-                  display: "flex", alignItems: "center", gap: 8,
-                  padding: "10px 12px", marginBottom: 8,
-                  borderRadius: 8, background: "#f5f5f5",
-                }}>
-                  <ColIcon size={14} style={{ color: col.color }} />
-                  <span style={{ fontSize: 13, fontWeight: 600, color: "#0a0a0a" }}>{col.label}</span>
+                <div
+                  className="col-header"
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    padding: "10px 12px", marginBottom: 8,
+                    borderRadius: 8, background: "#f5f5f5",
+                  }}
+                >
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: col.color, flexShrink: 0 }} />
+                  {editingColumnKey === col.key ? (
+                    <input
+                      autoFocus
+                      value={editingColumnLabel}
+                      onChange={(e) => setEditingColumnLabel(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleRenameColumn(col.key, editingColumnLabel);
+                        if (e.key === "Escape") setEditingColumnKey(null);
+                      }}
+                      onBlur={() => handleRenameColumn(col.key, editingColumnLabel)}
+                      style={{
+                        fontSize: 13, fontWeight: 600, color: "#0a0a0a",
+                        border: "1px solid #e5e5e5", borderRadius: 4,
+                        padding: "2px 6px", outline: "none", background: "#fff",
+                        width: "100%", minWidth: 0,
+                      }}
+                    />
+                  ) : (
+                    <span
+                      style={{ fontSize: 13, fontWeight: 600, color: "#0a0a0a", cursor: col.isDefault ? "default" : "pointer" }}
+                      onDoubleClick={() => {
+                        if (!col.isDefault) {
+                          setEditingColumnKey(col.key);
+                          setEditingColumnLabel(col.label);
+                        }
+                      }}
+                      title={col.isDefault ? undefined : "Double-click to rename"}
+                    >
+                      {col.label}
+                    </span>
+                  )}
                   <span style={{
                     fontSize: 11, fontWeight: 600, color: "#a3a3a3",
                     background: "#e5e5e5", borderRadius: 10, padding: "1px 7px",
-                    marginLeft: "auto",
+                    marginLeft: "auto", flexShrink: 0,
                   }}>{colTasks.length}</span>
+                  {!col.isDefault && (
+                    <button
+                      className="col-delete-btn"
+                      onClick={() => handleDeleteColumn(col.key)}
+                      title="Delete column"
+                    ><X size={13} /></button>
+                  )}
                 </div>
 
                 {/* Cards */}
@@ -324,7 +511,10 @@ export default function TasksPage() {
                     return (
                       <div
                         key={task.id}
-                        className="task-card"
+                        className={`task-card${draggedTaskId === task.id ? " dragging" : ""}`}
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, task.id)}
+                        onDragEnd={() => { setDraggedTaskId(null); setDragOverColumn(null); }}
                         onClick={() => openTask(task)}
                         style={{
                           padding: "12px 14px",
@@ -394,7 +584,7 @@ export default function TasksPage() {
                       </div>
                     );
                   })}
-                  {colTasks.length === 0 && (
+                  {colTasks.length === 0 && quickAddColumn !== col.key && (
                     <div style={{
                       padding: "32px 16px", textAlign: "center", fontSize: 12, color: "#d4d4d4",
                       border: "1px dashed #e5e5e5", borderRadius: 10, flex: 1,
@@ -404,9 +594,163 @@ export default function TasksPage() {
                     </div>
                   )}
                 </div>
+
+                {/* ── Inline quick-add ── */}
+                {quickAddColumn === col.key ? (
+                  <div style={{
+                    marginTop: 8, padding: 10, background: "#fff",
+                    border: "1px solid #e5e5e5", borderRadius: 10,
+                  }}>
+                    <input
+                      ref={quickAddRef}
+                      placeholder="Task title..."
+                      value={quickAddTitle}
+                      onChange={(e) => setQuickAddTitle(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && quickAddTitle.trim() && quickAddEmployee) handleQuickAdd(col.key);
+                        if (e.key === "Escape") setQuickAddColumn(null);
+                      }}
+                      style={{
+                        width: "100%", height: 32, padding: "0 10px", fontSize: 13,
+                        border: "1px solid #e5e5e5", borderRadius: 6,
+                        boxSizing: "border-box", color: "#0a0a0a", marginBottom: 8,
+                      }}
+                    />
+                    <select
+                      value={quickAddEmployee}
+                      onChange={(e) => setQuickAddEmployee(e.target.value)}
+                      style={{
+                        width: "100%", height: 30, padding: "0 8px", fontSize: 12,
+                        border: "1px solid #e5e5e5", borderRadius: 6,
+                        background: "#fff", color: "#0a0a0a", marginBottom: 8,
+                      }}
+                    >
+                      <option value="">Assign to...</option>
+                      {employees.map((emp) => (
+                        <option key={emp.id} value={emp.id}>{emp.emoji} {emp.name}</option>
+                      ))}
+                    </select>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button
+                        onClick={() => handleQuickAdd(col.key)}
+                        disabled={!quickAddTitle.trim() || !quickAddEmployee}
+                        style={{
+                          flex: 1, height: 30, fontSize: 12, fontWeight: 600,
+                          color: "#fff", background: "#0a0a0a", border: "none",
+                          borderRadius: 6, cursor: (!quickAddTitle.trim() || !quickAddEmployee) ? "not-allowed" : "pointer",
+                          opacity: (!quickAddTitle.trim() || !quickAddEmployee) ? 0.4 : 1,
+                        }}
+                      >Add</button>
+                      <button
+                        onClick={() => setQuickAddColumn(null)}
+                        style={{
+                          height: 30, padding: "0 12px", fontSize: 12,
+                          color: "#525252", background: "#fff",
+                          border: "1px solid #e5e5e5", borderRadius: 6, cursor: "pointer",
+                        }}
+                      >Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    className="quick-add-btn"
+                    onClick={() => {
+                      setQuickAddColumn(col.key);
+                      setQuickAddTitle("");
+                      setQuickAddEmployee(employees[0]?.id || "");
+                    }}
+                    style={{
+                      marginTop: 8, width: "100%", padding: "8px 0",
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                      fontSize: 12, color: "#a3a3a3", background: "none",
+                      border: "1px dashed #e5e5e5", borderRadius: 8, cursor: "pointer",
+                    }}
+                  >
+                    <Plus size={14} /> Add task
+                  </button>
+                )}
               </div>
             );
           })}
+
+          {/* ── Add Column ── */}
+          {showAddColumn ? (
+            <div style={{
+              minWidth: 260, flex: "0 0 260px", padding: 16,
+              background: "#f9fafb", border: "1px solid #e5e5e5",
+              borderRadius: 10, display: "flex", flexDirection: "column", gap: 12,
+            }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "#0a0a0a" }}>New Column</div>
+              <input
+                autoFocus
+                placeholder="Column name..."
+                value={newColLabel}
+                onChange={(e) => setNewColLabel(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleAddColumn();
+                  if (e.key === "Escape") setShowAddColumn(false);
+                }}
+                style={{
+                  width: "100%", height: 34, padding: "0 10px", fontSize: 13,
+                  border: "1px solid #e5e5e5", borderRadius: 6,
+                  boxSizing: "border-box", color: "#0a0a0a",
+                }}
+              />
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: "#a3a3a3", marginBottom: 6 }}>Color</div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {COLUMN_COLORS.map((c) => (
+                    <button
+                      key={c}
+                      onClick={() => setNewColColor(c)}
+                      style={{
+                        width: 22, height: 22, borderRadius: "50%", border: "none",
+                        background: c, cursor: "pointer",
+                        outline: newColColor === c ? `2px solid ${c}` : "2px solid transparent",
+                        outlineOffset: 2,
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button
+                  onClick={handleAddColumn}
+                  disabled={!newColLabel.trim()}
+                  style={{
+                    flex: 1, height: 32, fontSize: 12, fontWeight: 600,
+                    color: "#fff", background: "#0a0a0a", border: "none",
+                    borderRadius: 6, cursor: !newColLabel.trim() ? "not-allowed" : "pointer",
+                    opacity: !newColLabel.trim() ? 0.4 : 1,
+                  }}
+                >Create</button>
+                <button
+                  onClick={() => { setShowAddColumn(false); setNewColLabel(""); }}
+                  style={{
+                    height: 32, padding: "0 12px", fontSize: 12,
+                    color: "#525252", background: "#fff",
+                    border: "1px solid #e5e5e5", borderRadius: 6, cursor: "pointer",
+                  }}
+                >Cancel</button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowAddColumn(true)}
+              style={{
+                minWidth: 200, flex: "0 0 auto", padding: "40px 20px",
+                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8,
+                background: "none", border: "2px dashed #e5e5e5", borderRadius: 10,
+                cursor: "pointer", color: "#a3a3a3", fontSize: 13, fontWeight: 500,
+                transition: "border-color 0.15s, color 0.15s",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#a3a3a3"; e.currentTarget.style.color = "#525252"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#e5e5e5"; e.currentTarget.style.color = "#a3a3a3"; }}
+            >
+              <Plus size={20} />
+              Add Column
+            </button>
+          )}
         </div>
       )}
 
@@ -433,13 +777,13 @@ export default function TasksPage() {
           ) : (
             filtered
               .sort((a, b) => {
-                const statusOrder = ["in_progress", "pending", "blocked", "completed"];
+                const statusOrder = columns.map((c) => c.key);
                 const si = statusOrder.indexOf(a.status) - statusOrder.indexOf(b.status);
                 if (si !== 0) return si;
                 return PRIORITY_ORDER.indexOf(a.priority) - PRIORITY_ORDER.indexOf(b.priority);
               })
               .map((task, i) => {
-                const col = COLUMNS.find((c) => c.key === task.status) || COLUMNS[0];
+                const col = columns.find((c) => c.key === task.status) || columns[0];
                 const pCfg = PRIORITY_CONFIG[task.priority] || PRIORITY_CONFIG.medium;
                 const PIcon = pCfg.icon;
                 const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && task.status !== "completed";
@@ -511,7 +855,7 @@ export default function TasksPage() {
                     <span style={{ fontSize: 11, color: isOverdue ? "#dc2626" : "#a3a3a3", fontWeight: isOverdue ? 600 : 400 }}>
                       {task.dueDate
                         ? new Date(task.dueDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })
-                        : "—"}
+                        : "\u2014"}
                     </span>
                     {/* Delete */}
                     <button
@@ -693,7 +1037,7 @@ export default function TasksPage() {
                     onChange={(e) => handleStatusChange(selectedTask.id, e.target.value)}
                     style={{ height: 30, padding: "0 8px", fontSize: 12, border: "1px solid #e5e5e5", borderRadius: 6, background: "#fff", color: "#0a0a0a", cursor: "pointer" }}
                   >
-                    {COLUMNS.map((c) => (
+                    {columns.map((c) => (
                       <option key={c.key} value={c.key}>{c.label}</option>
                     ))}
                   </select>

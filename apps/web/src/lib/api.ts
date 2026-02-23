@@ -449,6 +449,7 @@ class ApiClient {
     priority?: string;
     category?: string;
     dueDate?: string;
+    status?: string;
   }) {
     return this.request<{ task: any }>("/api/tasks", {
       method: "POST",

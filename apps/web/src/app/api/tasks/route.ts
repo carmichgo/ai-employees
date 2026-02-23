@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await request.json();
-  const { employeeId, title, description, priority, category, dueDate, source } = body;
+  const { employeeId, title, description, priority, category, dueDate, source, status } = body;
 
   if (!employeeId || !title) {
     return NextResponse.json({ error: "employeeId and title are required" }, { status: 400 });
@@ -91,6 +91,7 @@ export async function POST(request: NextRequest) {
       companyId: session.companyId,
       title,
       description: description || null,
+      status: status || "pending",
       priority: priority || "medium",
       source: source || "manager",
       category: category || null,
