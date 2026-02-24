@@ -61,6 +61,7 @@ function selectEmployee() {
       persona: employees.persona,
       goals: employees.goals,
       personalityConfig: employees.personalityConfig,
+      credentials: employees.credentials,
       status: employees.status,
       dropletStatus: employees.dropletStatus,
       dropletIp: employees.dropletIp,
@@ -82,6 +83,7 @@ function buildSystemPrompt(employee: {
   persona?: string | null;
   goals?: string | null;
   personalityConfig?: unknown;
+  credentials?: unknown;
 }): string {
   const parts: string[] = [];
 
@@ -124,6 +126,34 @@ function buildSystemPrompt(employee: {
       parts.push(traits.join(". ") + ".");
       parts.push("");
     }
+  }
+
+  // Include credentials so the employee can use them for logins, outreach, etc.
+  const creds = employee.credentials as Array<{
+    label: string;
+    username: string;
+    password: string;
+    url?: string;
+    notes?: string;
+  }> | null;
+
+  if (creds && creds.length > 0) {
+    parts.push("## Your Credentials & Accounts");
+    parts.push("Your manager has given you access to these accounts. Use them when needed for your work:");
+    parts.push("");
+    for (const c of creds) {
+      parts.push(`### ${c.label}`);
+      if (c.url) parts.push(`- URL: ${c.url}`);
+      parts.push(`- Username: ${c.username}`);
+      parts.push(`- Password: ${c.password}`);
+      if (c.notes) parts.push(`- Notes: ${c.notes}`);
+      parts.push("");
+    }
+    parts.push("You also have an encrypted credential manager CLI (`cred`) in your workspace:");
+    parts.push("- `cred list` — list all stored credentials");
+    parts.push("- `cred get <service>` — view credentials for a service");
+    parts.push("- `cred get-raw <service> <key>` — get raw value (username/password) for use in scripts");
+    parts.push("");
   }
 
   return parts.join("\n");
