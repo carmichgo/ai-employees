@@ -280,6 +280,23 @@ class ApiClient {
     );
   }
 
+  async clearChatHistory(id: string) {
+    return this.request<{ success: boolean; message: string }>(
+      `/api/employees/${id}/chat`,
+      { method: "DELETE" },
+    );
+  }
+
+  async restartEmployee(id: string, clearChat = false) {
+    return this.request<{ success: boolean; results: string[] }>(
+      `/api/employees/${id}/restart`,
+      {
+        method: "POST",
+        body: JSON.stringify({ clearChat }),
+      },
+    );
+  }
+
   async getTemplates() {
     return this.request<{ templates: any[]; categories: string[] }>(
       "/api/employees/templates",

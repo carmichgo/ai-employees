@@ -252,6 +252,38 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     return { message: `Container teardown queued for ${employee.name}` };
   });
 
+  // POST /internal/employees/:id/restart — restart container (clears stuck state)
+  fastify.post<{ Params: { id: string } }>("/internal/employees/:id/restart", async (request, reply) => {
+    const { id } = request.params;
+
+    const employee = await db.query.employees.findFirst({
+      where: eq(employees.id, id),
+    });
+    if (!employee) return reply.status(404).send({ error: "Employee not found" });
+    if (!employee.containerName) return reply.status(400).send({ error: "No container to restart" });
+
+    try {
+      execSync(`docker restart ${employee.containerName}`, { timeout: 30000 });
+
+      // Wait for container to come up, then resolve new IP
+      await new Promise((r) => setTimeout(r, 3000));
+      try {
+        const newIp = execSync(
+          `docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ${employee.containerName}`,
+          { timeout: 5000 },
+        ).toString().trim();
+        if (newIp && newIp !== employee.containerHost) {
+          await db.update(employees).set({ containerHost: newIp, updatedAt: new Date() }).where(eq(employees.id, id));
+        }
+      } catch { /* IP lookup can fail briefly during restart */ }
+
+      return { success: true, message: `Container ${employee.containerName} restarted` };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      return reply.status(500).send({ error: `Failed to restart container: ${message}` });
+    }
+  });
+
   // GET /internal/employees/:id/status — poll status
   fastify.get<{ Params: { id: string } }>("/internal/employees/:id/status", async (request, reply) => {
     const { id } = request.params;

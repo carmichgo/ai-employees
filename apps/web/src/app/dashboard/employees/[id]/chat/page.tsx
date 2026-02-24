@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { api } from "@/lib/api";
-import { ArrowLeft, Send, Loader2, Bot, User, Download, FileText, FileSpreadsheet, FileCode, File, Mic, MicOff, Volume2, VolumeX, Phone, PhoneOff } from "lucide-react";
+import { ArrowLeft, Send, Loader2, Bot, User, Download, FileText, FileSpreadsheet, FileCode, File, Mic, MicOff, Volume2, VolumeX, Phone, PhoneOff, RotateCcw, Trash2 } from "lucide-react";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -661,6 +661,74 @@ export default function EmployeeChatPage() {
               <Phone size={14} />
             </button>
           )}
+          {/* Restart container button */}
+          {employee.status === "active" && (
+            <button
+              onClick={async () => {
+                if (!confirm("Restart this employee's container? This clears stuck state and takes ~10 seconds.")) return;
+                try {
+                  const res = await api.restartEmployee(employeeId, true);
+                  setMessages([{
+                    id: "welcome",
+                    role: "assistant",
+                    content: `Container restarted. ${res.results?.join(". ") || "Ready to go."}`,
+                    timestamp: new Date(),
+                  }]);
+                } catch (err: any) {
+                  alert(`Restart failed: ${err.message}`);
+                }
+              }}
+              title="Restart employee (clears stuck state)"
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: "var(--radius-md, 8px)",
+                border: "1px solid var(--border, #e5e5e5)",
+                background: "rgba(245, 158, 11, 0.08)",
+                color: "#d97706",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+                transition: "all 0.15s",
+              }}
+            >
+              <RotateCcw size={14} />
+            </button>
+          )}
+          {/* Clear chat button */}
+          <button
+            onClick={async () => {
+              if (!confirm("Clear chat history?")) return;
+              try {
+                await api.clearChatHistory(employeeId);
+                setMessages([{
+                  id: "welcome",
+                  role: "assistant",
+                  content: `Hi! I'm ${employee.name}, your ${employee.jobTitle}. How can I help you today?`,
+                  timestamp: new Date(),
+                }]);
+              } catch (err: any) {
+                alert(`Failed to clear: ${err.message}`);
+              }
+            }}
+            title="Clear chat history"
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: "var(--radius-md, 8px)",
+              border: "1px solid var(--border, #e5e5e5)",
+              background: "var(--bg, #ffffff)",
+              color: "var(--text-tertiary, #a3a3a3)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              transition: "all 0.15s",
+            }}
+          >
+            <Trash2 size={14} />
+          </button>
           {/* Auto-speak toggle */}
           <button
             onClick={() => {

@@ -127,6 +127,39 @@ export async function GET(
   }
 }
 
+// DELETE /api/employees/[id]/chat — clear conversation history
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const session = await authenticate(request);
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { id } = await params;
+
+  try {
+    const [employee] = await selectEmployee()
+      .where(and(eq(employees.id, id), eq(employees.companyId, session.companyId)))
+      .limit(1);
+
+    if (!employee) {
+      return NextResponse.json({ error: "Employee not found" }, { status: 404 });
+    }
+
+    await ensureChatTable();
+
+    // Delete all messages for this employee + user pair
+    await db
+      .delete(chatMessages)
+      .where(and(eq(chatMessages.employeeId, id), eq(chatMessages.userId, session.userId)));
+
+    return NextResponse.json({ success: true, message: "Chat history cleared" });
+  } catch (err: any) {
+    console.error(`[chat DELETE] Failed for employee ${id}:`, err);
+    return NextResponse.json({ error: `Failed to clear chat: ${err.message}` }, { status: 500 });
+  }
+}
+
 // POST /api/employees/[id]/chat — send a message
 export async function POST(
   request: NextRequest,
@@ -190,8 +223,12 @@ export async function POST(
 
   // Route to OpenClaw container via the employee's dedicated droplet
   try {
+    // Limit conversation history to avoid polluting context with old threads.
+    // The container has its own SOUL.md for personality — we only need enough
+    // recent messages for the AI to maintain conversational continuity.
+    const recentHistory = (conversationHistory || []).slice(-10);
     const messages = [
-      ...(conversationHistory || []),
+      ...recentHistory,
       { role: "user", content: message },
     ];
 
