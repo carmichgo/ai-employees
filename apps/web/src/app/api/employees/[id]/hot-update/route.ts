@@ -27,7 +27,7 @@ export async function POST(
   const { id } = await params;
 
   const [employee] = await db
-    .select()
+    .select({ id: employees.id, companyId: employees.companyId })
     .from(employees)
     .where(and(eq(employees.id, id), eq(employees.companyId, session.companyId)))
     .limit(1);
