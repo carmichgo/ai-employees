@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { api } from "@/lib/api";
-import { ArrowLeft, Send, Loader2, Bot, User, Download, FileText, FileSpreadsheet, FileCode, File, Mic, MicOff, Volume2, VolumeX, Phone, PhoneOff, RotateCcw, Trash2 } from "lucide-react";
+import { ArrowLeft, Send, Loader2, Bot, User, Download, FileText, FileSpreadsheet, FileCode, File, Mic, MicOff, Volume2, VolumeX, Phone, PhoneOff, RotateCcw, Trash2, Paperclip, X, Image as ImageIcon } from "lucide-react";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -27,6 +27,11 @@ export default function EmployeeChatPage() {
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // File upload state
+  const [uploading, setUploading] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Voice state (dictation)
   const [listening, setListening] = useState(false);
@@ -453,19 +458,45 @@ export default function EmployeeChatPage() {
     return `${m}:${sec.toString().padStart(2, "0")}`;
   };
 
+  // Handle files selected via file picker
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    // Filter out files over 10MB
+    const valid = files.filter((f) => f.size <= 10 * 1024 * 1024);
+    if (valid.length < files.length) {
+      alert("Some files were skipped (max 10MB per file)");
+    }
+    setPendingFiles((prev) => [...prev, ...valid]);
+    // Reset input so the same file can be selected again
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }, []);
+
+  const removePendingFile = useCallback((index: number) => {
+    setPendingFiles((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
   const handleSend = async () => {
     const text = input.trim();
-    if (!text || sending) return;
+    const filesToUpload = [...pendingFiles];
+    if ((!text && filesToUpload.length === 0) || sending) return;
+
+    // Build the user-visible message
+    const fileNames = filesToUpload.map((f) => f.name);
+    const displayText = text
+      ? (fileNames.length > 0 ? `${text}\n\n${fileNames.map((n) => `[Attached: ${n}]`).join("\n")}` : text)
+      : fileNames.map((n) => `[Attached: ${n}]`).join("\n");
 
     const userMessage: Message = {
       id: `user-${Date.now()}`,
       role: "user",
-      content: text,
+      content: displayText,
       timestamp: new Date(),
     };
 
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
+    setPendingFiles([]);
     setSending(true);
 
     // Reset textarea height
@@ -474,12 +505,37 @@ export default function EmployeeChatPage() {
     }
 
     try {
+      // Upload files first
+      const uploadedNames: string[] = [];
+      for (const file of filesToUpload) {
+        try {
+          const result = await api.uploadFile(employeeId, file);
+          uploadedNames.push(result.file?.name || file.name);
+        } catch (err: any) {
+          console.error(`Failed to upload ${file.name}:`, err);
+          uploadedNames.push(`${file.name} (upload failed)`);
+        }
+      }
+
+      // Build the message to send to the employee
+      let messageText = text;
+      if (uploadedNames.length > 0) {
+        const fileList = uploadedNames
+          .filter((n) => !n.includes("upload failed"))
+          .map((n) => `- /home/node/.openclaw/workspace/uploads/${n}`)
+          .join("\n");
+        const fileMsg = uploadedNames.length === 1
+          ? `I've uploaded a file to your workspace:\n${fileList}\nPlease review it.`
+          : `I've uploaded ${uploadedNames.length} files to your workspace:\n${fileList}\nPlease review them.`;
+        messageText = text ? `${text}\n\n${fileMsg}` : fileMsg;
+      }
+
       // Build conversation history (exclude welcome message)
       const history = messages
         .filter((m) => m.id !== "welcome")
         .map((m) => ({ role: m.role, content: m.content }));
 
-      const res = await api.chatWithEmployee(employeeId, text, history);
+      const res = await api.chatWithEmployee(employeeId, messageText, history);
 
       const msgId = `assistant-${Date.now()}`;
       const assistantMessage: Message = {
@@ -528,6 +584,30 @@ export default function EmployeeChatPage() {
     el.style.height = Math.min(el.scrollHeight, 150) + "px";
   };
 
+  // Drag-and-drop file support
+  const [dragOver, setDragOver] = useState(false);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const files = Array.from(e.dataTransfer.files);
+    const valid = files.filter((f) => f.size <= 10 * 1024 * 1024);
+    if (valid.length < files.length) {
+      alert("Some files were skipped (max 10MB per file)");
+    }
+    if (valid.length > 0) setPendingFiles((prev) => [...prev, ...valid]);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+  }, []);
+
   if (loading) {
     return (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "80vh" }}>
@@ -572,6 +652,9 @@ export default function EmployeeChatPage() {
   return (
     <div
       className="animate-in"
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
       style={{
         "--text": "#0a0a0a",
         "--text-secondary": "#525252",
@@ -588,8 +671,40 @@ export default function EmployeeChatPage() {
         height: "calc(100vh - 48px)",
         maxWidth: 900,
         margin: "0 auto",
+        position: "relative",
       } as React.CSSProperties}
     >
+      {/* Drag overlay */}
+      {dragOver && (
+        <div style={{
+          position: "absolute",
+          inset: 0,
+          zIndex: 50,
+          background: "rgba(37, 99, 235, 0.06)",
+          border: "2px dashed #2563eb",
+          borderRadius: "var(--radius-lg, 10px)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          pointerEvents: "none",
+        }}>
+          <div style={{
+            padding: "16px 24px",
+            borderRadius: "var(--radius-md, 8px)",
+            background: "var(--bg, #ffffff)",
+            border: "1px solid rgba(37, 99, 235, 0.3)",
+            fontSize: 14,
+            fontWeight: 500,
+            color: "#2563eb",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+          }}>
+            <Paperclip size={16} />
+            Drop files to attach
+          </div>
+        </div>
+      )}
       {/* Header */}
       <div
         style={{
@@ -907,6 +1022,71 @@ export default function EmployeeChatPage() {
           borderTop: "1px solid var(--border, #e5e5e5)",
         }}
       >
+        {/* Pending file attachments */}
+        {pendingFiles.length > 0 && (
+          <div style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 6,
+            padding: "8px 12px",
+            marginBottom: 4,
+          }}>
+            {pendingFiles.map((file, idx) => {
+              const isImage = file.type.startsWith("image/");
+              return (
+                <div
+                  key={`${file.name}-${idx}`}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "4px 8px 4px 10px",
+                    borderRadius: "var(--radius-sm, 6px)",
+                    background: "rgba(37, 99, 235, 0.04)",
+                    border: "1px solid rgba(37, 99, 235, 0.15)",
+                    fontSize: 12,
+                    color: "var(--text-secondary, #525252)",
+                    maxWidth: 220,
+                  }}
+                >
+                  {isImage ? <ImageIcon size={13} style={{ color: "#2563eb", flexShrink: 0 }} /> : <FileText size={13} style={{ color: "#2563eb", flexShrink: 0 }} />}
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{file.name}</span>
+                  <span style={{ fontSize: 10, color: "var(--text-tertiary, #a3a3a3)", flexShrink: 0 }}>
+                    {file.size < 1024 ? `${file.size}B` : file.size < 1048576 ? `${(file.size / 1024).toFixed(0)}KB` : `${(file.size / 1048576).toFixed(1)}MB`}
+                  </span>
+                  <button
+                    onClick={() => removePendingFile(idx)}
+                    style={{
+                      width: 16,
+                      height: 16,
+                      borderRadius: "50%",
+                      border: "none",
+                      background: "rgba(0,0,0,0.08)",
+                      color: "var(--text-tertiary, #a3a3a3)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      cursor: "pointer",
+                      flexShrink: 0,
+                      padding: 0,
+                    }}
+                  >
+                    <X size={10} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {/* Hidden file input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          onChange={handleFileSelect}
+          style={{ display: "none" }}
+          accept="image/*,.pdf,.csv,.tsv,.txt,.md,.json,.yaml,.yml,.html,.xml,.docx,.xlsx,.pptx,.zip,.py,.js,.ts,.sh,.sql,.doc,.xls,.ppt"
+        />
         <div
           style={{
             display: "flex",
@@ -919,12 +1099,36 @@ export default function EmployeeChatPage() {
             transition: "border-color 0.15s",
           }}
         >
+          {/* Attach file button */}
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={sending || uploading || employee.status !== "active"}
+            title="Attach file"
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: "var(--radius-lg, 10px)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              border: "none",
+              cursor: "pointer",
+              background: pendingFiles.length > 0
+                ? "rgba(37, 99, 235, 0.08)"
+                : "var(--bg-secondary, #f5f5f5)",
+              color: pendingFiles.length > 0 ? "#2563eb" : "var(--text-tertiary, #a3a3a3)",
+              transition: "all 0.2s",
+              flexShrink: 0,
+            }}
+          >
+            <Paperclip size={16} />
+          </button>
           <textarea
             ref={inputRef}
             value={input}
             onChange={handleInput}
             onKeyDown={handleKeyDown}
-            placeholder={`Message ${employee.name}...`}
+            placeholder={pendingFiles.length > 0 ? `Add a message about the file(s)...` : `Message ${employee.name}...`}
             disabled={sending || employee.status !== "active"}
             rows={1}
             style={{
@@ -971,7 +1175,7 @@ export default function EmployeeChatPage() {
           {/* Send button */}
           <button
             onClick={handleSend}
-            disabled={!input.trim() || sending || employee.status !== "active"}
+            disabled={(!input.trim() && pendingFiles.length === 0) || sending || employee.status !== "active"}
             style={{
               width: 36,
               height: 36,
@@ -980,13 +1184,13 @@ export default function EmployeeChatPage() {
               alignItems: "center",
               justifyContent: "center",
               border: "none",
-              cursor: input.trim() && !sending ? "pointer" : "default",
+              cursor: (input.trim() || pendingFiles.length > 0) && !sending ? "pointer" : "default",
               background:
-                input.trim() && !sending
+                (input.trim() || pendingFiles.length > 0) && !sending
                   ? "var(--text, #0a0a0a)"
                   : "var(--bg-secondary, #f5f5f5)",
               color:
-                input.trim() && !sending ? "#ffffff" : "var(--text-tertiary, #a3a3a3)",
+                (input.trim() || pendingFiles.length > 0) && !sending ? "#ffffff" : "var(--text-tertiary, #a3a3a3)",
               transition: "all 0.2s",
               flexShrink: 0,
             }}
