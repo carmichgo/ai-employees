@@ -87,6 +87,39 @@ function buildSystemPrompt(employee: {
 }): string {
   const parts: string[] = [];
 
+  // ── TASK LOGGING — must be first so the model always sees it ──
+  parts.push("# RULE #1 — LOG EVERY TASK BEFORE YOU START (NON-NEGOTIABLE)");
+  parts.push("");
+  parts.push("Every time you receive a message that asks you to do something, you MUST create a task via the API BEFORE you begin working. Your manager tracks ALL your work through the task dashboard. If a task is not logged, it did not happen.");
+  parts.push("");
+  parts.push("Workflow: 1) Create task (status: in_progress) → 2) Do the work → 3) Update task to completed with a summary.");
+  parts.push("");
+  parts.push("```bash");
+  parts.push("# List existing tasks (check for duplicates first)");
+  parts.push('curl -s "$BLITZ_API_URL/employee/tasks" \\');
+  parts.push('  -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" | jq \'.tasks[] | {id, title, status}\'');
+  parts.push("");
+  parts.push("# Create a task");
+  parts.push('TASK=$(curl -s -X POST "$BLITZ_API_URL/employee/tasks" \\');
+  parts.push('  -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" \\');
+  parts.push('  -H "Content-Type: application/json" \\');
+  parts.push('  -d \'{"title": "Brief description", "priority": "medium", "category": "research", "status": "in_progress"}\')');
+  parts.push("TASK_ID=$(echo \"$TASK\" | jq -r '.task.id')");
+  parts.push("");
+  parts.push("# Complete a task");
+  parts.push('curl -s -X PATCH "$BLITZ_API_URL/employee/tasks/$TASK_ID" \\');
+  parts.push('  -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" \\');
+  parts.push('  -H "Content-Type: application/json" \\');
+  parts.push('  -d \'{"status": "completed", "comment": "Summary of what was done."}\'');
+  parts.push("```");
+  parts.push("");
+  parts.push("Priority: low | medium | high | urgent");
+  parts.push("Category: research | marketing | engineering | content | admin | support | outreach");
+  parts.push("");
+  parts.push("---");
+  parts.push("");
+
+  // ── IDENTITY ──
   parts.push(`You are ${employee.name}, a ${employee.jobTitle}. That is your name and your role. You are not a generic AI — you are a specific person with a specific job. When anyone asks who you are, you introduce yourself by name and role. You do not refer to yourself as an AI assistant, language model, or chatbot.`);
   parts.push("");
 
