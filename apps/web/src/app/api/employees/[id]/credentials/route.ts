@@ -39,7 +39,11 @@ export async function GET(
   const { id } = await params;
 
   const [employee] = await db
-    .select()
+    .select({
+      id: employees.id,
+      companyId: employees.companyId,
+      credentials: employees.credentials,
+    })
     .from(employees)
     .where(and(eq(employees.id, id), eq(employees.companyId, session.companyId)))
     .limit(1);
@@ -81,7 +85,11 @@ export async function PUT(
   }
 
   const [employee] = await db
-    .select()
+    .select({
+      id: employees.id,
+      companyId: employees.companyId,
+      credentials: employees.credentials,
+    })
     .from(employees)
     .where(and(eq(employees.id, id), eq(employees.companyId, session.companyId)))
     .limit(1);
@@ -129,7 +137,9 @@ export async function PUT(
     .set({ credentials: creds, updatedAt: new Date() })
     .where(eq(employees.id, id));
 
-  // Sync all credentials to the employee's container so they can access them
+  // Sync all credentials to the employee's container so they can access them via `cred` CLI
+  let syncStatus = "not_synced";
+  let syncError: string | undefined;
   const backendConfig = await getEmployeeBackend(id);
   if (backendConfig) {
     try {
@@ -144,10 +154,16 @@ export async function PUT(
           notes: c.notes,
         })),
       );
+      syncStatus = "synced";
     } catch (err: any) {
-      // Don't fail the whole operation — DB is saved, container sync can be retried
+      // DB is saved, but container sync failed
       console.error(`Failed to sync credentials to container: ${err.message}`);
+      syncStatus = "sync_failed";
+      syncError = err.message;
     }
+  } else {
+    syncStatus = "no_backend";
+    syncError = "Employee droplet not active yet — credentials saved to DB and will be available once the employee is fully provisioned";
   }
 
   const saved = creds[creds.length - 1];
@@ -163,6 +179,8 @@ export async function PUT(
       url: target.url || "",
       notes: target.notes || "",
     },
+    syncStatus,
+    syncError,
   });
 }
 
@@ -182,7 +200,11 @@ export async function DELETE(
   }
 
   const [employee] = await db
-    .select()
+    .select({
+      id: employees.id,
+      companyId: employees.companyId,
+      credentials: employees.credentials,
+    })
     .from(employees)
     .where(and(eq(employees.id, id), eq(employees.companyId, session.companyId)))
     .limit(1);

@@ -128,31 +128,40 @@ function buildSystemPrompt(employee: {
     }
   }
 
-  // Include credentials so the employee can use them for logins, outreach, etc.
+  // Tell the AI about the cred tool — credentials are securely stored via
+  // encrypted files on disk, NOT in the system prompt.
   const creds = employee.credentials as Array<{
     label: string;
-    username: string;
-    password: string;
     url?: string;
     notes?: string;
   }> | null;
 
+  parts.push("## Credentials & Accounts");
+  parts.push("You have an encrypted credential manager (`cred`) for accessing logins and API keys your manager has provided.");
+  parts.push("");
+  parts.push("```bash");
+  parts.push("# List all stored credentials");
+  parts.push("cred list");
+  parts.push("");
+  parts.push("# View credentials for a service (masked)");
+  parts.push("cred get <service>");
+  parts.push("");
+  parts.push("# Get raw value for scripts (username, password, url, notes)");
+  parts.push("cred get-raw <service> <key>");
+  parts.push("");
+  parts.push("# Export as KEY=VALUE for sourcing in shell");
+  parts.push("cred export <service>");
+  parts.push("```");
+  parts.push("");
+
   if (creds && creds.length > 0) {
-    parts.push("## Your Credentials & Accounts");
-    parts.push("Your manager has given you access to these accounts. Use them when needed for your work:");
-    parts.push("");
-    for (const c of creds) {
-      parts.push(`### ${c.label}`);
-      if (c.url) parts.push(`- URL: ${c.url}`);
-      parts.push(`- Username: ${c.username}`);
-      parts.push(`- Password: ${c.password}`);
-      if (c.notes) parts.push(`- Notes: ${c.notes}`);
-      parts.push("");
-    }
-    parts.push("You also have an encrypted credential manager CLI (`cred`) in your workspace:");
-    parts.push("- `cred list` — list all stored credentials");
-    parts.push("- `cred get <service>` — view credentials for a service");
-    parts.push("- `cred get-raw <service> <key>` — get raw value (username/password) for use in scripts");
+    const labels = creds.map((c) => {
+      const slug = c.label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      const extra = c.url ? ` (${c.url})` : "";
+      return `- \`${slug}\`${extra}${c.notes ? ` — ${c.notes}` : ""}`;
+    });
+    parts.push("**Available credentials:** Run `cred list` to see all, or retrieve specific ones:");
+    parts.push(...labels);
     parts.push("");
   }
 

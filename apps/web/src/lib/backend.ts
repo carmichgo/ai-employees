@@ -19,8 +19,14 @@ interface BackendConfig {
 export async function getEmployeeBackend(
   employeeId: string,
 ): Promise<BackendConfig | null> {
+  // Use explicit column selects to avoid SELECT * breakage when
+  // the Drizzle schema defines columns not yet migrated to the DB.
   const [employee] = await db
-    .select()
+    .select({
+      dropletStatus: employees.dropletStatus,
+      dropletIp: employees.dropletIp,
+      interserviceSecret: employees.interserviceSecret,
+    })
     .from(employees)
     .where(eq(employees.id, employeeId))
     .limit(1);
