@@ -23,6 +23,51 @@ async function authenticate(request: NextRequest) {
   return verifyToken(token);
 }
 
+// Ensure chat_messages table exists — safe to call on every request (IF NOT EXISTS is a no-op)
+let _tableEnsured = false;
+async function ensureChatTable() {
+  if (_tableEnsured) return;
+  try {
+    const { neon } = await import("@neondatabase/serverless");
+    const sql = neon(process.env.DATABASE_URL!);
+    await sql`
+      CREATE TABLE IF NOT EXISTS chat_messages (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+        user_id UUID NOT NULL REFERENCES users(id),
+        role VARCHAR(20) NOT NULL,
+        content TEXT NOT NULL,
+        mode VARCHAR(20),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `;
+    await sql`CREATE INDEX IF NOT EXISTS idx_chat_messages_employee_id ON chat_messages(employee_id, created_at DESC)`;
+    _tableEnsured = true;
+  } catch {
+    // Non-fatal — table probably already exists
+  }
+}
+
+// Select only the employee columns we actually need (avoids SELECT * which
+// breaks if the Drizzle schema defines columns not yet in the DB).
+function selectEmployee() {
+  return db
+    .select({
+      id: employees.id,
+      companyId: employees.companyId,
+      name: employees.name,
+      jobTitle: employees.jobTitle,
+      emoji: employees.emoji,
+      status: employees.status,
+      dropletStatus: employees.dropletStatus,
+      dropletIp: employees.dropletIp,
+      interserviceSecret: employees.interserviceSecret,
+      containerHost: employees.containerHost,
+      containerPort: employees.containerPort,
+    })
+    .from(employees);
+}
+
 // GET /api/employees/[id]/chat — get conversation history
 export async function GET(
   request: NextRequest,
@@ -33,48 +78,53 @@ export async function GET(
 
   const { id } = await params;
 
-  // Verify employee belongs to user's company
-  const [employee] = await db
-    .select()
-    .from(employees)
-    .where(and(eq(employees.id, id), eq(employees.companyId, session.companyId)))
-    .limit(1);
+  try {
+    // Verify employee belongs to user's company
+    const [employee] = await selectEmployee()
+      .where(and(eq(employees.id, id), eq(employees.companyId, session.companyId)))
+      .limit(1);
 
-  if (!employee) {
-    return NextResponse.json({ error: "Employee not found" }, { status: 404 });
-  }
-
-  // Load last 100 messages, ordered newest first then reverse
-  const limit = parseInt(request.nextUrl.searchParams.get("limit") || "100");
-  const rows = await db
-    .select({
-      id: chatMessages.id,
-      role: chatMessages.role,
-      content: chatMessages.content,
-      mode: chatMessages.mode,
-      createdAt: chatMessages.createdAt,
-    })
-    .from(chatMessages)
-    .where(and(eq(chatMessages.employeeId, id), eq(chatMessages.userId, session.userId)))
-    .orderBy(desc(chatMessages.createdAt))
-    .limit(limit);
-
-  // Reverse to oldest-first for the UI
-  rows.reverse();
-
-  // Deduplicate: both the Vercel route and the API on the droplet may save
-  // the same assistant reply (the API saves as a backup for the timeout case).
-  // Filter out back-to-back assistant messages with identical content.
-  const deduped = rows.filter((row, i) => {
-    if (i === 0) return true;
-    const prev = rows[i - 1];
-    if (row.role === "assistant" && prev.role === "assistant" && row.content === prev.content) {
-      return false;
+    if (!employee) {
+      return NextResponse.json({ error: "Employee not found" }, { status: 404 });
     }
-    return true;
-  });
 
-  return NextResponse.json({ messages: deduped });
+    await ensureChatTable();
+
+    // Load last 100 messages, ordered newest first then reverse
+    const limit = parseInt(request.nextUrl.searchParams.get("limit") || "100");
+    const rows = await db
+      .select({
+        id: chatMessages.id,
+        role: chatMessages.role,
+        content: chatMessages.content,
+        mode: chatMessages.mode,
+        createdAt: chatMessages.createdAt,
+      })
+      .from(chatMessages)
+      .where(and(eq(chatMessages.employeeId, id), eq(chatMessages.userId, session.userId)))
+      .orderBy(desc(chatMessages.createdAt))
+      .limit(limit);
+
+    // Reverse to oldest-first for the UI
+    rows.reverse();
+
+    // Deduplicate: both the Vercel route and the API on the droplet may save
+    // the same assistant reply (the API saves as a backup for the timeout case).
+    // Filter out back-to-back assistant messages with identical content.
+    const deduped = rows.filter((row, i) => {
+      if (i === 0) return true;
+      const prev = rows[i - 1];
+      if (row.role === "assistant" && prev.role === "assistant" && row.content === prev.content) {
+        return false;
+      }
+      return true;
+    });
+
+    return NextResponse.json({ messages: deduped });
+  } catch (err: any) {
+    console.error(`[chat GET] Failed for employee ${id}:`, err);
+    return NextResponse.json({ error: `Failed to load chat: ${err.message}` }, { status: 500 });
+  }
 }
 
 // POST /api/employees/[id]/chat — send a message
@@ -87,10 +137,8 @@ export async function POST(
 
   const { id } = await params;
 
-  // Get employee with auth check
-  const [employee] = await db
-    .select()
-    .from(employees)
+  // Get employee with auth check — explicit columns to avoid SELECT * breakage
+  const [employee] = await selectEmployee()
     .where(and(eq(employees.id, id), eq(employees.companyId, session.companyId)))
     .limit(1);
 
@@ -115,6 +163,9 @@ export async function POST(
   if (!message?.trim()) {
     return NextResponse.json({ error: "Message is required" }, { status: 400 });
   }
+
+  // Ensure chat table exists before first write
+  await ensureChatTable();
 
   // Save user message to DB
   await db.insert(chatMessages).values({

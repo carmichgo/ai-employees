@@ -62,6 +62,25 @@ export async function POST(request: NextRequest) {
     await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS last_response_at TIMESTAMPTZ`;
     results.push("0007: employee activity tracking columns — OK");
 
+    // Migration 0008: Add phone_number to employees
+    await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS phone_number VARCHAR(20)`;
+    results.push("0008: employee phone_number column — OK");
+
+    // Migration 0009: Ensure chat_messages table exists
+    await sql`
+      CREATE TABLE IF NOT EXISTS chat_messages (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+        user_id UUID NOT NULL REFERENCES users(id),
+        role VARCHAR(20) NOT NULL,
+        content TEXT NOT NULL,
+        mode VARCHAR(20),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `;
+    await sql`CREATE INDEX IF NOT EXISTS idx_chat_messages_employee_id ON chat_messages(employee_id, created_at DESC)`;
+    results.push("0009: chat_messages table — OK");
+
     // Admin actions
     const action = request.nextUrl.searchParams.get("action");
 
@@ -337,14 +356,29 @@ export async function POST(request: NextRequest) {
       WHERE table_name = 'tasks'
       ORDER BY ordinal_position
     `;
+    const chatCols = await sql`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_name = 'chat_messages'
+      ORDER BY ordinal_position
+    `;
+
+    // Chat messages diagnostics
+    const chatStats = await sql`
+      SELECT employee_id, role, count(*)::int as count
+      FROM chat_messages
+      GROUP BY employee_id, role
+      ORDER BY employee_id
+    `;
 
     return NextResponse.json({
       success: true,
       migrations: results,
       employees: empRows,
       taskStats,
+      chatStats,
       employeeColumns: empCols.map((c: any) => c.column_name),
       taskColumns: taskCols.map((c: any) => c.column_name),
+      chatMessageColumns: chatCols.map((c: any) => c.column_name),
     });
   } catch (err: any) {
     return NextResponse.json(
