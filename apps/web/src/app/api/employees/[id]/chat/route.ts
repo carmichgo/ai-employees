@@ -6,6 +6,10 @@
  *
  * Messages are persisted to the chat_messages table so conversations
  * survive page refreshes.
+ *
+ * NOTE: The employee's system prompt (SOUL.md) is injected by the droplet
+ * API from disk — NOT here. This keeps one single source of truth for the
+ * employee's identity, task-logging rules, skills, credentials, etc.
  */
 import { NextRequest, NextResponse } from "next/server";
 
@@ -58,10 +62,6 @@ function selectEmployee() {
       name: employees.name,
       jobTitle: employees.jobTitle,
       emoji: employees.emoji,
-      persona: employees.persona,
-      goals: employees.goals,
-      personalityConfig: employees.personalityConfig,
-      credentials: employees.credentials,
       status: employees.status,
       dropletStatus: employees.dropletStatus,
       dropletIp: employees.dropletIp,
@@ -70,135 +70,6 @@ function selectEmployee() {
       containerPort: employees.containerPort,
     })
     .from(employees);
-}
-
-/**
- * Build a system message that establishes the employee's identity.
- * The OpenClaw gateway's /v1/chat/completions endpoint is a pass-through —
- * it does NOT inject SOUL.md. So we must provide the identity context ourselves.
- */
-function buildSystemPrompt(employee: {
-  name: string;
-  jobTitle: string;
-  persona?: string | null;
-  goals?: string | null;
-  personalityConfig?: unknown;
-  credentials?: unknown;
-}): string {
-  const parts: string[] = [];
-
-  // ── TASK LOGGING — must be first so the model always sees it ──
-  parts.push("# RULE #1 — LOG EVERY TASK BEFORE YOU START (NON-NEGOTIABLE)");
-  parts.push("");
-  parts.push("Every time you receive a message that asks you to do something, you MUST create a task via the API BEFORE you begin working. Your manager tracks ALL your work through the task dashboard. If a task is not logged, it did not happen.");
-  parts.push("");
-  parts.push("Workflow: 1) Create task (status: in_progress) → 2) Do the work → 3) Update task to completed with a summary.");
-  parts.push("");
-  parts.push("```bash");
-  parts.push("# List existing tasks (check for duplicates first)");
-  parts.push('curl -s "$BLITZ_API_URL/employee/tasks" \\');
-  parts.push('  -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" | jq \'.tasks[] | {id, title, status}\'');
-  parts.push("");
-  parts.push("# Create a task");
-  parts.push('TASK=$(curl -s -X POST "$BLITZ_API_URL/employee/tasks" \\');
-  parts.push('  -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" \\');
-  parts.push('  -H "Content-Type: application/json" \\');
-  parts.push('  -d \'{"title": "Brief description", "priority": "medium", "category": "research", "status": "in_progress"}\')');
-  parts.push("TASK_ID=$(echo \"$TASK\" | jq -r '.task.id')");
-  parts.push("");
-  parts.push("# Complete a task");
-  parts.push('curl -s -X PATCH "$BLITZ_API_URL/employee/tasks/$TASK_ID" \\');
-  parts.push('  -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" \\');
-  parts.push('  -H "Content-Type: application/json" \\');
-  parts.push('  -d \'{"status": "completed", "comment": "Summary of what was done."}\'');
-  parts.push("```");
-  parts.push("");
-  parts.push("Priority: low | medium | high | urgent");
-  parts.push("Category: research | marketing | engineering | content | admin | support | outreach");
-  parts.push("");
-  parts.push("---");
-  parts.push("");
-
-  // ── IDENTITY ──
-  parts.push(`You are ${employee.name}, a ${employee.jobTitle}. That is your name and your role. You are not a generic AI — you are a specific person with a specific job. When anyone asks who you are, you introduce yourself by name and role. You do not refer to yourself as an AI assistant, language model, or chatbot.`);
-  parts.push("");
-
-  parts.push("IMPORTANT — NEVER do any of the following:");
-  parts.push("- Do NOT say you have 'no memory', a 'clean slate', or that you're 'just coming online'");
-  parts.push("- Do NOT ask 'who am I?' or 'who are you?' — you already know who you are from this document");
-  parts.push("- Do NOT ask 'what should I work on?' as if you know nothing — you have a role and goals");
-  parts.push("- Do NOT introduce yourself with a long speech about your capabilities");
-  parts.push("Instead, be natural and confident, like an employee who already knows the job.");
-  parts.push("");
-
-  if (employee.persona) {
-    parts.push("## Who You Are");
-    parts.push(employee.persona);
-    parts.push("");
-  }
-
-  if (employee.goals) {
-    parts.push("## Your Goals");
-    parts.push(employee.goals);
-    parts.push("");
-  }
-
-  const personality = employee.personalityConfig as {
-    autonomy?: string;
-    proactivity?: string;
-    communication?: string;
-  } | null;
-
-  if (personality) {
-    const traits: string[] = [];
-    if (personality.autonomy) traits.push(`Decision-making: ${personality.autonomy} autonomy`);
-    if (personality.proactivity) traits.push(`Work style: ${personality.proactivity}`);
-    if (personality.communication) traits.push(`Communication: ${personality.communication}`);
-    if (traits.length > 0) {
-      parts.push(`## Work Style`);
-      parts.push(traits.join(". ") + ".");
-      parts.push("");
-    }
-  }
-
-  // Tell the AI about the cred tool — credentials are securely stored via
-  // encrypted files on disk, NOT in the system prompt.
-  const creds = employee.credentials as Array<{
-    label: string;
-    url?: string;
-    notes?: string;
-  }> | null;
-
-  parts.push("## Credentials & Accounts");
-  parts.push("You have an encrypted credential manager (`cred`) for accessing logins and API keys your manager has provided.");
-  parts.push("");
-  parts.push("```bash");
-  parts.push("# List all stored credentials");
-  parts.push("cred list");
-  parts.push("");
-  parts.push("# View credentials for a service (masked)");
-  parts.push("cred get <service>");
-  parts.push("");
-  parts.push("# Get raw value for scripts (username, password, url, notes)");
-  parts.push("cred get-raw <service> <key>");
-  parts.push("");
-  parts.push("# Export as KEY=VALUE for sourcing in shell");
-  parts.push("cred export <service>");
-  parts.push("```");
-  parts.push("");
-
-  if (creds && creds.length > 0) {
-    const labels = creds.map((c) => {
-      const slug = c.label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-      const extra = c.url ? ` (${c.url})` : "";
-      return `- \`${slug}\`${extra}${c.notes ? ` — ${c.notes}` : ""}`;
-    });
-    parts.push("**Available credentials:** Run `cred list` to see all, or retrieve specific ones:");
-    parts.push(...labels);
-    parts.push("");
-  }
-
-  return parts.join("\n");
 }
 
 // GET /api/employees/[id]/chat — get conversation history
@@ -354,17 +225,13 @@ export async function POST(
     return NextResponse.json({ reply, mode: "demo" });
   }
 
-  // Route to OpenClaw container via the employee's dedicated droplet
+  // Route to OpenClaw container via the employee's dedicated droplet.
+  // The droplet API injects the full SOUL.md from disk as the system prompt —
+  // we do NOT inject a separate system prompt here so there's one source of truth.
   try {
     // Limit conversation history to avoid polluting context with old threads.
     const recentHistory = (conversationHistory || []).slice(-10);
-
-    // Build messages with a system prompt that establishes the employee's identity.
-    // The OpenClaw gateway's /v1/chat/completions is a pass-through — it does NOT
-    // inject SOUL.md automatically, so we must provide identity context here.
-    const systemPrompt = buildSystemPrompt(employee);
     const messages = [
-      { role: "system", content: systemPrompt },
       ...recentHistory,
       { role: "user", content: message },
     ];
