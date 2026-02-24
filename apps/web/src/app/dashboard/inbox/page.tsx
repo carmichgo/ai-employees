@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import {
   Send,
@@ -22,6 +23,9 @@ import {
   PhoneOff,
   RotateCcw,
   Trash2,
+  Paperclip,
+  X,
+  Image as ImageIcon,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -53,6 +57,7 @@ interface ConversationPreview {
 // ── Main Inbox Page ─────────────────────────────
 
 export default function InboxPage() {
+  const searchParams = useSearchParams();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [previews, setPreviews] = useState<Map<string, ConversationPreview>>(new Map());
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -66,6 +71,11 @@ export default function InboxPage() {
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // File upload state
+  const [uploading, setUploading] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Voice state (dictation)
   const [listening, setListening] = useState(false);
@@ -125,9 +135,13 @@ export default function InboxPage() {
         );
         setPreviews(previewMap);
 
-        // Auto-select first employee
+        // Auto-select employee from ?employee= query param, or first employee
         if (emps.length > 0 && !selectedId) {
-          setSelectedId(emps[0].id);
+          const paramId = searchParams.get("employee");
+          const target = paramId && emps.find((e: Employee) => e.id === paramId)
+            ? paramId
+            : emps[0].id;
+          setSelectedId(target);
         }
       } catch {
         // Failed to load
@@ -191,6 +205,7 @@ export default function InboxPage() {
     if (selectedId) {
       loadChat(selectedId);
       setInput("");
+      setPendingFiles([]);
     }
   }, [selectedId, loadChat]);
 
@@ -446,23 +461,60 @@ export default function InboxPage() {
     return () => clearInterval(interval);
   }, [pendingReplyId, selectedId]);
 
+  // Handle files selected via file picker
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    const valid = files.filter((f) => f.size <= 10 * 1024 * 1024);
+    if (valid.length < files.length) alert("Some files were skipped (max 10MB per file)");
+    setPendingFiles((prev) => [...prev, ...valid]);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }, []);
+
+  const removePendingFile = useCallback((index: number) => {
+    setPendingFiles((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  // Drag-and-drop file support
+  const [dragOver, setDragOver] = useState(false);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const files = Array.from(e.dataTransfer.files);
+    const valid = files.filter((f) => f.size <= 10 * 1024 * 1024);
+    if (valid.length < files.length) alert("Some files were skipped (max 10MB per file)");
+    if (valid.length > 0) setPendingFiles((prev) => [...prev, ...valid]);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); setDragOver(true); }, []);
+  const handleDragLeave = useCallback((e: React.DragEvent) => { e.preventDefault(); setDragOver(false); }, []);
+
   // Send message
   const handleSend = async () => {
     const text = input.trim();
-    if (!text || sending || !selectedId) return;
+    const filesToUpload = [...pendingFiles];
+    if ((!text && filesToUpload.length === 0) || sending || !selectedId) return;
 
     const emp = employees.find((e) => e.id === selectedId);
     if (!emp || emp.status !== "active") return;
 
+    // Build the user-visible message
+    const fileNames = filesToUpload.map((f) => f.name);
+    const displayText = text
+      ? (fileNames.length > 0 ? `${text}\n\n${fileNames.map((n) => `[Attached: ${n}]`).join("\n")}` : text)
+      : fileNames.map((n) => `[Attached: ${n}]`).join("\n");
+
     const userMessage: Message = {
       id: `user-${Date.now()}`,
       role: "user",
-      content: text,
+      content: displayText,
       timestamp: new Date(),
     };
 
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
+    setPendingFiles([]);
     setSending(true);
 
     if (inputRef.current) {
@@ -470,11 +522,36 @@ export default function InboxPage() {
     }
 
     try {
+      // Upload files first
+      const uploadedNames: string[] = [];
+      for (const file of filesToUpload) {
+        try {
+          const result = await api.uploadFile(selectedId, file);
+          uploadedNames.push(result.file?.name || file.name);
+        } catch (err: any) {
+          console.error(`Failed to upload ${file.name}:`, err);
+          uploadedNames.push(`${file.name} (upload failed)`);
+        }
+      }
+
+      // Build the message to send to the employee
+      let messageText = text;
+      if (uploadedNames.length > 0) {
+        const fileList = uploadedNames
+          .filter((n) => !n.includes("upload failed"))
+          .map((n) => `- /home/node/.openclaw/workspace/uploads/${n}`)
+          .join("\n");
+        const fileMsg = uploadedNames.length === 1
+          ? `I've uploaded a file to your workspace:\n${fileList}\nPlease review it.`
+          : `I've uploaded ${uploadedNames.length} files to your workspace:\n${fileList}\nPlease review them.`;
+        messageText = text ? `${text}\n\n${fileMsg}` : fileMsg;
+      }
+
       const history = messages
         .filter((m) => m.id !== "welcome")
         .map((m) => ({ role: m.role, content: m.content }));
 
-      const res = await api.chatWithEmployee(selectedId, text, history);
+      const res = await api.chatWithEmployee(selectedId, messageText, history);
 
       const msgId = `assistant-${Date.now()}`;
       const assistantMessage: Message = {
@@ -752,14 +829,36 @@ export default function InboxPage() {
 
       {/* ── Chat Panel ── */}
       <div
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
         style={{
           flex: 1,
           display: "flex",
           flexDirection: "column",
           background: "var(--bg, #ffffff)",
           minWidth: 0,
+          position: "relative",
         }}
       >
+        {/* Drag overlay */}
+        {dragOver && (
+          <div style={{
+            position: "absolute", inset: 0, zIndex: 50,
+            background: "rgba(37, 99, 235, 0.06)", border: "2px dashed #2563eb",
+            borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center",
+            pointerEvents: "none",
+          }}>
+            <div style={{
+              padding: "16px 24px", borderRadius: 8,
+              background: "var(--bg, #ffffff)", border: "1px solid rgba(37, 99, 235, 0.3)",
+              fontSize: 14, fontWeight: 500, color: "#2563eb",
+              display: "flex", alignItems: "center", gap: 8,
+            }}>
+              <Paperclip size={16} /> Drop files to attach
+            </div>
+          </div>
+        )}
         {!selectedEmployee ? (
           /* Empty state */
           <div
@@ -1119,6 +1218,52 @@ export default function InboxPage() {
                 borderTop: "1px solid var(--border, #e5e5e5)",
               }}
             >
+              {/* Hidden file input */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                onChange={handleFileSelect}
+                style={{ display: "none" }}
+                accept="image/*,.pdf,.csv,.tsv,.txt,.md,.json,.yaml,.yml,.html,.xml,.docx,.xlsx,.pptx,.zip,.py,.js,.ts,.sh,.sql,.doc,.xls,.ppt"
+              />
+              {/* Pending file attachments */}
+              {pendingFiles.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, padding: "0 0 8px" }}>
+                  {pendingFiles.map((file, idx) => {
+                    const isImage = file.type.startsWith("image/");
+                    return (
+                      <div
+                        key={`${file.name}-${idx}`}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 6,
+                          padding: "4px 8px 4px 10px", borderRadius: 6,
+                          background: "rgba(37, 99, 235, 0.04)",
+                          border: "1px solid rgba(37, 99, 235, 0.15)",
+                          fontSize: 12, color: "var(--text-secondary, #525252)", maxWidth: 220,
+                        }}
+                      >
+                        {isImage ? <ImageIcon size={13} style={{ color: "#2563eb", flexShrink: 0 }} /> : <FileText size={13} style={{ color: "#2563eb", flexShrink: 0 }} />}
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{file.name}</span>
+                        <span style={{ fontSize: 10, color: "var(--text-tertiary, #a3a3a3)", flexShrink: 0 }}>
+                          {file.size < 1024 ? `${file.size}B` : file.size < 1048576 ? `${(file.size / 1024).toFixed(0)}KB` : `${(file.size / 1048576).toFixed(1)}MB`}
+                        </span>
+                        <button
+                          onClick={() => removePendingFile(idx)}
+                          style={{
+                            width: 16, height: 16, borderRadius: "50%", border: "none",
+                            background: "rgba(0,0,0,0.08)", color: "var(--text-tertiary, #a3a3a3)",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            cursor: "pointer", flexShrink: 0, padding: 0,
+                          }}
+                        >
+                          <X size={10} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
               {selectedEmployee.status === "active" ? (
                 <div
                   style={{
@@ -1131,12 +1276,28 @@ export default function InboxPage() {
                     padding: "8px 12px",
                   }}
                 >
+                  {/* Attach file button */}
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={sending || uploading}
+                    title="Attach file"
+                    style={{
+                      width: 36, height: 36, borderRadius: 10,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      border: "none", cursor: "pointer",
+                      background: pendingFiles.length > 0 ? "rgba(37, 99, 235, 0.08)" : "var(--bg-secondary, #f5f5f5)",
+                      color: pendingFiles.length > 0 ? "#2563eb" : "var(--text-tertiary, #a3a3a3)",
+                      transition: "all 0.2s", flexShrink: 0,
+                    }}
+                  >
+                    <Paperclip size={16} />
+                  </button>
                   <textarea
                     ref={inputRef}
                     value={input}
                     onChange={handleInput}
                     onKeyDown={handleKeyDown}
-                    placeholder={`Message ${selectedEmployee.name}...`}
+                    placeholder={pendingFiles.length > 0 ? `Add a message about the file(s)...` : `Message ${selectedEmployee.name}...`}
                     disabled={sending}
                     rows={1}
                     style={{
@@ -1174,7 +1335,7 @@ export default function InboxPage() {
                   )}
                   <button
                     onClick={handleSend}
-                    disabled={!input.trim() || sending}
+                    disabled={(!input.trim() && pendingFiles.length === 0) || sending}
                     style={{
                       width: 36,
                       height: 36,
@@ -1183,13 +1344,13 @@ export default function InboxPage() {
                       alignItems: "center",
                       justifyContent: "center",
                       border: "none",
-                      cursor: input.trim() && !sending ? "pointer" : "default",
+                      cursor: (input.trim() || pendingFiles.length > 0) && !sending ? "pointer" : "default",
                       background:
-                        input.trim() && !sending
+                        (input.trim() || pendingFiles.length > 0) && !sending
                           ? "var(--text, #0a0a0a)"
                           : "var(--bg-secondary, #f5f5f5)",
                       color:
-                        input.trim() && !sending
+                        (input.trim() || pendingFiles.length > 0) && !sending
                           ? "#ffffff"
                           : "var(--text-tertiary, #a3a3a3)",
                       transition: "all 0.2s",

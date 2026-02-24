@@ -545,7 +545,7 @@ export default function EmployeeDetailPage() {
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           {(employee.status === "active" || employee.status === "paused") && (
-            <Link href={`/dashboard/employees/${employeeId}/chat`} className="btn-primary btn-sm" style={{ gap: 6, textDecoration: "none" }}>
+            <Link href={`/dashboard/inbox?employee=${employeeId}`} className="btn-primary btn-sm" style={{ gap: 6, textDecoration: "none" }}>
               <MessageCircle size={14} /> Chat
             </Link>
           )}

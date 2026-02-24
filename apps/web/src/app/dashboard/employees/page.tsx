@@ -477,7 +477,7 @@ function EmployeeCard({ emp, activity }: { emp: any; activity?: ActivityInfo }) 
         <div style={{ display: "flex", gap: 6, marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--border, #e5e5e5)" }}>
           {emp.status === "active" ? (
             <Link
-              href={`/dashboard/employees/${emp.id}/chat`}
+              href={`/dashboard/inbox?employee=${emp.id}`}
               onClick={(e) => e.stopPropagation()}
               style={{
                 display: "inline-flex", alignItems: "center", gap: 5,
@@ -582,7 +582,7 @@ function EmployeeRow({ emp, isLast, activity }: { emp: any; isLast: boolean; act
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
           {emp.status === "active" && (
             <Link
-              href={`/dashboard/employees/${emp.id}/chat`}
+              href={`/dashboard/inbox?employee=${emp.id}`}
               onClick={(e) => e.stopPropagation()}
               style={{
                 display: "flex", alignItems: "center", justifyContent: "center",
