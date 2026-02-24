@@ -1,9 +1,30 @@
-import { eq, and, not, inArray } from "drizzle-orm";
+import { eq, and, not } from "drizzle-orm";
 import { db, employees } from "@ai-employees/db";
 import { docker } from "../docker/client.js";
+import { networkInterfaces } from "os";
+
+/** Get all local IPv4 addresses for this machine */
+function getLocalIps(): string[] {
+  const ips: string[] = [];
+  const nets = networkInterfaces();
+  for (const iface of Object.values(nets)) {
+    if (!iface) continue;
+    for (const net of iface) {
+      if (net.family === "IPv4" && !net.internal) {
+        ips.push(net.address);
+      }
+    }
+  }
+  return ips;
+}
 
 export async function pollAllEmployeeHealth(): Promise<void> {
-  // Get all non-terminated employees
+  // Only poll employees whose droplet IP matches this machine.
+  // Each droplet runs its own worker, and can only inspect containers
+  // on the local Docker daemon. Checking other droplets' employees
+  // would incorrectly mark them as "error" (container not found).
+  const localIps = getLocalIps();
+
   const activeEmployees = await db.query.employees.findMany({
     where: and(
       not(eq(employees.status, "terminated")),
@@ -11,7 +32,12 @@ export async function pollAllEmployeeHealth(): Promise<void> {
     ),
   });
 
-  for (const employee of activeEmployees) {
+  // Filter to only employees on this droplet
+  const localEmployees = activeEmployees.filter(
+    (e) => e.dropletIp && localIps.includes(e.dropletIp),
+  );
+
+  for (const employee of localEmployees) {
     try {
       await pollEmployeeHealth(employee);
     } catch (error) {

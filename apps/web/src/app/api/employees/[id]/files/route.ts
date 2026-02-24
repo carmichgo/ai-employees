@@ -28,9 +28,9 @@ export async function POST(
 
   const { id } = await params;
 
-  // Verify employee belongs to company
+  // Verify employee belongs to company (explicit columns to avoid SELECT * breakage)
   const [employee] = await db
-    .select()
+    .select({ id: employees.id, companyId: employees.companyId })
     .from(employees)
     .where(and(eq(employees.id, id), eq(employees.companyId, session.companyId)))
     .limit(1);
@@ -94,7 +94,7 @@ export async function GET(
   const { id } = await params;
 
   const [employee] = await db
-    .select()
+    .select({ id: employees.id, companyId: employees.companyId })
     .from(employees)
     .where(and(eq(employees.id, id), eq(employees.companyId, session.companyId)))
     .limit(1);
@@ -139,7 +139,7 @@ export async function DELETE(
   }
 
   const [employee] = await db
-    .select()
+    .select({ id: employees.id, companyId: employees.companyId })
     .from(employees)
     .where(and(eq(employees.id, id), eq(employees.companyId, session.companyId)))
     .limit(1);

@@ -10,6 +10,22 @@
 
 import { eq, and } from "drizzle-orm";
 import { db, employees, triggers, tasks } from "@ai-employees/db";
+import { networkInterfaces } from "os";
+
+/** Get all local IPv4 addresses for this machine */
+function getLocalIps(): string[] {
+  const ips: string[] = [];
+  const nets = networkInterfaces();
+  for (const iface of Object.values(nets)) {
+    if (!iface) continue;
+    for (const net of iface) {
+      if (net.family === "IPv4" && !net.internal) {
+        ips.push(net.address);
+      }
+    }
+  }
+  return ips;
+}
 
 /**
  * Minimal cron expression matcher.
@@ -108,12 +124,18 @@ export async function checkScheduleTriggers(): Promise<void> {
         if (diffMs < 55_000) continue; // Already fired this minute
       }
 
-      // Get the employee
+      // Get the employee — only process if on this droplet
       const employee = await db.query.employees.findFirst({
         where: eq(employees.id, trigger.employeeId),
       });
 
       if (!employee || employee.status !== "active" || !employee.containerHost) {
+        continue;
+      }
+
+      // Only fire triggers for employees on this droplet
+      const localIps = getLocalIps();
+      if (!employee.dropletIp || !localIps.includes(employee.dropletIp)) {
         continue;
       }
 

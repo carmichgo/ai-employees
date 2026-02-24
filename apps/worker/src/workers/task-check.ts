@@ -9,6 +9,22 @@
 
 import { eq, and, not, sql } from "drizzle-orm";
 import { db, employees, tasks } from "@ai-employees/db";
+import { networkInterfaces } from "os";
+
+/** Get all local IPv4 addresses for this machine */
+function getLocalIps(): string[] {
+  const ips: string[] = [];
+  const nets = networkInterfaces();
+  for (const iface of Object.values(nets)) {
+    if (!iface) continue;
+    for (const net of iface) {
+      if (net.family === "IPv4" && !net.internal) {
+        ips.push(net.address);
+      }
+    }
+  }
+  return ips;
+}
 
 /** Track last nudge time per employee to avoid spamming. Resets on worker restart. */
 const lastNudge = new Map<string, number>();
@@ -17,7 +33,10 @@ const NUDGE_COOLDOWN_MS = 15 * 60 * 1000; // 15 minutes
 const STALE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes — tasks not updated in this long are stale
 
 export async function checkPendingTasks(): Promise<void> {
-  // Get all active employees
+  // Only nudge employees on this droplet — each droplet runs its own worker
+  // and can only reach local containers via containerHost.
+  const localIps = getLocalIps();
+
   const activeEmployees = await db.query.employees.findMany({
     where: and(
       eq(employees.status, "active"),
@@ -26,6 +45,7 @@ export async function checkPendingTasks(): Promise<void> {
     columns: {
       id: true,
       name: true,
+      dropletIp: true,
       containerHost: true,
       containerPort: true,
       gatewayToken: true,
@@ -33,7 +53,11 @@ export async function checkPendingTasks(): Promise<void> {
     },
   });
 
-  for (const employee of activeEmployees) {
+  const localEmployees = activeEmployees.filter(
+    (e) => e.dropletIp && localIps.includes(e.dropletIp),
+  );
+
+  for (const employee of localEmployees) {
     try {
       await checkEmployeeTasks(employee);
     } catch (error) {
