@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { Suspense, useEffect, useState, useRef, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import {
@@ -57,6 +57,19 @@ interface ConversationPreview {
 // ── Main Inbox Page ─────────────────────────────
 
 export default function InboxPage() {
+  return (
+    <Suspense fallback={
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "80vh" }}>
+        <div style={{ width: 24, height: 24, borderRadius: "50%", border: "2px solid #e5e5e5", borderTopColor: "#a3a3a3", animation: "spin 0.8s linear infinite" }} />
+        <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+      </div>
+    }>
+      <InboxContent />
+    </Suspense>
+  );
+}
+
+function InboxContent() {
   const searchParams = useSearchParams();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [previews, setPreviews] = useState<Map<string, ConversationPreview>>(new Map());
