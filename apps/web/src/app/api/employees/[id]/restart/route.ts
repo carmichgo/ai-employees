@@ -9,6 +9,8 @@ export const maxDuration = 60;
 /**
  * POST /api/employees/[id]/restart
  * Restart an employee's container to clear stuck state.
+ * Tries the dedicated /restart endpoint first; if the droplet is running
+ * old code (404), falls back to teardown + reprovision.
  * Optionally clears chat history too.
  */
 export async function POST(
@@ -51,33 +53,79 @@ export async function POST(
   const clearChat = (body as any).clearChat === true;
 
   const results: string[] = [];
+  const headers = {
+    "Content-Type": "application/json",
+    "x-interservice-secret": employee.interserviceSecret,
+  };
+  const baseUrl = `http://${employee.dropletIp}:3001`;
 
-  // 1. Restart container on the droplet
+  // 1. Try dedicated restart endpoint first
+  let restarted = false;
   try {
-    const res = await fetch(
-      `http://${employee.dropletIp}:3001/internal/employees/${id}/restart`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-interservice-secret": employee.interserviceSecret,
-        },
-        signal: AbortSignal.timeout(45000),
-      },
-    );
+    const res = await fetch(`${baseUrl}/internal/employees/${id}/restart`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({}),
+      signal: AbortSignal.timeout(45000),
+    });
 
     if (res.ok) {
       const data = await res.json();
       results.push(data.message || "Container restarted");
+      restarted = true;
+    } else if (res.status === 404) {
+      // Endpoint doesn't exist — droplet running old code, fall back
     } else {
       const err = await res.json().catch(() => ({ error: "Unknown error" }));
-      results.push(`Container restart failed: ${err.error}`);
+      results.push(`Restart endpoint failed: ${err.error}`);
     }
-  } catch (err: any) {
-    results.push(`Container restart error: ${err.message}`);
+  } catch {
+    // Network error or timeout — try fallback
   }
 
-  // 2. Optionally clear chat history
+  // 2. Fallback: teardown + reprovision (works with old droplet code)
+  if (!restarted) {
+    try {
+      // Teardown existing container
+      const tearRes = await fetch(`${baseUrl}/internal/employees/${id}/teardown`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({}),
+        signal: AbortSignal.timeout(30000),
+      });
+      if (tearRes.ok) {
+        results.push("Container torn down");
+      } else {
+        const err = await tearRes.json().catch(() => ({ error: "teardown failed" }));
+        results.push(`Teardown: ${err.error || err.message}`);
+      }
+
+      // Clear container fields so reprovision creates a fresh one
+      await db
+        .update(employees)
+        .set({ status: "provisioning" } as any)
+        .where(eq(employees.id, id));
+
+      // Trigger reprovision
+      const provRes = await fetch(`${baseUrl}/internal/employees/${id}/reprovision`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({}),
+        signal: AbortSignal.timeout(30000),
+      });
+      if (provRes.ok) {
+        results.push("Reprovision triggered — container will be back in ~30 seconds");
+        restarted = true;
+      } else {
+        const err = await provRes.json().catch(() => ({ error: "reprovision failed" }));
+        results.push(`Reprovision: ${err.error || err.message}`);
+      }
+    } catch (err: any) {
+      results.push(`Fallback restart error: ${err.message}`);
+    }
+  }
+
+  // 3. Optionally clear chat history
   if (clearChat) {
     try {
       await db
@@ -89,5 +137,5 @@ export async function POST(
     }
   }
 
-  return NextResponse.json({ success: true, results });
+  return NextResponse.json({ success: restarted, results });
 }
