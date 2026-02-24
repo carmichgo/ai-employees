@@ -18,6 +18,8 @@ import {
   generateTaskManagementSkill,
   generateImageScript,
   generateVideoScript,
+  generateDocxSkill,
+  generateDocxInstallScript,
   type EmployeeInput,
 } from "@ai-employees/openclaw-config";
 import { docker, ensureNetwork, ensureImage } from "../docker/client.js";
@@ -144,6 +146,7 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     mkdirSync(`${configDir}/skills/restart-gateway`, { recursive: true });
     mkdirSync(`${configDir}/skills/team-communication`, { recursive: true });
     mkdirSync(`${configDir}/skills/task-management`, { recursive: true });
+    mkdirSync(`${configDir}/skills/docx`, { recursive: true });
     writeFileSync(`${configDir}/openclaw.json`, JSON.stringify(config, null, 2));
     writeFileSync(`${configDir}/SOUL.md`, soulMd);
     writeFileSync(`${configDir}/workspace/SOUL.md`, soulMd);
@@ -163,6 +166,7 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     writeFileSync(`${configDir}/skills/restart-gateway/SKILL.md`, generateRestartGatewaySkill());
     writeFileSync(`${configDir}/skills/team-communication/SKILL.md`, generateTeamCommunicationSkill());
     writeFileSync(`${configDir}/skills/task-management/SKILL.md`, generateTaskManagementSkill());
+    writeFileSync(`${configDir}/skills/docx/SKILL.md`, generateDocxSkill());
 
     // Write CLI wrapper scripts for image/video generation (installed into container below)
     writeFileSync(`${configDir}/generate-image.sh`, generateImageScript(), { mode: 0o755 });
@@ -601,6 +605,15 @@ CREDEOF
         pip3 install -q --break-system-packages google-genai Pillow 2>/dev/null || true
       '`,
       timeout: 60_000,
+    },
+    {
+      name: "DOCX skill deps (pandoc, LibreOffice, poppler, docx npm)",
+      cmd: `docker exec -u root ${containerName} bash -c '
+        ${generateDocxInstallScript()}
+      ' && docker exec ${containerName} bash -c '
+        npm install -g docx 2>/dev/null || true
+      '`,
+      timeout: 180_000,
     },
   ];
 

@@ -4,7 +4,7 @@
  */
 import type { FastifyInstance } from "fastify";
 import crypto from "node:crypto";
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { eq, and } from "drizzle-orm";
 import { db, employees, companies, users, chatMessages } from "@ai-employees/db";
@@ -438,6 +438,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
           generateCredentialManagerScript: genCred,
           generateImageScript: genImage,
           generateVideoScript: genVideo,
+          generateDocxSkill: genDocx,
         } = await import("@ai-employees/openclaw-config");
 
         const company = await db.query.companies.findFirst({ where: eq(companies.id, emp.companyId) });
@@ -484,6 +485,8 @@ export async function provisionRoutes(fastify: FastifyInstance) {
         writeFileSync(`${skillDir}/restart-gateway/SKILL.md`, genRestart());
         writeFileSync(`${skillDir}/team-communication/SKILL.md`, genTeamComm());
         writeFileSync(`${skillDir}/task-management/SKILL.md`, genTaskMgmt());
+        mkdirSync(`${skillDir}/docx`, { recursive: true });
+        writeFileSync(`${skillDir}/docx/SKILL.md`, genDocx());
         writeFileSync(`${configDir}/generate-image.sh`, genImage(), { mode: 0o755 });
         writeFileSync(`${configDir}/generate-video.sh`, genVideo(), { mode: 0o755 });
 
@@ -560,6 +563,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
           generateCredentialManagerScript: genCred,
           generateImageScript: genImage,
           generateVideoScript: genVideo,
+          generateDocxSkill: genDocx,
         } = await import("@ai-employees/openclaw-config");
 
         const company = await db.query.companies.findFirst({ where: eq(companies.id, emp.companyId) });
@@ -604,6 +608,8 @@ export async function provisionRoutes(fastify: FastifyInstance) {
         writeFileSync(`${skillDir}/restart-gateway/SKILL.md`, genRestart());
         writeFileSync(`${skillDir}/team-communication/SKILL.md`, genTeamComm());
         writeFileSync(`${skillDir}/task-management/SKILL.md`, genTaskMgmt());
+        mkdirSync(`${skillDir}/docx`, { recursive: true });
+        writeFileSync(`${skillDir}/docx/SKILL.md`, genDocx());
         writeFileSync(`${configDir}/generate-image.sh`, genImage(), { mode: 0o755 });
         writeFileSync(`${configDir}/generate-video.sh`, genVideo(), { mode: 0o755 });
 

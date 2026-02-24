@@ -6,3 +6,4 @@ export { generateMediaGenerationSkill, generateImageScript, generateVideoScript 
 export { generateRestartGatewaySkill } from "./restart-gateway.js";
 export { generateTeamCommunicationSkill } from "./team-communication.js";
 export { generateTaskManagementSkill } from "./task-management.js";
+export { generateDocxSkill, generateDocxInstallScript } from "./docx.js";
