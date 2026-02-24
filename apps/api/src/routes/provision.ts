@@ -706,14 +706,30 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     };
 
     // If container is available, route through it (OpenClaw).
-    // Do NOT inject a system message here — the container bootstraps its own
-    // system context from SOUL.md (which includes identity, task-logging rules,
-    // skills, etc.). Every other channel (Slack, inter-team, triggers) sends
-    // only user messages and lets the container use its SOUL.md. The dashboard
-    // should work the same way.
+    // The gateway's /v1/chat/completions is a pass-through — it does NOT inject
+    // SOUL.md as a system prompt. So we read SOUL.md from disk and prepend it
+    // as a system message so the AI knows who it is. The Vercel route also
+    // injects a system prompt from the DB (belt-and-suspenders: if either
+    // already has a system message, the first one wins).
     if (employee.containerHost && employee.containerPort) {
       let containerHost = employee.containerHost;
       const containerPort = employee.containerPort;
+
+      // Inject SOUL.md as system prompt if not already present in messages
+      let chatMessages = body.messages;
+      const hasSystemMsg = chatMessages.some((m) => m.role === "system");
+      if (!hasSystemMsg) {
+        const soulPath = `/opt/ai-employees/openclaw-configs/${id}/SOUL.md`;
+        try {
+          const soulMd = readFileSync(soulPath, "utf-8");
+          if (soulMd.trim()) {
+            chatMessages = [{ role: "system", content: soulMd }, ...chatMessages];
+          }
+        } catch {
+          // SOUL.md not found — fall through without system prompt
+          console.log(`[chat-proxy] SOUL.md not found at ${soulPath}, proceeding without system prompt`);
+        }
+      }
 
       const sendToContainer = async (host: string) => {
         const containerUrl = `http://${host}:${containerPort}/v1/chat/completions`;
@@ -725,7 +741,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
           },
           body: JSON.stringify({
             model: (employee.modelConfig as { primary: string }).primary,
-            messages: body.messages,
+            messages: chatMessages,
           }),
         });
       };

@@ -58,6 +58,9 @@ function selectEmployee() {
       name: employees.name,
       jobTitle: employees.jobTitle,
       emoji: employees.emoji,
+      persona: employees.persona,
+      goals: employees.goals,
+      personalityConfig: employees.personalityConfig,
       status: employees.status,
       dropletStatus: employees.dropletStatus,
       dropletIp: employees.dropletIp,
@@ -66,6 +69,64 @@ function selectEmployee() {
       containerPort: employees.containerPort,
     })
     .from(employees);
+}
+
+/**
+ * Build a system message that establishes the employee's identity.
+ * The OpenClaw gateway's /v1/chat/completions endpoint is a pass-through —
+ * it does NOT inject SOUL.md. So we must provide the identity context ourselves.
+ */
+function buildSystemPrompt(employee: {
+  name: string;
+  jobTitle: string;
+  persona?: string | null;
+  goals?: string | null;
+  personalityConfig?: unknown;
+}): string {
+  const parts: string[] = [];
+
+  parts.push(`You are ${employee.name}, a ${employee.jobTitle}. That is your name and your role. You are not a generic AI — you are a specific person with a specific job. When anyone asks who you are, you introduce yourself by name and role. You do not refer to yourself as an AI assistant, language model, or chatbot.`);
+  parts.push("");
+
+  parts.push("IMPORTANT — NEVER do any of the following:");
+  parts.push("- Do NOT say you have 'no memory', a 'clean slate', or that you're 'just coming online'");
+  parts.push("- Do NOT ask 'who am I?' or 'who are you?' — you already know who you are from this document");
+  parts.push("- Do NOT ask 'what should I work on?' as if you know nothing — you have a role and goals");
+  parts.push("- Do NOT introduce yourself with a long speech about your capabilities");
+  parts.push("Instead, be natural and confident, like an employee who already knows the job.");
+  parts.push("");
+
+  if (employee.persona) {
+    parts.push("## Who You Are");
+    parts.push(employee.persona);
+    parts.push("");
+  }
+
+  if (employee.goals) {
+    parts.push("## Your Goals");
+    parts.push(employee.goals);
+    parts.push("");
+  }
+
+  const personality = employee.personalityConfig as {
+    autonomy?: string;
+    proactivity?: string;
+    communication?: string;
+  } | null;
+
+  if (personality) {
+    const traits: string[] = [];
+    if (personality.autonomy) traits.push(`Decision-making: ${personality.autonomy} autonomy`);
+    if (personality.proactivity) traits.push(`Work style: ${personality.proactivity}`);
+    if (personality.communication) traits.push(`Communication: ${personality.communication}`);
+    if (traits.length > 0) {
+      parts.push(`## Work Style`);
+      parts.push(traits.join(". ") + ".");
+      parts.push("");
+    }
+  }
+
+  return parts.join("\n");
 }
 
 // GET /api/employees/[id]/chat — get conversation history
@@ -224,10 +285,14 @@ export async function POST(
   // Route to OpenClaw container via the employee's dedicated droplet
   try {
     // Limit conversation history to avoid polluting context with old threads.
-    // The container has its own SOUL.md for personality — we only need enough
-    // recent messages for the AI to maintain conversational continuity.
     const recentHistory = (conversationHistory || []).slice(-10);
+
+    // Build messages with a system prompt that establishes the employee's identity.
+    // The OpenClaw gateway's /v1/chat/completions is a pass-through — it does NOT
+    // inject SOUL.md automatically, so we must provide identity context here.
+    const systemPrompt = buildSystemPrompt(employee);
     const messages = [
+      { role: "system", content: systemPrompt },
       ...recentHistory,
       { role: "user", content: message },
     ];
