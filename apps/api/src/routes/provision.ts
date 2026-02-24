@@ -7,7 +7,7 @@ import crypto from "node:crypto";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { eq, and } from "drizzle-orm";
-import { db, employees, companies, users } from "@ai-employees/db";
+import { db, employees, companies, users, chatMessages } from "@ai-employees/db";
 import { getJobTemplate, PLAN_LIMITS, type PlanTier, getModelForTier, type EmployeeTier } from "@ai-employees/shared";
 import { regenerateChannelConfig, type ChannelInput } from "@ai-employees/openclaw-config";
 import { getProvisionQueue } from "../queues.js";
@@ -639,6 +639,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     const { id } = request.params;
     const body = request.body as {
       messages: Array<{ role: string; content: string }>;
+      userId?: string; // passed by dashboard so we can persist the reply
     };
 
     const employee = await db.query.employees.findFirst({
@@ -648,6 +649,23 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     if (employee.status === "terminated" || employee.status === "paused") {
       return reply.status(400).send({ error: `Employee is ${employee.status}` });
     }
+
+    // Helper: persist a reply to chat_messages so it survives even if
+    // the dashboard's HTTP request has already timed out.
+    const saveReply = async (content: string, mode: string) => {
+      if (!body.userId) return;
+      try {
+        await db.insert(chatMessages).values({
+          employeeId: id,
+          userId: body.userId,
+          role: "assistant",
+          content,
+          mode,
+        });
+      } catch (err) {
+        console.error(`[chat-proxy] Failed to save reply for employee ${id}:`, err);
+      }
+    };
 
     // If container is available, route through it (OpenClaw).
     // Do NOT inject a system message here — the container bootstraps its own
@@ -688,7 +706,14 @@ export async function provisionRoutes(fastify: FastifyInstance) {
           return reply.status(res.status).send({ error: `OpenClaw error: ${err}` });
         }
         const data = await res.json() as { choices?: { message?: { content?: string } }[]; usage?: unknown };
-        return { reply: data.choices?.[0]?.message?.content || "No response", mode: "live", usage: data.usage };
+        const replyText = data.choices?.[0]?.message?.content || "No response";
+
+        // Always persist — this is the key fix. The dashboard may have timed
+        // out and disconnected, but this handler on the droplet keeps running.
+        // By saving here, the reply is never lost.
+        await saveReply(replyText, "live");
+
+        return { reply: replyText, mode: "live", usage: data.usage };
       } catch (err: unknown) {
         // Container unreachable — IP may have changed after docker restart.
         // Try to resolve the current IP from Docker and retry once.
@@ -713,7 +738,9 @@ export async function provisionRoutes(fastify: FastifyInstance) {
                 return reply.status(retryRes.status).send({ error: `OpenClaw error: ${retryErr}` });
               }
               const data = await retryRes.json() as { choices?: { message?: { content?: string } }[]; usage?: unknown };
-              return { reply: data.choices?.[0]?.message?.content || "No response", mode: "live", usage: data.usage };
+              const retryReplyText = data.choices?.[0]?.message?.content || "No response";
+              await saveReply(retryReplyText, "live");
+              return { reply: retryReplyText, mode: "live", usage: data.usage };
             }
           } catch {
             // Docker inspect failed — container may be down

@@ -152,7 +152,7 @@ export async function POST(
             "Content-Type": "application/json",
             "x-interservice-secret": employee.interserviceSecret,
           },
-          body: JSON.stringify({ messages }),
+          body: JSON.stringify({ messages, userId: session.userId }),
           signal: controller.signal,
         },
       );
@@ -180,16 +180,9 @@ export async function POST(
     reply = rewriteWorkspacePaths(reply, id);
     reply = autoEmbedImages(reply, id);
 
-    // Save assistant reply to DB
-    if (reply) {
-      await db.insert(chatMessages).values({
-        employeeId: id,
-        userId: session.userId,
-        role: "assistant",
-        content: reply,
-        mode: data.mode || "live",
-      });
-    }
+    // NOTE: The API (droplet) now saves the reply to chat_messages.
+    // This ensures the reply is persisted even if this Vercel function
+    // times out before receiving it. We don't save here to avoid duplicates.
 
     // If the employee was in error/provisioning/onboarding but responded, restore to active
     if (employee.status !== "active") {
@@ -201,18 +194,16 @@ export async function POST(
 
     return NextResponse.json({ ...data, reply });
   } catch (err: any) {
-    // Handle timeout — the AI is still working but took too long for this request
+    // Handle timeout — the AI is still working but took too long for this HTTP request.
+    // The API handler on the droplet keeps running (no timeout) and will save the
+    // real reply to chat_messages when the container finishes. We return a temporary
+    // message with mode "pending" so the UI knows to poll for the actual reply.
     const isTimeout = err?.name === "AbortError";
     if (isTimeout) {
-      const reply = `I'm still working on this — it's taking longer than expected. Give me a moment and check back shortly.`;
-      await db.insert(chatMessages).values({
-        employeeId: id,
-        userId: session.userId,
-        role: "assistant",
-        content: reply,
-        mode: "system",
+      return NextResponse.json({
+        reply: `Still working on this — the response will appear here when it's ready.`,
+        mode: "pending",
       });
-      return NextResponse.json({ reply, mode: "system" });
     }
 
     // If the employee was already in error state, give a friendlier message

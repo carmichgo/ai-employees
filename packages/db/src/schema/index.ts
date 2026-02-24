@@ -7,3 +7,4 @@ export * from "./audit-logs.js";
 export * from "./usage-records.js";
 export * from "./triggers.js";
 export * from "./tasks.js";
+export * from "./chat-messages.js";

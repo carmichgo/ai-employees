@@ -114,6 +114,54 @@ export default function EmployeeChatPage() {
     return () => clearInterval(interval);
   }, [employee?.status, employeeId]);
 
+  // Poll for the real reply when a response is still pending (container
+  // is working but the HTTP request timed out). The API saves the reply
+  // to chat_messages when the container finishes, so we poll until it
+  // appears and then swap out the temporary "still working" message.
+  const [pendingReplyId, setPendingReplyId] = useState<string | null>(null);
+  const pendingPollCount = useRef(0);
+
+  useEffect(() => {
+    if (!pendingReplyId) return;
+    pendingPollCount.current = 0;
+
+    const interval = setInterval(async () => {
+      pendingPollCount.current++;
+      // Give up after ~5 minutes of polling (60 attempts * 5s)
+      if (pendingPollCount.current > 60) {
+        setPendingReplyId(null);
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === pendingReplyId
+              ? { ...m, content: "The response took too long. Please try sending your message again.", mode: "system" }
+              : m,
+          ),
+        );
+        return;
+      }
+
+      try {
+        const historyRes = await api.getChatHistory(employeeId);
+        const lastAssistant = [...historyRes.messages].reverse().find((m) => m.role === "assistant");
+        if (lastAssistant && lastAssistant.mode !== "pending") {
+          // The real reply arrived — replace the temporary message
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === pendingReplyId
+                ? { ...m, id: lastAssistant.id, content: lastAssistant.content, mode: lastAssistant.mode || undefined }
+                : m,
+            ),
+          );
+          setPendingReplyId(null);
+        }
+      } catch {
+        // Polling failed — keep trying
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [pendingReplyId, employeeId]);
+
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
@@ -433,8 +481,9 @@ export default function EmployeeChatPage() {
 
       const res = await api.chatWithEmployee(employeeId, text, history);
 
+      const msgId = `assistant-${Date.now()}`;
       const assistantMessage: Message = {
-        id: `assistant-${Date.now()}`,
+        id: msgId,
         role: "assistant",
         content: res.reply,
         timestamp: new Date(),
@@ -442,7 +491,14 @@ export default function EmployeeChatPage() {
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
-      if (autoSpeak) speak(res.reply);
+
+      // If the response is still pending (container working, HTTP timed out),
+      // start polling for the real reply.
+      if (res.mode === "pending") {
+        setPendingReplyId(msgId);
+      } else if (autoSpeak) {
+        speak(res.reply);
+      }
     } catch (err: any) {
       const errorMessage: Message = {
         id: `error-${Date.now()}`,
