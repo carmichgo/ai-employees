@@ -14,6 +14,12 @@ import {
   File,
   Search,
   MessageCircle,
+  Mic,
+  MicOff,
+  Volume2,
+  VolumeX,
+  Phone,
+  PhoneOff,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -58,6 +64,30 @@ export default function InboxPage() {
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Voice state (dictation)
+  const [listening, setListening] = useState(false);
+  const [autoSpeak, setAutoSpeak] = useState(false);
+  const recognitionRef = useRef<any>(null);
+  const [hasSpeechSupport, setHasSpeechSupport] = useState(false);
+
+  // Voice call state
+  const [inCall, setInCall] = useState(false);
+  const [callPhase, setCallPhase] = useState<"idle" | "listening" | "processing" | "speaking">("idle");
+  const [callDuration, setCallDuration] = useState(0);
+  const [callTranscript, setCallTranscript] = useState("");
+  const callRecognitionRef = useRef<any>(null);
+  const callTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const callActiveRef = useRef(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const ttsAvailableRef = useRef<boolean | null>(null);
+
+  useEffect(() => {
+    setHasSpeechSupport(
+      typeof window !== "undefined" &&
+      !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition),
+    );
+  }, []);
 
   // Load employees and their last messages
   useEffect(() => {
@@ -171,6 +201,201 @@ export default function InboxPage() {
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
+  // ── Voice: Speech Recognition (STT) ──
+  const startListening = useCallback(() => {
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) return;
+    const recognition = new SR();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+    recognition.onresult = (event: any) => {
+      const transcript = Array.from(event.results).map((r: any) => r[0].transcript).join("");
+      setInput(transcript);
+      if (inputRef.current) {
+        inputRef.current.style.height = "auto";
+        inputRef.current.style.height = Math.min(inputRef.current.scrollHeight, 150) + "px";
+      }
+    };
+    recognition.onend = () => setListening(false);
+    recognition.onerror = () => setListening(false);
+    recognitionRef.current = recognition;
+    recognition.start();
+    setListening(true);
+  }, []);
+
+  const stopListening = useCallback(() => {
+    recognitionRef.current?.stop();
+    setListening(false);
+  }, []);
+
+  // ── TTS: API-backed speech with browser fallback ──
+  const getBestVoice = useCallback((): SpeechSynthesisVoice | null => {
+    if (typeof window === "undefined" || !window.speechSynthesis) return null;
+    const voices = window.speechSynthesis.getVoices();
+    const prefs = [
+      /Google US English/i, /Google UK English Female/i,
+      /Microsoft.*Neural/i, /Samantha/i, /Karen/i, /Daniel/i,
+      /en.*Female/i, /en.*Male/i, /en-US/i, /en-GB/i, /en/i,
+    ];
+    for (const pref of prefs) {
+      const v = voices.find((v) => pref.test(v.name) || pref.test(v.lang));
+      if (v) return v;
+    }
+    return voices[0] || null;
+  }, []);
+
+  const speakAsync = useCallback(async (text: string): Promise<void> => {
+    if (typeof window === "undefined") return;
+    if (ttsAvailableRef.current !== false) {
+      try {
+        const token = localStorage.getItem("token");
+        const res = await fetch("/api/tts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify({ text }),
+        });
+        if (res.ok && res.headers.get("content-type")?.startsWith("audio/")) {
+          ttsAvailableRef.current = true;
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          return new Promise<void>((resolve) => {
+            const audio = new Audio(url);
+            audioRef.current = audio;
+            audio.onended = () => { URL.revokeObjectURL(url); audioRef.current = null; resolve(); };
+            audio.onerror = () => { URL.revokeObjectURL(url); audioRef.current = null; resolve(); };
+            audio.play().catch(() => resolve());
+          });
+        }
+        const body = await res.json().catch(() => ({}));
+        if (body.fallback) ttsAvailableRef.current = false;
+      } catch { /* fall through to browser TTS */ }
+    }
+    if (!window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const clean = text
+      .replace(/```[\s\S]*?```/g, " code block ")
+      .replace(/`[^`]+`/g, (m) => m.slice(1, -1))
+      .replace(/!\[[^\]]*\]\([^)]+\)/g, " image ")
+      .replace(/\[[^\]]*\]\([^)]+\)/g, (m) => m.replace(/\[([^\]]*)\]\([^)]+\)/, "$1"))
+      .replace(/[#*_~>]/g, "")
+      .replace(/\n{2,}/g, ". ")
+      .replace(/\n/g, " ")
+      .trim();
+    if (!clean) return;
+    return new Promise<void>((resolve) => {
+      const utterance = new SpeechSynthesisUtterance(clean);
+      const voice = getBestVoice();
+      if (voice) utterance.voice = voice;
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+      utterance.onend = () => resolve();
+      utterance.onerror = () => resolve();
+      window.speechSynthesis.speak(utterance);
+    });
+  }, [getBestVoice]);
+
+  const speak = useCallback((text: string) => { speakAsync(text); }, [speakAsync]);
+
+  // ── Voice Call: send message and speak response ──
+  const callSendAndRespond = useCallback(async (text: string) => {
+    if (!text.trim() || !callActiveRef.current || !selectedId) return;
+    setCallPhase("processing");
+    const userMessage: Message = { id: `user-${Date.now()}`, role: "user", content: text.trim(), timestamp: new Date() };
+    setMessages((prev) => [...prev, userMessage]);
+    try {
+      const history = messages.filter((m) => m.id !== "welcome").map((m) => ({ role: m.role, content: m.content }));
+      history.push({ role: "user", content: text.trim() });
+      const res = await api.chatWithEmployee(selectedId, text.trim(), history.slice(0, -1));
+      const assistantMessage: Message = { id: `assistant-${Date.now()}`, role: "assistant", content: res.reply, timestamp: new Date(), mode: res.mode };
+      setMessages((prev) => [...prev, assistantMessage]);
+      if (!callActiveRef.current) return;
+      setCallPhase("speaking");
+      try { await speakAsync(res.reply); } catch { /* handled internally */ }
+      if (callActiveRef.current) callStartListening();
+    } catch (err: any) {
+      setMessages((prev) => [...prev, { id: `error-${Date.now()}`, role: "assistant", content: `Sorry, I couldn't process that: ${err.message}`, timestamp: new Date() }]);
+      if (callActiveRef.current) callStartListening();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, messages]);
+
+  // ── Voice Call: start continuous listening ──
+  const callStartListening = useCallback(() => {
+    if (!callActiveRef.current) return;
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) return;
+    callRecognitionRef.current?.abort();
+    const recognition = new SR();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+    let finalTranscript = "";
+    recognition.onresult = (event: any) => {
+      let interim = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) finalTranscript += event.results[i][0].transcript;
+        else interim += event.results[i][0].transcript;
+      }
+      setCallTranscript(finalTranscript + interim);
+    };
+    recognition.onend = () => {
+      if (!callActiveRef.current) return;
+      if (finalTranscript.trim()) { setCallTranscript(""); callSendAndRespond(finalTranscript); }
+      else if (callActiveRef.current) setTimeout(() => callStartListening(), 300);
+    };
+    recognition.onerror = (e: any) => {
+      if (e.error === "no-speech" && callActiveRef.current) { setTimeout(() => callStartListening(), 300); return; }
+      if (e.error === "aborted") return;
+      if (callActiveRef.current) setTimeout(() => callStartListening(), 1000);
+    };
+    callRecognitionRef.current = recognition;
+    setCallPhase("listening");
+    setCallTranscript("");
+    recognition.start();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [callSendAndRespond]);
+
+  // ── Voice Call: start/end call ──
+  const startCall = useCallback(() => {
+    callActiveRef.current = true;
+    setInCall(true);
+    setCallDuration(0);
+    setCallPhase("listening");
+    setCallTranscript("");
+    callTimerRef.current = setInterval(() => setCallDuration((d) => d + 1), 1000);
+    callStartListening();
+  }, [callStartListening]);
+
+  const endCall = useCallback(() => {
+    callActiveRef.current = false;
+    setInCall(false);
+    setCallPhase("idle");
+    setCallTranscript("");
+    if (callTimerRef.current) { clearInterval(callTimerRef.current); callTimerRef.current = null; }
+    callRecognitionRef.current?.abort();
+    callRecognitionRef.current = null;
+    if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+    if (typeof window !== "undefined") window.speechSynthesis?.cancel();
+  }, []);
+
+  // Cleanup call on unmount
+  useEffect(() => {
+    return () => {
+      callActiveRef.current = false;
+      callRecognitionRef.current?.abort();
+      if (callTimerRef.current) clearInterval(callTimerRef.current);
+      if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+      if (typeof window !== "undefined") window.speechSynthesis?.cancel();
+    };
+  }, []);
+
+  const formatDuration = (s: number) => {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${m}:${sec.toString().padStart(2, "0")}`;
+  };
+
   // Send message
   const handleSend = async () => {
     const text = input.trim();
@@ -210,6 +435,7 @@ export default function InboxPage() {
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
+      if (autoSpeak) speak(res.reply);
 
       // Update preview
       setPreviews((prev) => {
@@ -529,6 +755,43 @@ export default function InboxPage() {
                   {selectedEmployee.jobTitle}
                 </div>
               </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {/* Voice call button */}
+                {hasSpeechSupport && selectedEmployee.status === "active" && (
+                  <button
+                    onClick={startCall}
+                    title="Start voice call"
+                    style={{
+                      width: 32, height: 32, borderRadius: 8,
+                      border: "1px solid var(--border, #e5e5e5)",
+                      background: "rgba(22, 163, 74, 0.08)", color: "#16a34a",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      cursor: "pointer", transition: "all 0.15s",
+                    }}
+                  >
+                    <Phone size={14} />
+                  </button>
+                )}
+                {/* Auto-speak toggle */}
+                <button
+                  onClick={() => {
+                    const next = !autoSpeak;
+                    setAutoSpeak(next);
+                    if (!next && typeof window !== "undefined") window.speechSynthesis?.cancel();
+                  }}
+                  title={autoSpeak ? "Mute voice responses" : "Read responses aloud"}
+                  style={{
+                    width: 32, height: 32, borderRadius: 8,
+                    border: "1px solid var(--border, #e5e5e5)",
+                    background: autoSpeak ? "rgba(37, 99, 235, 0.08)" : "var(--bg, #ffffff)",
+                    color: autoSpeak ? "#2563eb" : "var(--text-tertiary, #a3a3a3)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    cursor: "pointer", transition: "all 0.15s",
+                  }}
+                >
+                  {autoSpeak ? <Volume2 size={14} /> : <VolumeX size={14} />}
+                </button>
+              </div>
               <div
                 style={{
                   display: "inline-flex",
@@ -756,6 +1019,25 @@ export default function InboxPage() {
                       maxHeight: 150,
                     }}
                   />
+                  {/* Mic button */}
+                  {hasSpeechSupport && (
+                    <button
+                      onClick={listening ? stopListening : startListening}
+                      disabled={sending}
+                      title={listening ? "Stop listening" : "Voice input"}
+                      style={{
+                        width: 36, height: 36, borderRadius: 10,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        border: "none", cursor: "pointer",
+                        background: listening ? "rgba(239, 68, 68, 0.1)" : "var(--bg-secondary, #f5f5f5)",
+                        color: listening ? "#ef4444" : "var(--text-tertiary, #a3a3a3)",
+                        transition: "all 0.2s", flexShrink: 0,
+                        animation: listening ? "pulse-mic 1.5s ease-in-out infinite" : "none",
+                      }}
+                    >
+                      {listening ? <MicOff size={16} /> : <Mic size={16} />}
+                    </button>
+                  )}
                   <button
                     onClick={handleSend}
                     disabled={!input.trim() || sending}
@@ -822,11 +1104,78 @@ export default function InboxPage() {
         )}
       </div>
 
+      {/* Voice Call Overlay */}
+      {inCall && selectedEmployee && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 1000,
+          background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
+          display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+          gap: 32, color: "#ffffff",
+        }}>
+          <div style={{
+            width: 96, height: 96, borderRadius: "50%",
+            background: "rgba(255,255,255,0.1)",
+            border: callPhase === "speaking" ? "3px solid #22c55e"
+              : callPhase === "listening" ? "3px solid #3b82f6"
+              : "3px solid rgba(255,255,255,0.2)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 44, transition: "border-color 0.3s",
+            animation: callPhase === "listening" ? "pulse-call 2s ease-in-out infinite" : "none",
+          }}>
+            {selectedEmployee.emoji || selectedEmployee.name.charAt(0)}
+          </div>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 22, fontWeight: 600 }}>{selectedEmployee.name}</div>
+            <div style={{ fontSize: 14, color: "rgba(255,255,255,0.6)", marginTop: 4 }}>
+              {callPhase === "listening" ? "Listening..."
+                : callPhase === "processing" ? "Thinking..."
+                : callPhase === "speaking" ? "Speaking..."
+                : "Connected"}
+            </div>
+          </div>
+          <div style={{
+            minHeight: 48, maxWidth: 500, padding: "0 24px", textAlign: "center",
+            fontSize: 16, color: "rgba(255,255,255,0.8)",
+            fontStyle: callTranscript ? "normal" : "italic",
+          }}>
+            {callTranscript || (callPhase === "listening" ? "Say something..." : "")}
+          </div>
+          <div style={{
+            fontSize: 18, fontWeight: 500, fontVariantNumeric: "tabular-nums",
+            color: "rgba(255,255,255,0.5)",
+          }}>
+            {formatDuration(callDuration)}
+          </div>
+          <button
+            onClick={endCall}
+            style={{
+              width: 64, height: 64, borderRadius: "50%", border: "none",
+              background: "#ef4444", color: "#ffffff",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              cursor: "pointer", transition: "transform 0.15s, background 0.15s", marginTop: 16,
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "#dc2626")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "#ef4444")}
+            title="End call"
+          >
+            <PhoneOff size={28} />
+          </button>
+        </div>
+      )}
+
       <style>{`
         @keyframes spin { to { transform: rotate(360deg) } }
         @keyframes bounce {
           0%, 80%, 100% { transform: translateY(0) }
           40% { transform: translateY(-6px) }
+        }
+        @keyframes pulse-mic {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.3); }
+          50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+        }
+        @keyframes pulse-call {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
+          50% { box-shadow: 0 0 0 16px rgba(59, 130, 246, 0); }
         }
         .typing-dot {
           width: 6px;
