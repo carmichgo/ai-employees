@@ -62,7 +62,19 @@ export async function GET(
   // Reverse to oldest-first for the UI
   rows.reverse();
 
-  return NextResponse.json({ messages: rows });
+  // Deduplicate: both the Vercel route and the API on the droplet may save
+  // the same assistant reply (the API saves as a backup for the timeout case).
+  // Filter out back-to-back assistant messages with identical content.
+  const deduped = rows.filter((row, i) => {
+    if (i === 0) return true;
+    const prev = rows[i - 1];
+    if (row.role === "assistant" && prev.role === "assistant" && row.content === prev.content) {
+      return false;
+    }
+    return true;
+  });
+
+  return NextResponse.json({ messages: deduped });
 }
 
 // POST /api/employees/[id]/chat — send a message
@@ -180,9 +192,22 @@ export async function POST(
     reply = rewriteWorkspacePaths(reply, id);
     reply = autoEmbedImages(reply, id);
 
-    // NOTE: The API (droplet) now saves the reply to chat_messages.
-    // This ensures the reply is persisted even if this Vercel function
-    // times out before receiving it. We don't save here to avoid duplicates.
+    // Save assistant reply to DB. The API on the droplet also saves as a
+    // backup (in case this Vercel function times out), but we save here as
+    // the primary path since it's more reliable than depending on the
+    // droplet having the latest code deployed.
+    try {
+      await db.insert(chatMessages).values({
+        employeeId: id,
+        userId: session.userId,
+        role: "assistant",
+        content: reply,
+        mode: data.mode || "live",
+      });
+    } catch (saveErr) {
+      // Non-fatal — the reply will still be returned to the user
+      console.error(`[chat] Failed to save assistant reply:`, saveErr);
+    }
 
     // If the employee was in error/provisioning/onboarding but responded, restore to active
     if (employee.status !== "active") {
