@@ -768,6 +768,25 @@ export default function EmployeeChatPage() {
                   Getting ready — this employee is still being set up
                 </div>
               )}
+              {msg.mode === "pending" && (
+                <div
+                  style={{
+                    marginTop: 8,
+                    padding: "4px 8px",
+                    borderRadius: 4,
+                    background: "rgba(37, 99, 235, 0.06)",
+                    border: "1px solid rgba(37, 99, 235, 0.15)",
+                    fontSize: 11,
+                    color: "#2563eb",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  <Loader2 size={10} style={{ animation: "spin 1.5s linear infinite" }} />
+                  Working on it — the response will appear automatically
+                </div>
+              )}
             </div>
           </div>
         ))}

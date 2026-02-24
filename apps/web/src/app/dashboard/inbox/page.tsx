@@ -396,6 +396,54 @@ export default function InboxPage() {
     return `${m}:${sec.toString().padStart(2, "0")}`;
   };
 
+  // Poll for the real reply when a response is still pending (container
+  // is working but the HTTP request timed out). The API saves the reply
+  // to chat_messages when the container finishes, so we poll until it
+  // appears and then swap out the temporary "still working" message.
+  const [pendingReplyId, setPendingReplyId] = useState<string | null>(null);
+  const pendingPollCount = useRef(0);
+
+  useEffect(() => {
+    if (!pendingReplyId || !selectedId) return;
+    pendingPollCount.current = 0;
+
+    const interval = setInterval(async () => {
+      pendingPollCount.current++;
+      // Give up after ~5 minutes of polling (60 attempts * 5s)
+      if (pendingPollCount.current > 60) {
+        setPendingReplyId(null);
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === pendingReplyId
+              ? { ...m, content: "The response took too long. Please try sending your message again.", mode: "system" }
+              : m,
+          ),
+        );
+        return;
+      }
+
+      try {
+        const historyRes = await api.getChatHistory(selectedId);
+        const lastAssistant = [...historyRes.messages].reverse().find((m) => m.role === "assistant");
+        if (lastAssistant && lastAssistant.mode !== "pending") {
+          // The real reply arrived — replace the temporary message
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === pendingReplyId
+                ? { ...m, id: lastAssistant.id, content: lastAssistant.content, mode: lastAssistant.mode || undefined }
+                : m,
+            ),
+          );
+          setPendingReplyId(null);
+        }
+      } catch {
+        // Polling failed — keep trying
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [pendingReplyId, selectedId]);
+
   // Send message
   const handleSend = async () => {
     const text = input.trim();
@@ -426,8 +474,9 @@ export default function InboxPage() {
 
       const res = await api.chatWithEmployee(selectedId, text, history);
 
+      const msgId = `assistant-${Date.now()}`;
       const assistantMessage: Message = {
-        id: `assistant-${Date.now()}`,
+        id: msgId,
         role: "assistant",
         content: res.reply,
         timestamp: new Date(),
@@ -435,7 +484,14 @@ export default function InboxPage() {
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
-      if (autoSpeak) speak(res.reply);
+
+      // If the response is still pending (container working, HTTP timed out),
+      // start polling for the real reply.
+      if (res.mode === "pending") {
+        setPendingReplyId(msgId);
+      } else if (autoSpeak) {
+        speak(res.reply);
+      }
 
       // Update preview
       setPreviews((prev) => {
@@ -929,6 +985,25 @@ export default function InboxPage() {
                             }}
                           >
                             Getting ready — this employee is still being set up
+                          </div>
+                        )}
+                        {msg.mode === "pending" && (
+                          <div
+                            style={{
+                              marginTop: 8,
+                              padding: "4px 8px",
+                              borderRadius: 4,
+                              background: "rgba(37, 99, 235, 0.06)",
+                              border: "1px solid rgba(37, 99, 235, 0.15)",
+                              fontSize: 11,
+                              color: "#2563eb",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 6,
+                            }}
+                          >
+                            <Loader2 size={10} style={{ animation: "spin 1.5s linear infinite" }} />
+                            Working on it — the response will appear automatically
                           </div>
                         )}
                       </div>
