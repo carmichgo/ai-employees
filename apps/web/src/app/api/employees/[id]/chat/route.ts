@@ -232,10 +232,82 @@ export async function POST(
   try {
     // Limit conversation history to avoid polluting context with old threads.
     const recentHistory = (conversationHistory || []).slice(-10);
-    const messages = [
+    const messages: Array<{ role: string; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }> = [
       ...recentHistory,
       { role: "user", content: message },
     ];
+
+    // If files were attached, fetch their content from the droplet workspace
+    // and inject into the last user message so the AI can actually see them.
+    if (files && files.length > 0) {
+      const imageExts = ["png", "jpg", "jpeg", "gif", "webp", "bmp"];
+      const contentParts: Array<{ type: string; text?: string; image_url?: { url: string } }> = [];
+
+      // Start with the user's text
+      if (message) {
+        contentParts.push({ type: "text", text: message });
+      }
+
+      for (const file of files) {
+        const sanitized = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 255);
+        try {
+          // Fetch file from the droplet workspace
+          const fileRes = await fetch(
+            `http://${employee.dropletIp}:3001/internal/employees/${id}/workspace/workspace/uploads/${encodeURIComponent(sanitized)}`,
+            {
+              headers: { "x-interservice-secret": employee.interserviceSecret },
+              signal: AbortSignal.timeout(10_000),
+            },
+          );
+          if (!fileRes.ok) continue;
+
+          const ext = sanitized.split(".").pop()?.toLowerCase() || "";
+          const isImage = imageExts.includes(ext) || file.mimeType.startsWith("image/");
+
+          if (isImage) {
+            // Convert to base64 data URL for vision
+            const buf = Buffer.from(await fileRes.arrayBuffer());
+            const b64 = buf.toString("base64");
+            const mime = file.mimeType.startsWith("image/") ? file.mimeType : `image/${ext === "jpg" ? "jpeg" : ext}`;
+            contentParts.push({
+              type: "image_url",
+              image_url: { url: `data:${mime};base64,${b64}` },
+            });
+          } else {
+            // Read text content for non-image files (<100KB)
+            const buf = Buffer.from(await fileRes.arrayBuffer());
+            if (buf.length <= 100_000) {
+              contentParts.push({
+                type: "text",
+                text: `\n\n--- Attached file: ${file.name} ---\n${buf.toString("utf-8")}\n--- End of ${file.name} ---`,
+              });
+            } else {
+              contentParts.push({
+                type: "text",
+                text: `\n\n[Attached file: ${file.name} — saved to /home/node/.openclaw/workspace/uploads/${sanitized} (${(buf.length / 1024).toFixed(0)}KB, too large to include inline)]`,
+              });
+            }
+          }
+        } catch {
+          // File fetch failed — tell the AI where the file is
+          contentParts.push({
+            type: "text",
+            text: `\n\n[Attached file: ${file.name} — saved to /home/node/.openclaw/workspace/uploads/${sanitized}]`,
+          });
+        }
+      }
+
+      // Replace last user message with multimodal content
+      if (contentParts.length > 0) {
+        const lastIdx = messages.length - 1;
+        messages[lastIdx] = {
+          ...messages[lastIdx],
+          content: contentParts.length === 1 && contentParts[0].type === "text"
+            ? contentParts[0].text!
+            : contentParts,
+        };
+      }
+    }
 
     // Mark request as sent
     try {
@@ -257,7 +329,7 @@ export async function POST(
             "Content-Type": "application/json",
             "x-interservice-secret": employee.interserviceSecret,
           },
-          body: JSON.stringify({ messages, userId: session.userId, files }),
+          body: JSON.stringify({ messages, userId: session.userId }),
           signal: controller.signal,
         },
       );
