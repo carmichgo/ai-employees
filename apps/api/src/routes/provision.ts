@@ -817,32 +817,38 @@ export async function provisionRoutes(fastify: FastifyInstance) {
 
         return { reply: replyText, mode: "live", usage: data.usage };
       } catch (err: unknown) {
-        // Container unreachable — IP may have changed after docker restart.
-        // Try to resolve the current IP from Docker and retry once.
+        // Container unreachable — IP may have changed after docker restart,
+        // or the gateway may still be starting up. Retry with backoff.
         if (employee.containerName) {
           try {
-            const network = process.env.OPENCLAW_NETWORK || "ai-employees-internal";
             const newIp = execSync(
               `docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ${employee.containerName}`,
               { timeout: 5000 },
             ).toString().trim();
 
+            const retryIp = (newIp && newIp !== containerHost) ? newIp : containerHost;
             if (newIp && newIp !== containerHost) {
-              console.log(`[chat-proxy] IP changed for ${employee.containerName}: ${containerHost} -> ${newIp}, retrying...`);
-
-              // Update DB with new IP
+              console.log(`[chat-proxy] IP changed for ${employee.containerName}: ${containerHost} -> ${newIp}`);
               await db.update(employees).set({ containerHost: newIp, updatedAt: new Date() }).where(eq(employees.id, id));
+            }
 
-              // Retry with new IP
-              const retryRes = await sendToContainer(newIp);
-              if (!retryRes.ok) {
-                const retryErr = await retryRes.text();
-                return reply.status(retryRes.status).send({ error: `OpenClaw error: ${retryErr}` });
+            // Retry up to 2 times with short delays — the gateway may still be starting
+            for (let attempt = 1; attempt <= 2; attempt++) {
+              await new Promise((r) => setTimeout(r, attempt * 2000)); // 2s, 4s
+              console.log(`[chat-proxy] Retry ${attempt} for ${employee.containerName} at ${retryIp}`);
+              try {
+                const retryRes = await sendToContainer(retryIp);
+                if (!retryRes.ok) {
+                  const retryErr = await retryRes.text();
+                  return reply.status(retryRes.status).send({ error: `OpenClaw error: ${retryErr}` });
+                }
+                const data = await retryRes.json() as { choices?: { message?: { content?: string } }[]; usage?: unknown };
+                const retryReplyText = data.choices?.[0]?.message?.content || "No response";
+                await saveReply(retryReplyText, "live");
+                return { reply: retryReplyText, mode: "live", usage: data.usage };
+              } catch {
+                // Retry failed — continue to next attempt
               }
-              const data = await retryRes.json() as { choices?: { message?: { content?: string } }[]; usage?: unknown };
-              const retryReplyText = data.choices?.[0]?.message?.content || "No response";
-              await saveReply(retryReplyText, "live");
-              return { reply: retryReplyText, mode: "live", usage: data.usage };
             }
           } catch {
             // Docker inspect failed — container may be down
