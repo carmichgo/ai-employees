@@ -3,6 +3,8 @@ import cors from "@fastify/cors";
 import jwt from "@fastify/jwt";
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { db } from "@ai-employees/database";
+import { employees } from "@ai-employees/database/schema";
 import type { Env } from "./config.js";
 import { authPlugin } from "./plugins/auth.js";
 import { errorHandlerPlugin } from "./plugins/error-handler.js";
@@ -85,6 +87,28 @@ export async function buildServer(config: Env) {
     try { checks.blitzApiUrl = execSync("docker exec $(docker ps -q --latest) bash -c 'echo BLITZ_API_URL=$BLITZ_API_URL' 2>&1", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.blitzApiUrl = `error: ${e.message}`; }
     try { checks.workspaceMainSoul = execSync("docker exec $(docker ps -q --latest) cat /home/node/.openclaw/workspace-main/SOUL.md 2>&1", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.workspaceMainSoul = `error: ${e.message}`; }
     try { checks.skillsList = execSync("docker exec $(docker ps -q --latest) ls /home/node/.openclaw/skills/ 2>&1", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.skillsList = `error: ${e.message}`; }
+    // Test container connectivity from the API's perspective
+    try {
+      const containerIp = execSync("docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $(docker ps -q --latest)", { timeout: 5000 }).toString().trim();
+      const containerPort = "18789";
+      const testUrl = `http://${containerIp}:${containerPort}/v1/models`;
+      const testStart = Date.now();
+      const testRes = await fetch(testUrl, { signal: AbortSignal.timeout(5000) });
+      const testBody = await testRes.text();
+      checks.containerConnectivity = {
+        url: testUrl,
+        status: testRes.status,
+        latencyMs: Date.now() - testStart,
+        body: testBody.slice(0, 200),
+      };
+    } catch (e: any) {
+      checks.containerConnectivity = `FAILED: ${e.code || e.name || ""} ${e.message}`;
+    }
+    // Check what the DB has for containerHost/Port
+    try {
+      const emps = await db.query.employees.findMany({ columns: { id: true, name: true, containerHost: true, containerPort: true, containerName: true, status: true } });
+      checks.employeeContainerInfo = emps.map(e => ({ name: e.name, host: e.containerHost, port: e.containerPort, container: e.containerName, status: e.status }));
+    } catch (e: any) { checks.employeeContainerInfo = `error: ${e.message}`; }
     return checks;
   });
 

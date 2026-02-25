@@ -817,6 +817,12 @@ export async function provisionRoutes(fastify: FastifyInstance) {
 
         return { reply: replyText, mode: "live", usage: data.usage };
       } catch (err: unknown) {
+        // Log the exact error for debugging
+        const errDetail = err instanceof Error
+          ? { message: err.message, code: (err as any).code, cause: (err as any).cause?.message }
+          : String(err);
+        console.error(`[chat-proxy] Initial fetch failed for ${employee.containerName} at ${containerHost}:${containerPort}:`, errDetail);
+
         // Container unreachable — IP may have changed after docker restart,
         // or the gateway may still be starting up. Retry with backoff.
         if (employee.containerName) {
@@ -826,16 +832,28 @@ export async function provisionRoutes(fastify: FastifyInstance) {
               { timeout: 5000 },
             ).toString().trim();
 
+            // Also check if the container is actually running
+            const containerState = execSync(
+              `docker inspect --format '{{.State.Status}}' ${employee.containerName}`,
+              { timeout: 5000 },
+            ).toString().trim();
+            console.log(`[chat-proxy] Container ${employee.containerName}: state=${containerState}, ip=${newIp}, dbIp=${containerHost}`);
+
+            if (containerState !== "running") {
+              console.error(`[chat-proxy] Container ${employee.containerName} is ${containerState}, not running`);
+              return reply.status(503).send({ error: `Container is ${containerState} — please wait for it to restart` });
+            }
+
             const retryIp = (newIp && newIp !== containerHost) ? newIp : containerHost;
             if (newIp && newIp !== containerHost) {
               console.log(`[chat-proxy] IP changed for ${employee.containerName}: ${containerHost} -> ${newIp}`);
               await db.update(employees).set({ containerHost: newIp, updatedAt: new Date() }).where(eq(employees.id, id));
             }
 
-            // Retry up to 2 times with short delays — the gateway may still be starting
-            for (let attempt = 1; attempt <= 2; attempt++) {
-              await new Promise((r) => setTimeout(r, attempt * 2000)); // 2s, 4s
-              console.log(`[chat-proxy] Retry ${attempt} for ${employee.containerName} at ${retryIp}`);
+            // Retry up to 3 times with delays — the gateway may still be starting
+            for (let attempt = 1; attempt <= 3; attempt++) {
+              await new Promise((r) => setTimeout(r, attempt * 2000)); // 2s, 4s, 6s
+              console.log(`[chat-proxy] Retry ${attempt}/3 for ${employee.containerName} at ${retryIp}:${containerPort}`);
               try {
                 const retryRes = await sendToContainer(retryIp);
                 if (!retryRes.ok) {
@@ -846,12 +864,14 @@ export async function provisionRoutes(fastify: FastifyInstance) {
                 const retryReplyText = data.choices?.[0]?.message?.content || "No response";
                 await saveReply(retryReplyText, "live");
                 return { reply: retryReplyText, mode: "live", usage: data.usage };
-              } catch {
-                // Retry failed — continue to next attempt
+              } catch (retryErr: unknown) {
+                const retryDetail = retryErr instanceof Error ? retryErr.message : String(retryErr);
+                console.error(`[chat-proxy] Retry ${attempt}/3 failed: ${retryDetail}`);
               }
             }
-          } catch {
-            // Docker inspect failed — container may be down
+          } catch (inspectErr: unknown) {
+            const inspectDetail = inspectErr instanceof Error ? inspectErr.message : String(inspectErr);
+            console.error(`[chat-proxy] Docker inspect failed: ${inspectDetail}`);
           }
         }
 
