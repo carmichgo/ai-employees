@@ -323,6 +323,38 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Admin action: regenerate-configs — regenerate SOUL.md, openclaw.json, skills on a droplet
+    // Uses already-deployed code (no git pull or rebuild needed)
+    if (action === "regenerate-configs") {
+      const empId = request.nextUrl.searchParams.get("employeeId");
+      // If no employeeId, regenerate for ALL active employees on all droplets
+      const empQuery = empId
+        ? sql`SELECT id, name, droplet_ip, interservice_secret FROM employees WHERE id = ${empId}`
+        : sql`SELECT id, name, droplet_ip, interservice_secret FROM employees WHERE status = 'active' AND droplet_ip IS NOT NULL`;
+      const emps = await empQuery;
+
+      // Group by droplet IP (one call per droplet regenerates all employees on it)
+      const seen = new Set<string>();
+      for (const emp of emps) {
+        if (!emp.droplet_ip || !emp.interservice_secret || seen.has(emp.droplet_ip)) continue;
+        seen.add(emp.droplet_ip);
+        try {
+          const res = await fetch(`http://${emp.droplet_ip}:3001/internal/regenerate-configs`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-interservice-secret": emp.interservice_secret,
+            },
+            signal: AbortSignal.timeout(60000),
+          });
+          const data = await res.text().catch(() => "no body");
+          results.push(`regenerate ${emp.droplet_ip}: ${res.status} — ${data.substring(0, 300)}`);
+        } catch (err: any) {
+          results.push(`regenerate ${emp.droplet_ip}: FAILED — ${err.message}`);
+        }
+      }
+    }
+
     // Always include employee diagnostics
     const empRows = await sql`
       SELECT id, name, status, droplet_id, droplet_ip, droplet_status,
