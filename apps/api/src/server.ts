@@ -119,6 +119,8 @@ export async function buildServer(config: Env) {
       ? `cd ${appDir} && git pull origin ${branch} >> ${logFile} 2>&1`
       : `curl -sL "https://github.com/carmichgo/ai-employees/archive/refs/heads/${branch}.tar.gz" -o /tmp/repo-update.tar.gz && tar xzf /tmp/repo-update.tar.gz --strip-components=1 -C ${appDir} && rm -f /tmp/repo-update.tar.gz && echo "${branch}" > ${appDir}/.branch`;
 
+    // Capture INTERSERVICE_SECRET at script-generation time so it survives process restarts
+    const secret = process.env.INTERSERVICE_SECRET || "";
     const fullScript = `
       (${script}) >> ${logFile} 2>&1 && \
       echo "[$(date -Iseconds)] Code updated" >> ${logFile} && \
@@ -131,14 +133,14 @@ export async function buildServer(config: Env) {
       echo "[$(date -Iseconds)] Restarting services..." >> ${logFile} && \
       systemctl restart ai-employees-worker && \
       echo "[$(date -Iseconds)] Worker restarted" >> ${logFile} && \
-      systemctl restart ai-employees-api && \
-      echo "[$(date -Iseconds)] API restarted, waiting for ready..." >> ${logFile} && \
-      sleep 8 && \
+      echo "[$(date -Iseconds)] Regenerating configs before API restart..." >> ${logFile} && \
       curl -sf -X POST http://localhost:3001/internal/regenerate-configs \
-        -H "x-interservice-secret: \${INTERSERVICE_SECRET}" \
+        -H "x-interservice-secret: ${secret}" \
         -H "Content-Type: application/json" >> ${logFile} 2>&1 && \
       echo "" >> ${logFile} && \
       echo "[$(date -Iseconds)] Configs regenerated" >> ${logFile} && \
+      systemctl restart ai-employees-api && \
+      echo "[$(date -Iseconds)] API restarted" >> ${logFile} && \
       echo "[$(date -Iseconds)] UPDATE COMPLETE" >> ${logFile} || \
       echo "[$(date -Iseconds)] UPDATE FAILED" >> ${logFile}
     `;
