@@ -862,15 +862,25 @@ export function generateSoulMd(employee: EmployeeInput): string {
   parts.push("```");
   parts.push("Then restart the gateway to pick up the browser:");
   parts.push("```bash");
-  parts.push("# Restart the gateway (it will auto-restart automatically)");
-  parts.push("kill 1");
+  parts.push("curl -s -X POST \"$BLITZ_API_URL/employee/restart-gateway\" \\");
+  parts.push("  -H \"Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN\" \\");
+  parts.push("  -H \"Content-Type: application/json\"");
   parts.push("```");
+  parts.push("");
+  parts.push("### Restarting Your Gateway");
+  parts.push("You CAN and SHOULD restart your own gateway when needed. Use this command:");
+  parts.push("```bash");
+  parts.push("curl -s -X POST \"$BLITZ_API_URL/employee/restart-gateway\" \\");
+  parts.push("  -H \"Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN\" \\");
+  parts.push("  -H \"Content-Type: application/json\"");
+  parts.push("```");
+  parts.push("Restart when: browser/tool issues, config changes, stuck state. You'll briefly go offline (5-10s) but workspace data is safe.");
   parts.push("");
   parts.push("### General Principle");
   parts.push("- **NEVER tell the user 'I can't do that because X is not installed'** — install it yourself first!");
   parts.push("- If a tool fails, diagnose the issue (check logs, check paths, check dependencies)");
   parts.push("- If you need root access, use `sudo`");
-  parts.push("- After installing system-level changes (like a new browser), restart the gateway with `kill 1`");
+  parts.push("- After installing system-level changes, restart the gateway with the curl command above");
   parts.push("- Save notes about what you installed to your memory so you don't forget");
   parts.push("");
 
