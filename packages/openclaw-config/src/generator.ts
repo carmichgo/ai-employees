@@ -167,7 +167,6 @@ export function generateOpenClawConfig(
       enabled: true,
       maxConcurrentRuns: 2,
       sessionRetention: "24h",
-      runLog: { maxBytes: "2mb", keepLines: 2000 },
     },
 
     // Message queue — batch rapid messages instead of processing each individually
@@ -190,7 +189,6 @@ export function generateOpenClawConfig(
         pruneAfter: "30d",
         maxEntries: 500,
         rotateBytes: "10mb",
-        maxDiskBytes: "500mb",
       },
     },
 
