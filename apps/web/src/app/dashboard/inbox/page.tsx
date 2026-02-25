@@ -281,34 +281,41 @@ function InboxContent() {
     return voices[0] || null;
   }, []);
 
-  const speakAsync = useCallback(async (text: string): Promise<void> => {
-    if (typeof window === "undefined") return;
-    if (ttsAvailableRef.current !== false) {
-      try {
-        const token = localStorage.getItem("token");
-        const res = await fetch("/api/tts", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-          body: JSON.stringify({ text }),
-        });
-        if (res.ok && res.headers.get("content-type")?.startsWith("audio/")) {
-          ttsAvailableRef.current = true;
-          const blob = await res.blob();
-          const url = URL.createObjectURL(blob);
-          return new Promise<void>((resolve) => {
-            const audio = new Audio(url);
-            audioRef.current = audio;
-            audio.onended = () => { URL.revokeObjectURL(url); audioRef.current = null; resolve(); };
-            audio.onerror = () => { URL.revokeObjectURL(url); audioRef.current = null; resolve(); };
-            audio.play().catch(() => resolve());
-          });
-        }
-        const body = await res.json().catch(() => ({}));
-        if (body.fallback) ttsAvailableRef.current = false;
-      } catch { /* fall through to browser TTS */ }
-    }
-    if (!window.speechSynthesis) return;
-    window.speechSynthesis.cancel();
+  // Fetch TTS audio for a single chunk of text (returns blob URL or null)
+  const fetchTtsAudio = useCallback(async (text: string): Promise<string | null> => {
+    if (typeof window === "undefined") return null;
+    if (ttsAvailableRef.current === false) return null;
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ text }),
+      });
+      if (res.ok && res.headers.get("content-type")?.startsWith("audio/")) {
+        ttsAvailableRef.current = true;
+        const blob = await res.blob();
+        return URL.createObjectURL(blob);
+      }
+      const body = await res.json().catch(() => ({}));
+      if (body.fallback) ttsAvailableRef.current = false;
+    } catch { /* fall through */ }
+    return null;
+  }, []);
+
+  // Play a blob URL as audio, returns a promise that resolves when done
+  const playAudioUrl = useCallback((url: string): Promise<void> => {
+    return new Promise<void>((resolve) => {
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      audio.onended = () => { URL.revokeObjectURL(url); audioRef.current = null; resolve(); };
+      audio.onerror = () => { URL.revokeObjectURL(url); audioRef.current = null; resolve(); };
+      audio.play().catch(() => resolve());
+    });
+  }, []);
+
+  // Split text into speakable sentences for pipelined TTS
+  const splitSentences = useCallback((text: string): string[] => {
     const clean = text
       .replace(/```[\s\S]*?```/g, " code block ")
       .replace(/`[^`]+`/g, (m) => m.slice(1, -1))
@@ -318,6 +325,43 @@ function InboxContent() {
       .replace(/\n{2,}/g, ". ")
       .replace(/\n/g, " ")
       .trim();
+    if (!clean) return [];
+    // Split on sentence boundaries (., !, ?) followed by space or end
+    const parts = clean.match(/[^.!?]+[.!?]+[\s]?|[^.!?]+$/g) || [clean];
+    return parts.map((s) => s.trim()).filter(Boolean);
+  }, []);
+
+  // Speak with sentence-level pipelining: start playing the first sentence
+  // while fetching TTS for subsequent sentences in parallel
+  const speakAsync = useCallback(async (text: string): Promise<void> => {
+    if (typeof window === "undefined") return;
+
+    const sentences = splitSentences(text);
+    if (sentences.length === 0) return;
+
+    // If API TTS is available, pipeline sentences
+    if (ttsAvailableRef.current !== false) {
+      // Start fetching TTS for the first sentence immediately
+      let nextFetch: Promise<string | null> = fetchTtsAudio(sentences[0]);
+
+      for (let i = 0; i < sentences.length; i++) {
+        if (!callActiveRef.current && i > 0) break; // call ended
+        const audioUrl = await nextFetch;
+        // Start fetching next sentence while current one plays
+        if (i + 1 < sentences.length) {
+          nextFetch = fetchTtsAudio(sentences[i + 1]);
+        }
+        if (audioUrl) {
+          await playAudioUrl(audioUrl);
+        }
+      }
+      if (ttsAvailableRef.current !== false) return;
+    }
+
+    // Fallback: browser SpeechSynthesis
+    if (!window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const clean = sentences.join(" ");
     if (!clean) return;
     return new Promise<void>((resolve) => {
       const utterance = new SpeechSynthesisUtterance(clean);
@@ -329,7 +373,7 @@ function InboxContent() {
       utterance.onerror = () => resolve();
       window.speechSynthesis.speak(utterance);
     });
-  }, [getBestVoice]);
+  }, [getBestVoice, splitSentences, fetchTtsAudio, playAudioUrl]);
 
   const speak = useCallback((text: string) => { speakAsync(text); }, [speakAsync]);
 
@@ -341,8 +385,10 @@ function InboxContent() {
     setMessages((prev) => [...prev, userMessage]);
     try {
       const history = messages.filter((m) => m.id !== "welcome").map((m) => ({ role: m.role, content: m.content }));
-      history.push({ role: "user", content: text.trim() });
-      const res = await api.chatWithEmployee(selectedId, text.trim(), history.slice(0, -1));
+      // Prefix with [Voice call] so the AI knows to keep responses brief and conversational
+      const voiceText = `[Voice call — respond in 1-2 short sentences, conversational tone] ${text.trim()}`;
+      history.push({ role: "user", content: voiceText });
+      const res = await api.chatWithEmployee(selectedId, voiceText, history.slice(0, -1));
       const assistantMessage: Message = { id: `assistant-${Date.now()}`, role: "assistant", content: res.reply, timestamp: new Date(), mode: res.mode };
       setMessages((prev) => [...prev, assistantMessage]);
       if (!callActiveRef.current) return;
