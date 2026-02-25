@@ -568,6 +568,22 @@ function InboxContent() {
         }
       }
 
+      // Update the displayed message with actual (sanitized) filenames from the upload
+      // so the attachment chips use the correct download URL
+      if (filesToUpload.length > 0) {
+        const updatedTags = uploadedNames.map((n) =>
+          n.includes("upload failed")
+            ? `[Upload failed: ${n.replace(" (upload failed)", "")}]`
+            : `[Attached: ${n}]`,
+        );
+        const updatedContent = text
+          ? `${text}\n\n${updatedTags.join("\n")}`
+          : updatedTags.join("\n");
+        setMessages((prev) =>
+          prev.map((m) => (m.id === userMessage.id ? { ...m, content: updatedContent } : m)),
+        );
+      }
+
       // Build the message to send to the employee
       let messageText = text;
       if (uploadedNames.length > 0) {
@@ -1623,6 +1639,38 @@ function MarkdownText({ text, employeeId }: { text: string; employeeId: string }
 }
 
 function MessageContent({ content, employeeId }: { content: string; employeeId: string }) {
+  // Handle [Attached: filename] patterns — render as file attachment chips
+  const ATTACH_RE = /\[Attached: ([^\]]+)\]/g;
+  if (ATTACH_RE.test(content)) {
+    ATTACH_RE.lastIndex = 0;
+    const segments: Array<{ type: "text" | "attachment"; value: string }> = [];
+    let lastIdx = 0;
+    let m;
+    while ((m = ATTACH_RE.exec(content)) !== null) {
+      if (m.index > lastIdx) {
+        segments.push({ type: "text", value: content.slice(lastIdx, m.index) });
+      }
+      segments.push({ type: "attachment", value: m[1] });
+      lastIdx = m.index + m[0].length;
+    }
+    if (lastIdx < content.length) {
+      segments.push({ type: "text", value: content.slice(lastIdx) });
+    }
+    const filtered = segments.filter((s) => s.type === "attachment" || s.value.trim());
+    return (
+      <>
+        {filtered.map((seg, i) =>
+          seg.type === "attachment" ? (
+            <UploadedFileChip key={i} filename={seg.value} employeeId={employeeId} />
+          ) : (
+            // Recursion safe — [Attached:] tags are stripped from text parts
+            <MessageContent key={i} content={seg.value} employeeId={employeeId} />
+          ),
+        )}
+      </>
+    );
+  }
+
   const imagePattern =
     /`(\/api\/employees\/[^\s`]+\.(?:png|jpe?g|gif|webp|svg|bmp))`|(?:^|[\s:;,(])(\/api\/employees\/[^\s)\]>"'`]+\.(?:png|jpe?g|gif|webp|svg|bmp))/gm;
 
@@ -1712,6 +1760,62 @@ function FileChip({ filename, employeeId }: { filename: string; employeeId: stri
         <Loader2 size={11} style={{ animation: "spin 0.8s linear infinite" }} />
       ) : (
         <Download size={11} />
+      )}
+    </button>
+  );
+}
+
+/** Chip for user-uploaded files. Uses the workspace/uploads/ path for downloads. */
+function UploadedFileChip({ filename, employeeId }: { filename: string; employeeId: string }) {
+  const [downloading, setDownloading] = useState(false);
+  const Icon = getFileIcon(filename);
+  // Match the server-side sanitization so the download URL uses the actual on-disk name
+  const sanitized = filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 255);
+
+  const handleDownload = async () => {
+    setDownloading(true);
+    try {
+      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+      const res = await fetch(`/api/employees/${employeeId}/workspace/workspace/uploads/${encodeURIComponent(sanitized)}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) throw new Error("File not found");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      window.open(`/api/employees/${employeeId}/workspace/workspace/uploads/${encodeURIComponent(sanitized)}`, "_blank");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  return (
+    <button
+      onClick={handleDownload}
+      disabled={downloading}
+      title={`Download ${filename}`}
+      style={{
+        display: "inline-flex", alignItems: "center", gap: 6,
+        padding: "6px 10px", margin: "4px 0",
+        borderRadius: 8, border: "1px solid var(--border, #e5e5e5)",
+        background: "var(--bg-secondary, #f5f5f5)",
+        cursor: "pointer", fontSize: 13, color: "var(--text, #0a0a0a)",
+        transition: "all 0.15s",
+      }}
+    >
+      <Icon size={14} style={{ color: "#6b7280", flexShrink: 0 }} />
+      <span style={{ fontWeight: 500, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{filename}</span>
+      {downloading ? (
+        <Loader2 size={12} style={{ animation: "spin 0.8s linear infinite", color: "#6b7280" }} />
+      ) : (
+        <Download size={12} style={{ color: "#6b7280" }} />
       )}
     </button>
   );
