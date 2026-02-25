@@ -68,6 +68,7 @@ export async function buildServer(config: Env) {
     try { checks.containerLogs = execSync("docker logs --tail 20 $(docker ps -q --latest) 2>&1 || echo 'no containers'", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.containerLogs = `error: ${e.message}`; }
     try { checks.workerService = execSync("systemctl is-active ai-employees-worker", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.workerService = `error: ${e.message}`; }
     try { checks.workerLogs = execSync("journalctl -u ai-employees-worker --no-pager -n 20 2>&1 || echo 'no journal'", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.workerLogs = `error: ${e.message}`; }
+    try { checks.apiLogs = execSync("journalctl -u ai-employees-api --no-pager -n 30 2>&1 || echo 'no journal'", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.apiLogs = `error: ${e.message}`; }
     checks.anthropicKeySet = !!process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY.length > 10;
     checks.anthropicKeyPrefix = process.env.ANTHROPIC_API_KEY?.slice(0, 8) || "NOT SET";
     try { checks.images = execSync("docker images --format '{{.Repository}}:{{.Tag}}'", { timeout: 5000 }).toString().trim() || "none"; } catch (e: any) { checks.images = `error: ${e.message}`; }
@@ -86,22 +87,41 @@ export async function buildServer(config: Env) {
     try { checks.blitzApiUrl = execSync("docker exec $(docker ps -q --latest) bash -c 'echo BLITZ_API_URL=$BLITZ_API_URL' 2>&1", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.blitzApiUrl = `error: ${e.message}`; }
     try { checks.workspaceMainSoul = execSync("docker exec $(docker ps -q --latest) cat /home/node/.openclaw/workspace-main/SOUL.md 2>&1", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.workspaceMainSoul = `error: ${e.message}`; }
     try { checks.skillsList = execSync("docker exec $(docker ps -q --latest) ls /home/node/.openclaw/skills/ 2>&1", { timeout: 5000 }).toString().trim(); } catch (e: any) { checks.skillsList = `error: ${e.message}`; }
-    // Test container connectivity from the API's perspective
+    // Test container connectivity from the API's perspective (both GET and POST)
     try {
       const containerIp = execSync("docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $(docker ps -q --latest)", { timeout: 5000 }).toString().trim();
       const containerPort = "18789";
-      const testUrl = `http://${containerIp}:${containerPort}/v1/models`;
-      const testStart = Date.now();
-      const testRes = await fetch(testUrl, { signal: AbortSignal.timeout(5000) });
-      const testBody = await testRes.text();
+      // Test 1: GET /v1/models (basic HTTP)
+      const getUrl = `http://${containerIp}:${containerPort}/v1/models`;
+      const getStart = Date.now();
+      const getRes = await fetch(getUrl, { signal: AbortSignal.timeout(5000) });
+      const getBody = await getRes.text();
+      // Test 2: POST /v1/chat/completions (same as chat proxy uses, with dummy data)
+      const postUrl = `http://${containerIp}:${containerPort}/v1/chat/completions`;
+      const postStart = Date.now();
+      let postResult: any;
+      try {
+        const postRes = await fetch(postUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ model: "test", messages: [{ role: "user", content: "ping" }] }),
+          signal: AbortSignal.timeout(5000),
+        });
+        const postBody = await postRes.text();
+        postResult = { status: postRes.status, latencyMs: Date.now() - postStart, body: postBody.slice(0, 300) };
+      } catch (pe: any) {
+        postResult = `FAILED: ${pe.code || pe.name || ""} ${pe.message} cause=${pe.cause?.message || ""}`;
+      }
       checks.containerConnectivity = {
-        url: testUrl,
-        status: testRes.status,
-        latencyMs: Date.now() - testStart,
-        body: testBody.slice(0, 200),
+        getUrl,
+        getStatus: getRes.status,
+        getLatencyMs: Date.now() - getStart,
+        getBody: getBody.slice(0, 100),
+        postUrl,
+        postResult,
       };
     } catch (e: any) {
-      checks.containerConnectivity = `FAILED: ${e.code || e.name || ""} ${e.message}`;
+      checks.containerConnectivity = `FAILED: ${e.code || e.name || ""} ${e.message} cause=${(e as any).cause?.message || ""}`;
     }
     // Check what the DB has for containerHost/Port
     try {

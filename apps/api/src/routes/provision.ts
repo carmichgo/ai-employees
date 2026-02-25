@@ -781,6 +781,8 @@ export async function provisionRoutes(fastify: FastifyInstance) {
 
       const sendToContainer = async (host: string) => {
         const containerUrl = `http://${host}:${containerPort}/v1/chat/completions`;
+        const model = (employee.modelConfig as { primary?: string })?.primary || "anthropic/claude-sonnet-4-5-20250929";
+        console.log(`[chat-proxy] Sending to ${containerUrl} model=${model} msgs=${chatMessages.length} token=${employee.gatewayToken ? "set" : "MISSING"}`);
         return fetch(containerUrl, {
           method: "POST",
           headers: {
@@ -788,7 +790,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
             Authorization: `Bearer ${employee.gatewayToken}`,
           },
           body: JSON.stringify({
-            model: (employee.modelConfig as { primary: string }).primary,
+            model,
             messages: chatMessages,
           }),
         });
