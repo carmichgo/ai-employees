@@ -3,8 +3,7 @@ import cors from "@fastify/cors";
 import jwt from "@fastify/jwt";
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { db } from "@ai-employees/database";
-import { employees } from "@ai-employees/database/schema";
+import { db, employees } from "@ai-employees/db";
 import type { Env } from "./config.js";
 import { authPlugin } from "./plugins/auth.js";
 import { errorHandlerPlugin } from "./plugins/error-handler.js";
@@ -107,7 +106,7 @@ export async function buildServer(config: Env) {
     // Check what the DB has for containerHost/Port
     try {
       const emps = await db.query.employees.findMany({ columns: { id: true, name: true, containerHost: true, containerPort: true, containerName: true, status: true } });
-      checks.employeeContainerInfo = emps.map(e => ({ name: e.name, host: e.containerHost, port: e.containerPort, container: e.containerName, status: e.status }));
+      checks.employeeContainerInfo = emps.map((e: any) => ({ name: e.name, host: e.containerHost, port: e.containerPort, container: e.containerName, status: e.status }));
     } catch (e: any) { checks.employeeContainerInfo = `error: ${e.message}`; }
     return checks;
   });
