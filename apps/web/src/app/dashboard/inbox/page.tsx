@@ -584,24 +584,31 @@ function InboxContent() {
         );
       }
 
+      // Build file metadata for files that uploaded successfully
+      const successFiles = uploadedNames
+        .map((n, i) => ({
+          name: n,
+          mimeType: filesToUpload[i]?.type || "application/octet-stream",
+          failed: n.includes("upload failed"),
+        }))
+        .filter((f) => !f.failed)
+        .map(({ name, mimeType }) => ({ name, mimeType }));
+
       // Build the message to send to the employee
-      let messageText = text;
-      if (uploadedNames.length > 0) {
-        const fileList = uploadedNames
-          .filter((n) => !n.includes("upload failed"))
-          .map((n) => `- /home/node/.openclaw/workspace/uploads/${n}`)
-          .join("\n");
-        const fileMsg = uploadedNames.length === 1
-          ? `I've uploaded a file to your workspace:\n${fileList}\nPlease review it.`
-          : `I've uploaded ${uploadedNames.length} files to your workspace:\n${fileList}\nPlease review them.`;
-        messageText = text ? `${text}\n\n${fileMsg}` : fileMsg;
-      }
+      const messageText = text || (successFiles.length > 0
+        ? `Please review the attached file${successFiles.length > 1 ? "s" : ""}.`
+        : "");
 
       const history = messages
         .filter((m) => m.id !== "welcome")
         .map((m) => ({ role: m.role, content: m.content }));
 
-      const res = await api.chatWithEmployee(sendForId, messageText, history);
+      const res = await api.chatWithEmployee(
+        sendForId,
+        messageText,
+        history,
+        successFiles.length > 0 ? successFiles : undefined,
+      );
 
       // Discard response if user switched to a different employee
       if (sendingForRef.current !== sendForId) return;

@@ -676,8 +676,9 @@ export async function provisionRoutes(fastify: FastifyInstance) {
   fastify.post<{ Params: { id: string } }>("/internal/employees/:id/chat", async (request, reply) => {
     const { id } = request.params;
     const body = request.body as {
-      messages: Array<{ role: string; content: string }>;
+      messages: Array<{ role: string; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }>;
       userId?: string; // passed by dashboard so we can persist the reply
+      files?: Array<{ name: string; mimeType: string }>; // uploaded files to include
     };
 
     const employee = await db.query.employees.findFirst({
@@ -741,6 +742,72 @@ export async function provisionRoutes(fastify: FastifyInstance) {
         } catch {
           // SOUL.md not found — fall through without system prompt
           console.log(`[chat-proxy] SOUL.md not found at ${soulPath}, proceeding without system prompt`);
+        }
+      }
+
+      // If files were attached, inject their content into the last user message
+      // so the AI can actually see them (images as base64, text files inline).
+      if (body.files && body.files.length > 0) {
+        const uploadsDir = `/opt/ai-employees/openclaw-configs/${id}/workspace/uploads`;
+        const lastUserIdx = chatMessages.map((m) => m.role).lastIndexOf("user");
+        if (lastUserIdx >= 0) {
+          const lastMsg = chatMessages[lastUserIdx];
+          const textContent = typeof lastMsg.content === "string" ? lastMsg.content : "";
+          const imageExts = ["png", "jpg", "jpeg", "gif", "webp", "bmp"];
+          const contentParts: Array<{ type: string; text?: string; image_url?: { url: string } }> = [];
+
+          // Start with the user's text
+          if (textContent) {
+            contentParts.push({ type: "text", text: textContent });
+          }
+
+          for (const file of body.files) {
+            const sanitized = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 255);
+            const filePath = `${uploadsDir}/${sanitized}`;
+            try {
+              if (!existsSync(filePath)) continue;
+              const ext = sanitized.split(".").pop()?.toLowerCase() || "";
+              const isImage = imageExts.includes(ext) || file.mimeType.startsWith("image/");
+
+              if (isImage) {
+                // Send as base64 image so the AI can see it
+                const buf = readFileSync(filePath);
+                const b64 = buf.toString("base64");
+                const mime = file.mimeType.startsWith("image/") ? file.mimeType : `image/${ext === "jpg" ? "jpeg" : ext}`;
+                contentParts.push({
+                  type: "image_url",
+                  image_url: { url: `data:${mime};base64,${b64}` },
+                });
+              } else {
+                // Read text content for non-image files
+                const buf = readFileSync(filePath);
+                // Only include text if file is under 100KB to avoid massive context
+                if (buf.length <= 100_000) {
+                  const text = buf.toString("utf-8");
+                  contentParts.push({
+                    type: "text",
+                    text: `\n\n--- Attached file: ${file.name} ---\n${text}\n--- End of ${file.name} ---`,
+                  });
+                } else {
+                  contentParts.push({
+                    type: "text",
+                    text: `\n\n[Attached file: ${file.name} — saved to /home/node/.openclaw/workspace/uploads/${sanitized} (${(buf.length / 1024).toFixed(0)}KB, too large to include inline)]`,
+                  });
+                }
+              }
+            } catch (err) {
+              console.error(`[chat-proxy] Failed to read attached file ${sanitized}:`, err);
+              contentParts.push({
+                type: "text",
+                text: `\n\n[Attached file: ${file.name} — saved to /home/node/.openclaw/workspace/uploads/${sanitized}]`,
+              });
+            }
+          }
+
+          // Replace the last user message with multimodal content
+          chatMessages = chatMessages.map((m, i) =>
+            i === lastUserIdx ? { ...m, content: contentParts.length === 1 && contentParts[0].type === "text" ? contentParts[0].text! : contentParts as any } : m,
+          );
         }
       }
 

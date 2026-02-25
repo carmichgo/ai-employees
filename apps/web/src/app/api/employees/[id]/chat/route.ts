@@ -192,9 +192,10 @@ export async function POST(
   }
 
   const body = await request.json();
-  const { message, conversationHistory } = body as {
+  const { message, conversationHistory, files } = body as {
     message: string;
     conversationHistory?: Array<{ role: string; content: string }>;
+    files?: Array<{ name: string; mimeType: string }>;
   };
 
   if (!message?.trim()) {
@@ -256,7 +257,7 @@ export async function POST(
             "Content-Type": "application/json",
             "x-interservice-secret": employee.interserviceSecret,
           },
-          body: JSON.stringify({ messages, userId: session.userId }),
+          body: JSON.stringify({ messages, userId: session.userId, files }),
           signal: controller.signal,
         },
       );

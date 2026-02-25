@@ -270,12 +270,13 @@ class ApiClient {
     id: string,
     message: string,
     conversationHistory?: Array<{ role: string; content: string }>,
+    files?: Array<{ name: string; mimeType: string }>,
   ) {
     return this.request<{ reply: string; mode: string; usage?: any }>(
       `/api/employees/${id}/chat`,
       {
         method: "POST",
-        body: JSON.stringify({ message, conversationHistory }),
+        body: JSON.stringify({ message, conversationHistory, files }),
       },
     );
   }
