@@ -134,11 +134,13 @@ export async function buildServer(config: Env) {
       systemctl restart ai-employees-worker && \
       echo "[$(date -Iseconds)] Worker restarted" >> ${logFile} && \
       echo "[$(date -Iseconds)] Regenerating configs before API restart..." >> ${logFile} && \
-      curl -sf -X POST http://localhost:3001/internal/regenerate-configs \
+      REGEN_HTTP=$(curl -s -o /tmp/regen-output.txt -w "%{http_code}" -X POST http://localhost:3001/internal/regenerate-configs \
         -H "x-interservice-secret: ${secret}" \
-        -H "Content-Type: application/json" >> ${logFile} 2>&1 && \
+        -H "Content-Type: application/json" 2>> ${logFile}) && \
+      echo "[$(date -Iseconds)] Regen response: HTTP $REGEN_HTTP" >> ${logFile} && \
+      cat /tmp/regen-output.txt >> ${logFile} 2>&1 && \
       echo "" >> ${logFile} && \
-      echo "[$(date -Iseconds)] Configs regenerated" >> ${logFile} && \
+      echo "[$(date -Iseconds)] Configs regenerated" >> ${logFile} ; \
       systemctl restart ai-employees-api && \
       echo "[$(date -Iseconds)] API restarted" >> ${logFile} && \
       echo "[$(date -Iseconds)] UPDATE COMPLETE" >> ${logFile} || \
