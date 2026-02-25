@@ -84,6 +84,8 @@ function InboxContent() {
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  // Track which employee a send is for, so we discard stale responses
+  const sendingForRef = useRef<string | null>(null);
 
   // File upload state
   const [uploading, setUploading] = useState(false);
@@ -219,6 +221,10 @@ function InboxContent() {
       loadChat(selectedId);
       setInput("");
       setPendingFiles([]);
+      // Cancel any in-flight send for the previous employee
+      setSending(false);
+      sendingForRef.current = null;
+      setPendingReplyId(null);
     }
   }, [selectedId, loadChat]);
 
@@ -525,6 +531,9 @@ function InboxContent() {
       timestamp: new Date(),
     };
 
+    const sendForId = selectedId;
+    sendingForRef.current = sendForId;
+
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
     setPendingFiles([]);
@@ -564,7 +573,10 @@ function InboxContent() {
         .filter((m) => m.id !== "welcome")
         .map((m) => ({ role: m.role, content: m.content }));
 
-      const res = await api.chatWithEmployee(selectedId, messageText, history);
+      const res = await api.chatWithEmployee(sendForId, messageText, history);
+
+      // Discard response if user switched to a different employee
+      if (sendingForRef.current !== sendForId) return;
 
       const msgId = `assistant-${Date.now()}`;
       const assistantMessage: Message = {
@@ -588,9 +600,9 @@ function InboxContent() {
       // Update preview
       setPreviews((prev) => {
         const updated = new Map(prev);
-        const existing = updated.get(selectedId);
+        const existing = updated.get(sendForId);
         if (existing) {
-          updated.set(selectedId, {
+          updated.set(sendForId, {
             ...existing,
             lastMessage: res.reply.slice(0, 80),
             lastMessageTime: new Date(),
@@ -599,17 +611,21 @@ function InboxContent() {
         return updated;
       });
     } catch (err: any) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `error-${Date.now()}`,
-          role: "assistant",
-          content: `Sorry, I couldn't process that: ${err.message}`,
-          timestamp: new Date(),
-        },
-      ]);
+      if (sendingForRef.current === sendForId) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `error-${Date.now()}`,
+            role: "assistant",
+            content: `Sorry, I couldn't process that: ${err.message}`,
+            timestamp: new Date(),
+          },
+        ]);
+      }
     } finally {
-      setSending(false);
+      if (sendingForRef.current === sendForId) {
+        setSending(false);
+      }
       inputRef.current?.focus();
     }
   };
