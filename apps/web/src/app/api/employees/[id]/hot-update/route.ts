@@ -47,9 +47,18 @@ export async function POST(
   const body = await request.json().catch(() => ({}));
 
   try {
-    const backend = createBackendClient(backendConfig);
-    const result = await backend.hotUpdate(body.branch);
-    return NextResponse.json(result);
+    // Call droplet directly and return full response (including steps/errors)
+    const res = await fetch(`${backendConfig.url}/internal/hot-update`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-interservice-secret": backendConfig.secret,
+      },
+      body: JSON.stringify({ branch: body.branch || "main" }),
+      signal: AbortSignal.timeout(300_000),
+    });
+    const data = await res.json();
+    return NextResponse.json(data, { status: res.status });
   } catch (err: any) {
     console.error("[hot-update] error:", err.message);
     return NextResponse.json(
