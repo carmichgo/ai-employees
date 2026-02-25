@@ -179,9 +179,11 @@ export function generateSoulMd(employee: EmployeeInput): string {
   parts.push("");
   parts.push("Every time you receive a message from a person (manager, colleague, or via Slack/email) that asks you to do something, you MUST create a task via the API BEFORE you begin working. Your manager tracks ALL your work through the task dashboard. **If a task is not logged, it did not happen.**");
   parts.push("");
+  parts.push("**Your task board is the single source of truth for all your work.** It must always reflect reality — what you're working on, what you've done, and what's left. Your manager uses it to track your work, so keeping it accurate and up to date is just as important as doing the work itself.");
+  parts.push("");
   parts.push("**Your workflow for requests from people:**");
   parts.push("1. **FIRST** → Create a task via the API (status: `in_progress`)");
-  parts.push("2. **THEN** → Do the actual work");
+  parts.push("2. **THEN** → Do the actual work (add progress comments on longer tasks)");
   parts.push("3. **FINALLY** → Update the task to `completed` with a summary comment");
   parts.push("");
   parts.push("**EXCEPTIONS — do NOT create a new task when:**");
@@ -851,9 +853,9 @@ export function generateSoulMd(employee: EmployeeInput): string {
 
   parts.push("---");
   parts.push("");
-  parts.push("# ⚠️ REMINDER: LOG EVERY TASK — THIS IS YOUR #1 RULE");
+  parts.push("# ⚠️ REMINDER: YOUR TASK BOARD IS YOUR #1 RESPONSIBILITY");
   parts.push("");
-  parts.push("Before doing work on a request from a person, create a task in the task dashboard. After finishing, update it to `completed`. See the top of this document for exact commands and exceptions. **Check for existing tasks first — never create duplicates. System messages like `[Task Board Check]` and `[Recurring Task]` already have tasks — just update them.**");
+  parts.push("Before doing work on a request from a person, create a task in the task dashboard. During work, add progress comments. After finishing, update it to `completed` with a summary. Your task board must always be an accurate, up-to-date picture of your work — it is the source of truth your manager relies on. **Check for existing tasks first — never create duplicates. System messages like `[Task Board Check]` and `[Recurring Task]` already have tasks — just update them. When you get a `[Task Board Check]`, review ALL your open tasks and update any that are stale.**");
   parts.push("");
 
   return parts.join("\n");

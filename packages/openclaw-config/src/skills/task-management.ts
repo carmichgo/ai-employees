@@ -108,23 +108,59 @@ curl -s -X PATCH "$BLITZ_API_URL/employee/tasks/$TASK_ID" \\
 
 Then tell your manager what you need.
 
+## Your Task Board Is Your Source of Truth
+
+Your task board is the **single source of truth** for everything you've done and everything you need to do. Your manager relies on it to understand your workload, progress, and results. A task that's out of date is as bad as a task that doesn't exist.
+
+**Your tasks must ALWAYS reflect reality.** If you finished something, it must be marked \`completed\`. If you're stuck, it must be \`blocked\`. If you're actively working on it, it should have a recent progress comment. At any given moment, someone looking at your task board should have a completely accurate picture of your work.
+
+## Keeping Tasks Up to Date
+
+### Add Progress Comments on Long-Running Tasks
+For any task that takes more than a few minutes, add progress comments as you work:
+\`\`\`bash
+curl -s -X PATCH "$BLITZ_API_URL/employee/tasks/$TASK_ID" \\
+  -H "$AUTH" -H "$CT" \\
+  -d '{"comment": "Found 3 competitors so far, researching pricing pages now"}'
+\`\`\`
+
+Progress comments should describe **what you've done and what's next**, not just "still working on it".
+
+### Review Your Tasks Regularly
+Every time you finish a task or receive a \`[Task Board Check]\` message:
+1. **List all your tasks** — \`curl -s "$BLITZ_API_URL/employee/tasks" -H "$AUTH" | jq '.tasks[] | {id, title, status}'\`
+2. **For each in_progress task** — Is it still in progress? Add a progress comment, or mark it \`completed\`/\`blocked\`.
+3. **For each pending task** — Can you pick it up now? If yes, start it. If not, leave it pending.
+4. **For each blocked task** — Is it still blocked? Has the blocker been resolved? Update accordingly.
+5. **Look for missing tasks** — Did you do work that doesn't have a task? Create one retroactively.
+
+### When to Update Tasks
+- **Starting work** → Create task with status \`in_progress\`
+- **Making progress** → Add a comment describing what you've accomplished
+- **Hitting a blocker** → Mark \`blocked\` with a comment explaining what you need
+- **Finishing work** → Mark \`completed\` with a summary of the result
+- **Scope changed** → Update the title/description to reflect reality
+- **Between tasks** → Review your entire board and clean up stale entries
+
 ## Periodic Task Checking
 
-Check your task board proactively between tasks or when you finish something. When you receive a task board check:
+When you receive a \`[Task Board Check]\` message, treat it as a prompt to do a **full review** of your task board:
 
-1. Review the listed tasks — understand what's been assigned
-2. Pick up tasks you can start — change their status to \`in_progress\`
-3. Add a comment explaining your approach for each task you start
-4. Don't drop current work — finish what you're doing first if it's urgent
+1. Review ALL listed tasks — not just the ones mentioned in the message
+2. Update any stale tasks with current status and a progress comment
+3. Pick up pending tasks you can start — change their status to \`in_progress\` with a comment
+4. Mark completed tasks that you forgot to close
+5. Don't drop current work — finish what you're doing first if it's urgent
 
 ## Best Practices
 
 - **Log tasks immediately** — don't wait until you're done. Create the task as soon as you start working.
 - **Use clear, descriptive titles** — "Research competitors" is better than "Research". "Draft Q4 blog post on AI trends" is better than "Write blog post".
 - **Update status in real time** — if you get blocked, mark it blocked. When you finish, mark it complete.
+- **Add progress comments frequently** — for anything taking more than a few minutes, comment on what you've done and what's next. Think of it as a mini-report.
 - **One task per logical unit of work** — don't create one mega-task for everything. If you're doing three different things, create three tasks.
-- **Add meaningful comments** — "Done" is less useful than "Published blog post to /blog/q1-results, 1,200 words"
-- **Always mark tasks complete** — don't leave tasks hanging. If you finished the work, close the task.
+- **Add meaningful completion comments** — "Done" is less useful than "Published blog post to /blog/q1-results, 1,200 words, shared link in Slack"
+- **Never leave tasks hanging** — if you finished the work, close the task. If it's been abandoned, mark it complete or blocked with an explanation.
 - **Use categories** to help organize work on the dashboard
 - If the API is temporarily unreachable, retry after a few seconds. Don't skip logging the task.
 `;

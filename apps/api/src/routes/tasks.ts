@@ -6,7 +6,7 @@
  */
 import type { FastifyInstance } from "fastify";
 import { eq, and, desc } from "drizzle-orm";
-import { db, employees, tasks } from "@ai-employees/db";
+import { db, employees, tasks, taskComments } from "@ai-employees/db";
 
 /** Resolve employee from gateway token in Authorization header */
 async function resolveEmployee(authHeader: string | undefined) {
@@ -45,6 +45,8 @@ export async function taskRoutes(fastify: FastifyInstance) {
       description?: string;
       priority?: string;
       status?: string;
+      category?: string;
+      comment?: string;
     };
 
     if (!body.title) {
@@ -60,9 +62,20 @@ export async function taskRoutes(fastify: FastifyInstance) {
         description: body.description || null,
         priority: body.priority || "medium",
         status: body.status || "in_progress",
+        category: body.category || null,
         source: "employee",
       })
       .returning();
+
+    // Save initial comment if provided
+    if (body.comment?.trim()) {
+      await db.insert(taskComments).values({
+        taskId: task.id,
+        authorType: "employee",
+        authorName: employee.name,
+        content: body.comment.trim(),
+      });
+    }
 
     return reply.status(201).send({ task });
   });
@@ -78,6 +91,7 @@ export async function taskRoutes(fastify: FastifyInstance) {
       description?: string;
       status?: string;
       priority?: string;
+      comment?: string;
     };
 
     const updates: Record<string, unknown> = { updatedAt: new Date() };
@@ -88,6 +102,7 @@ export async function taskRoutes(fastify: FastifyInstance) {
       if (body.status === "completed") updates.completedAt = new Date();
     }
     if (body.priority !== undefined) updates.priority = body.priority;
+    if ((body as any).category !== undefined) updates.category = (body as any).category;
 
     const [task] = await db
       .update(tasks)
@@ -96,6 +111,16 @@ export async function taskRoutes(fastify: FastifyInstance) {
       .returning();
 
     if (!task) return reply.status(404).send({ error: "Task not found" });
+
+    // Save the comment to the task_comments table (activity feed)
+    if (body.comment?.trim()) {
+      await db.insert(taskComments).values({
+        taskId,
+        authorType: "employee",
+        authorName: employee.name,
+        content: body.comment.trim(),
+      });
+    }
 
     return { task };
   });

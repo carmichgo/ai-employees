@@ -1,7 +1,12 @@
 /**
- * Periodic task checker — nudges employees about:
- * 1. Pending manager-assigned tasks they haven't started
- * 2. Stale in_progress tasks that haven't been updated in 30+ min
+ * Periodic task checker — nudges employees to keep their task board
+ * accurate and up to date. The task board is the source of truth for
+ * all work — employees must keep it current.
+ *
+ * Checks for:
+ * 1. Pending tasks they haven't started
+ * 2. Stale in_progress tasks (no update in 30+ min)
+ * 3. Overall task board health — prompts a full review periodically
  *
  * Runs every 5 minutes from the worker process. Throttled to max one nudge
  * per employee per 15 minutes to avoid interrupting ongoing work.
@@ -121,41 +126,105 @@ async function checkEmployeeTasks(employee: {
       ),
     );
 
-  if (pendingTasks.length === 0 && staleTasks.length === 0) {
+  // Find active in_progress tasks that are NOT stale (recently updated)
+  const activeTasks = await db
+    .select({
+      id: tasks.id,
+      title: tasks.title,
+      priority: tasks.priority,
+      updatedAt: tasks.updatedAt,
+    })
+    .from(tasks)
+    .where(
+      and(
+        eq(tasks.employeeId, employee.id),
+        eq(tasks.status, "in_progress"),
+        sql`${tasks.updatedAt} >= ${staleThreshold}`,
+      ),
+    );
+
+  // Find blocked tasks
+  const blockedTasks = await db
+    .select({
+      id: tasks.id,
+      title: tasks.title,
+      updatedAt: tasks.updatedAt,
+    })
+    .from(tasks)
+    .where(
+      and(
+        eq(tasks.employeeId, employee.id),
+        eq(tasks.status, "blocked"),
+      ),
+    );
+
+  if (pendingTasks.length === 0 && staleTasks.length === 0 && blockedTasks.length === 0 && activeTasks.length === 0) {
     return; // Nothing to nudge about
   }
 
   // Build the message
   const parts: string[] = ["[Task Board Check]", ""];
+  parts.push("Review your task board and make sure every task reflects reality. Your task board is the **source of truth** for your work — it must always be accurate and up to date.");
+  parts.push("");
 
   if (pendingTasks.length > 0) {
-    parts.push(`**${pendingTasks.length} pending task${pendingTasks.length > 1 ? "s" : ""}** waiting for you:`);
+    parts.push(`### ${pendingTasks.length} pending task${pendingTasks.length > 1 ? "s" : ""} waiting for you:`);
     parts.push("");
     for (const t of pendingTasks) {
-      let line = `- **${t.title}** (ID: ${t.id}, ${t.priority} priority)`;
+      let line = `- **${t.title}** (ID: \`${t.id}\`, ${t.priority} priority)`;
       if (t.category) line += ` [${t.category}]`;
       if (t.dueDate) line += ` — due ${new Date(t.dueDate).toLocaleDateString()}`;
       parts.push(line);
     }
     parts.push("");
-    parts.push(`Pick up these tasks — update their status to "in_progress" and start working on them.`);
+    parts.push(`Pick up these tasks — update their status to \`in_progress\` and start working on them.`);
     parts.push("");
   }
 
   if (staleTasks.length > 0) {
-    parts.push(`**${staleTasks.length} in-progress task${staleTasks.length > 1 ? "s" : ""}** with no updates for 30+ minutes:`);
+    parts.push(`### ${staleTasks.length} stale task${staleTasks.length > 1 ? "s" : ""} (no updates for 30+ minutes):`);
     parts.push("");
     for (const t of staleTasks) {
       const mins = Math.floor((Date.now() - new Date(t.updatedAt).getTime()) / 60_000);
-      parts.push(`- **${t.title}** (ID: ${t.id}) — last updated ${mins} min ago`);
+      parts.push(`- **${t.title}** (ID: \`${t.id}\`) — last updated ${mins} min ago`);
     }
     parts.push("");
-    parts.push(`For each stale task: either continue working on it (add a progress comment), or mark it completed/blocked if it's done or stuck.`);
+    parts.push(`For each stale task: add a **progress comment** describing what you've done and what's next, or mark it \`completed\`/\`blocked\` if appropriate.`);
     parts.push("");
   }
 
-  parts.push(`Do NOT create new tasks for this notification. Update the existing ones:`);
-  parts.push(`curl -s -X PATCH "$BLITZ_API_URL/employee/tasks/<TASK_ID>" -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" -H "Content-Type: application/json" -d '{"status": "in_progress", "comment": "Progress update..."}'`);
+  if (blockedTasks.length > 0) {
+    parts.push(`### ${blockedTasks.length} blocked task${blockedTasks.length > 1 ? "s" : ""} — check if blockers are resolved:`);
+    parts.push("");
+    for (const t of blockedTasks) {
+      const mins = Math.floor((Date.now() - new Date(t.updatedAt).getTime()) / 60_000);
+      parts.push(`- **${t.title}** (ID: \`${t.id}\`) — blocked since ${mins} min ago`);
+    }
+    parts.push("");
+    parts.push(`Check if the blocker has been resolved. If yes, move to \`in_progress\` and continue. If still blocked, add a comment with current status.`);
+    parts.push("");
+  }
+
+  if (activeTasks.length > 0) {
+    parts.push(`### ${activeTasks.length} active task${activeTasks.length > 1 ? "s" : ""} in progress:`);
+    parts.push("");
+    for (const t of activeTasks) {
+      parts.push(`- **${t.title}** (ID: \`${t.id}\`)`);
+    }
+    parts.push("");
+    parts.push(`Make sure these still reflect what you're working on. Add a progress comment if you haven't recently, or mark \`completed\` if done.`);
+    parts.push("");
+  }
+
+  parts.push("---");
+  parts.push("Do NOT create new tasks for this notification. **Review and update your existing tasks:**");
+  parts.push("```bash");
+  parts.push("# Add a progress comment to a task");
+  parts.push(`curl -s -X PATCH "$BLITZ_API_URL/employee/tasks/<TASK_ID>" -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" -H "Content-Type: application/json" -d '{"comment": "Progress update..."}'`);
+  parts.push("");
+  parts.push("# Mark a task completed");
+  parts.push(`curl -s -X PATCH "$BLITZ_API_URL/employee/tasks/<TASK_ID>" -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" -H "Content-Type: application/json" -d '{"status": "completed", "comment": "Summary of result."}'`);
+  parts.push("```");
 
   const message = parts.join("\n");
 
@@ -186,8 +255,8 @@ async function checkEmployeeTasks(employee: {
 
     if (res.ok) {
       lastNudge.set(employee.id, Date.now());
-      const total = pendingTasks.length + staleTasks.length;
-      console.log(`[task-check] Nudged ${employee.name} about ${total} task(s) (${pendingTasks.length} pending, ${staleTasks.length} stale)`);
+      const total = pendingTasks.length + staleTasks.length + blockedTasks.length + activeTasks.length;
+      console.log(`[task-check] Nudged ${employee.name} about ${total} task(s) (${pendingTasks.length} pending, ${staleTasks.length} stale, ${blockedTasks.length} blocked, ${activeTasks.length} active)`);
     } else {
       console.log(`[task-check] Failed to nudge ${employee.name}: HTTP ${res.status}`);
     }
