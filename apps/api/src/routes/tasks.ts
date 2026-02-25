@@ -47,6 +47,7 @@ export async function taskRoutes(fastify: FastifyInstance) {
       status?: string;
       category?: string;
       comment?: string;
+      dueDate?: string;
     };
 
     if (!body.title) {
@@ -64,6 +65,7 @@ export async function taskRoutes(fastify: FastifyInstance) {
         status: body.status || "in_progress",
         category: body.category || null,
         source: "employee",
+        dueDate: body.dueDate ? new Date(body.dueDate) : null,
       })
       .returning();
 
@@ -92,6 +94,8 @@ export async function taskRoutes(fastify: FastifyInstance) {
       status?: string;
       priority?: string;
       comment?: string;
+      dueDate?: string | null;
+      category?: string;
     };
 
     const updates: Record<string, unknown> = { updatedAt: new Date() };
@@ -102,7 +106,8 @@ export async function taskRoutes(fastify: FastifyInstance) {
       if (body.status === "completed") updates.completedAt = new Date();
     }
     if (body.priority !== undefined) updates.priority = body.priority;
-    if ((body as any).category !== undefined) updates.category = (body as any).category;
+    if (body.category !== undefined) updates.category = body.category;
+    if (body.dueDate !== undefined) updates.dueDate = body.dueDate ? new Date(body.dueDate) : null;
 
     const [task] = await db
       .update(tasks)

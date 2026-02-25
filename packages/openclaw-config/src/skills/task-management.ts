@@ -42,7 +42,8 @@ curl -s -X POST "$BLITZ_API_URL/employee/tasks" \\
     "description": "More details about the task",
     "priority": "medium",
     "category": "research",
-    "status": "in_progress"
+    "status": "in_progress",
+    "dueDate": "2025-03-15T17:00:00Z"
   }' | jq .
 \`\`\`
 
@@ -53,6 +54,7 @@ The response includes the task ID — save it so you can update the task later:
 
 **Priority values:** \`low\`, \`medium\`, \`high\`, \`urgent\`
 **Category examples:** \`research\`, \`marketing\`, \`engineering\`, \`content\`, \`admin\`, \`support\`, \`outreach\`
+**Due date:** Optional ISO 8601 timestamp. Set when a task has a deadline. Can be updated later via PATCH.
 
 ### Update a Task
 \`\`\`bash
@@ -163,5 +165,55 @@ When you receive a \`[Task Board Check]\` message, treat it as a prompt to do a 
 - **Never leave tasks hanging** — if you finished the work, close the task. If it's been abandoned, mark it complete or blocked with an explanation.
 - **Use categories** to help organize work on the dashboard
 - If the API is temporarily unreachable, retry after a few seconds. Don't skip logging the task.
+
+## Due Dates
+
+Set a due date when a task has a deadline — either one given by your manager or one you determine is appropriate:
+
+\`\`\`bash
+# Set due date when creating a task
+curl -s -X POST "$BLITZ_API_URL/employee/tasks" \\
+  -H "$AUTH" -H "$CT" \\
+  -d '{"title": "Prepare weekly report", "status": "in_progress", "dueDate": "2025-03-15T17:00:00Z"}'
+
+# Update due date on an existing task
+curl -s -X PATCH "$BLITZ_API_URL/employee/tasks/$TASK_ID" \\
+  -H "$AUTH" -H "$CT" \\
+  -d '{"dueDate": "2025-03-16T09:00:00Z"}'
+
+# Clear a due date
+curl -s -X PATCH "$BLITZ_API_URL/employee/tasks/$TASK_ID" \\
+  -H "$AUTH" -H "$CT" \\
+  -d '{"dueDate": null}'
+\`\`\`
+
+**When to set due dates:**
+- Manager specifies a deadline → use that exact deadline
+- Recurring tasks → set the due date for the next occurrence
+- Self-initiated tasks with a natural deadline → set one proactively
+- If no deadline is mentioned, you can skip the due date — it's optional
+
+## Recurring Tasks
+
+For work that repeats on a schedule (daily email checks, weekly reports, regular monitoring, etc.):
+
+1. **Create a task for each occurrence** — don't reuse the same task. Each run should be a separate task so the manager can see the history.
+2. **Set the due date** to when the recurring task should be completed by.
+3. **Use clear titles** that distinguish occurrences — include the date or period: "Weekly Report — Mar 10-14", "Morning Email Check — Mar 15"
+4. **Mark completed promptly** — recurring tasks should be quick. Log it, do it, complete it.
+
+**Example: Daily email check**
+\`\`\`bash
+TASK=$(curl -s -X POST "$BLITZ_API_URL/employee/tasks" \\
+  -H "$AUTH" -H "$CT" \\
+  -d '{"title": "Morning email check — Mar 15", "priority": "medium", "category": "admin", "status": "in_progress", "dueDate": "2025-03-15T10:00:00Z"}')
+TASK_ID=$(echo "$TASK" | jq -r '.task.id')
+
+# ... check emails, respond, etc. ...
+
+curl -s -X PATCH "$BLITZ_API_URL/employee/tasks/$TASK_ID" \\
+  -H "$AUTH" -H "$CT" \\
+  -d '{"status": "completed", "comment": "Processed 12 emails, replied to 4, flagged 2 for manager review."}'
+\`\`\`
 `;
 }
