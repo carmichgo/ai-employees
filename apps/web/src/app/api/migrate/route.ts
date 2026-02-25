@@ -379,6 +379,7 @@ export async function POST(request: NextRequest) {
           const tearRes = await fetch(`http://${emp.droplet_ip}:3001/internal/employees/${empId}/teardown`, {
             method: "POST",
             headers: { "Content-Type": "application/json", "X-INTERSERVICE-SECRET": emp.interservice_secret },
+            body: JSON.stringify({}),
             signal: AbortSignal.timeout(15000),
           });
           const tearData = await tearRes.json().catch(() => ({}));
@@ -399,6 +400,7 @@ export async function POST(request: NextRequest) {
           const provRes = await fetch(`http://${emp.droplet_ip}:3001/internal/employees/${empId}/reprovision`, {
             method: "POST",
             headers: { "Content-Type": "application/json", "X-INTERSERVICE-SECRET": emp.interservice_secret },
+            body: JSON.stringify({}),
             signal: AbortSignal.timeout(15000),
           });
           const provData = await provRes.json().catch(() => ({}));
