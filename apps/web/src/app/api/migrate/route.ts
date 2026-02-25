@@ -355,6 +355,53 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Admin action: diagnostics — get container diagnostics via droplet's API
+    if (action === "diagnostics") {
+      const empId = request.nextUrl.searchParams.get("employeeId");
+      if (!empId) {
+        return NextResponse.json({ error: "employeeId required" }, { status: 400 });
+      }
+      const [emp] = await sql`SELECT id, name, container_name, container_id, droplet_ip, interservice_secret, status, error_message FROM employees WHERE id = ${empId}`;
+      if (!emp || !emp.droplet_ip || !emp.interservice_secret) {
+        results.push(`diagnostics: employee not found or no droplet`);
+      } else {
+        const diag: Record<string, unknown> = {
+          name: emp.name,
+          status: emp.status,
+          errorMessage: emp.error_message,
+          containerName: emp.container_name,
+          containerId: emp.container_id,
+        };
+        // Try the diagnostics endpoint (if droplet has new code)
+        try {
+          const res = await fetch(`http://${emp.droplet_ip}:3001/internal/employees/${empId}/diagnostics`, {
+            headers: { "X-INTERSERVICE-SECRET": emp.interservice_secret },
+            signal: AbortSignal.timeout(10000),
+          });
+          if (res.ok) {
+            diag.container = await res.json();
+          } else {
+            diag.diagnosticsEndpoint = `HTTP ${res.status}`;
+          }
+        } catch (err: any) {
+          diag.diagnosticsEndpoint = `FAILED: ${err.message}`;
+        }
+        // Also try the status endpoint for more info
+        try {
+          const res = await fetch(`http://${emp.droplet_ip}:3001/internal/employees/${empId}/status`, {
+            headers: { "X-INTERSERVICE-SECRET": emp.interservice_secret },
+            signal: AbortSignal.timeout(10000),
+          });
+          if (res.ok) {
+            const statusData = await res.json();
+            diag.dropletStatus = statusData.employee?.status;
+            diag.dropletError = statusData.employee?.errorMessage;
+          }
+        } catch {}
+        return NextResponse.json({ diagnostics: diag });
+      }
+    }
+
     // Admin action: fix-container-conflict — fix 409 Docker name conflicts
     // Sets the stale container ID in DB so the teardown worker can find and remove it,
     // then triggers teardown + reprovision sequence with proper delays.

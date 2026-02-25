@@ -296,6 +296,29 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     return { employee: sanitize(employee) };
   });
 
+  // GET /internal/employees/:id/diagnostics — container logs + state for debugging
+  fastify.get<{ Params: { id: string } }>("/internal/employees/:id/diagnostics", async (request, reply) => {
+    const { id } = request.params;
+    const employee = await db.query.employees.findFirst({ where: eq(employees.id, id) });
+    if (!employee) return reply.status(404).send({ error: "Employee not found" });
+    if (!employee.containerName) return reply.status(400).send({ error: "No container" });
+
+    const result: Record<string, unknown> = { name: employee.containerName };
+    try {
+      const inspect = execSync(`docker inspect ${employee.containerName}`, { timeout: 5000 }).toString();
+      const info = JSON.parse(inspect)[0];
+      result.state = info?.State;
+      result.hostConfig = { Memory: info?.HostConfig?.Memory, NanoCpus: info?.HostConfig?.NanoCpus };
+    } catch (err: any) { result.inspectError = err.message?.slice(0, 300); }
+    try {
+      result.logs = execSync(`docker logs --tail 50 ${employee.containerName} 2>&1`, { timeout: 5000 }).toString();
+    } catch (err: any) { result.logsError = err.message?.slice(0, 300); }
+    try {
+      result.configFiles = execSync(`ls -la /opt/ai-employees/openclaw-configs/${id}/`, { timeout: 5000 }).toString();
+    } catch (err: any) { result.configFilesError = err.message?.slice(0, 300); }
+    return result;
+  });
+
   // POST /internal/employees/:id/channels/connect — update OpenClaw config with channel credentials
   fastify.post<{ Params: { id: string } }>("/internal/employees/:id/channels/connect", async (request, reply) => {
     const { id } = request.params;
