@@ -6,7 +6,7 @@ import type { FastifyInstance } from "fastify";
 import crypto from "node:crypto";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { execSync } from "node:child_process";
-import { eq, and } from "drizzle-orm";
+import { eq, and, or, inArray } from "drizzle-orm";
 import { db, employees, companies, users, chatMessages } from "@ai-employees/db";
 import { getJobTemplate, PLAN_LIMITS, type PlanTier, getModelForTier, type EmployeeTier } from "@ai-employees/shared";
 import { regenerateChannelConfig, type ChannelInput } from "@ai-employees/openclaw-config";
@@ -602,7 +602,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     const errors: string[] = [];
 
     const activeEmps = await db.query.employees.findMany({
-      where: eq(employees.status, "active"),
+      where: inArray(employees.status, ["active", "error"]),
     });
 
     for (const emp of activeEmps) {
@@ -689,9 +689,11 @@ export async function provisionRoutes(fastify: FastifyInstance) {
               `docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ${emp.containerName}`,
               { timeout: 5000 },
             ).toString().trim();
-            if (newIp) {
-              await db.update(employees).set({ containerHost: newIp, updatedAt: new Date() }).where(eq(employees.id, emp.id));
-            }
+            const updates: Record<string, unknown> = { updatedAt: new Date() };
+            if (newIp) updates.containerHost = newIp;
+            // If the employee was in "error" state, move back to "active" after successful config regen
+            if (emp.status === "error") updates.status = "active";
+            await db.update(employees).set(updates).where(eq(employees.id, emp.id));
           } catch { /* non-fatal */ }
         }
 
