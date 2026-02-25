@@ -271,7 +271,11 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     console.log(`[provision] Installing CLI tools for ${employee.name}...`);
     installCliTools(employee.containerName!);
 
-    // After installCliTools restarts the container, get the new IP address
+    // After installCliTools restarts the container, wait for it to fully come up
+    // before checking IP — Docker needs a moment to assign the network IP
+    await new Promise((r) => setTimeout(r, 5000));
+
+    // Get the new IP address after restart
     try {
       const refreshedInfo = await container.inspect();
       const newIp = refreshedInfo.NetworkSettings.Networks?.[OPENCLAW_NETWORK]?.IPAddress || null;

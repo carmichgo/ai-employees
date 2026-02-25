@@ -652,12 +652,16 @@ export async function provisionRoutes(fastify: FastifyInstance) {
         const soulMd = genSoul(employeeInput);
         const config = genConfig(employeeInput, emp.gatewayToken!, soulMd);
 
+        const heartbeatMd = genHeartbeat();
         writeFileSync(`${configDir}/openclaw.json`, JSON.stringify(config, null, 2));
         writeFileSync(`${configDir}/SOUL.md`, soulMd);
+        writeFileSync(`${configDir}/HEARTBEAT.md`, heartbeatMd);
         writeFileSync(`${configDir}/workspace/SOUL.md`, soulMd);
+        writeFileSync(`${configDir}/workspace/HEARTBEAT.md`, heartbeatMd);
         // OpenClaw creates workspace-main at runtime — must update there too
         if (existsSync(`${configDir}/workspace-main`)) {
           writeFileSync(`${configDir}/workspace-main/SOUL.md`, soulMd);
+          writeFileSync(`${configDir}/workspace-main/HEARTBEAT.md`, heartbeatMd);
         }
         writeFileSync(`${configDir}/cred.js`, genCred(), { mode: 0o755 });
 
