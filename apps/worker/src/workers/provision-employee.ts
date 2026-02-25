@@ -180,6 +180,16 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     // Fix permissions for the node user (uid 1000) inside the container
     execSync(`chown -R 1000:1000 ${configDir}`);
 
+    // Remove any stale container with the same name (handles 409 conflicts after failed teardowns)
+    try {
+      const stale = docker.getContainer(employee.containerName!);
+      await stale.stop().catch(() => {});
+      await stale.remove({ force: true });
+      console.log(`[provision] Removed stale container ${employee.containerName}`);
+    } catch {
+      // No stale container — expected path
+    }
+
     // Create the container — OpenClaw starts directly with all built-in tools enabled
     const container = await docker.createContainer({
       Image: OPENCLAW_IMAGE,

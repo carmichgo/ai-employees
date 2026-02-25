@@ -355,6 +355,60 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Admin action: fix-container-conflict — fix 409 Docker name conflicts
+    // Sets the stale container ID in DB so the teardown worker can find and remove it,
+    // then triggers teardown + reprovision sequence with proper delays.
+    if (action === "fix-container-conflict") {
+      const empId = request.nextUrl.searchParams.get("employeeId");
+      const containerId = request.nextUrl.searchParams.get("containerId");
+      if (!empId) {
+        return NextResponse.json({ error: "employeeId required" }, { status: 400 });
+      }
+      const [emp] = await sql`SELECT id, name, container_name, droplet_ip, interservice_secret FROM employees WHERE id = ${empId}`;
+      if (!emp || !emp.droplet_ip || !emp.interservice_secret) {
+        results.push(`fix-conflict: employee not found or no droplet`);
+      } else {
+        // Step 1: Set the stale container ID in the DB so teardown worker can find it
+        if (containerId) {
+          await sql`UPDATE employees SET container_id = ${containerId}, status = 'active' WHERE id = ${empId}`;
+          results.push(`fix-conflict: set container_id to ${containerId.substring(0, 12)}`);
+        }
+
+        // Step 2: Trigger teardown
+        try {
+          const tearRes = await fetch(`http://${emp.droplet_ip}:3001/internal/employees/${empId}/teardown`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-INTERSERVICE-SECRET": emp.interservice_secret },
+            signal: AbortSignal.timeout(15000),
+          });
+          const tearData = await tearRes.json().catch(() => ({}));
+          results.push(`fix-conflict: teardown ${tearRes.status} ${JSON.stringify(tearData)}`);
+        } catch (err: any) {
+          results.push(`fix-conflict: teardown FAILED — ${err.message}`);
+        }
+
+        // Step 3: Wait for BullMQ worker to process the teardown
+        await new Promise((r) => setTimeout(r, 10000));
+
+        // Step 4: Clear container fields and set to provisioning
+        await sql`UPDATE employees SET status = 'provisioning', container_id = NULL, container_host = NULL, error_message = NULL WHERE id = ${empId}`;
+        results.push(`fix-conflict: cleared container fields, status = provisioning`);
+
+        // Step 5: Trigger reprovision
+        try {
+          const provRes = await fetch(`http://${emp.droplet_ip}:3001/internal/employees/${empId}/reprovision`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-INTERSERVICE-SECRET": emp.interservice_secret },
+            signal: AbortSignal.timeout(15000),
+          });
+          const provData = await provRes.json().catch(() => ({}));
+          results.push(`fix-conflict: reprovision ${provRes.status} ${JSON.stringify(provData)}`);
+        } catch (err: any) {
+          results.push(`fix-conflict: reprovision FAILED — ${err.message}`);
+        }
+      }
+    }
+
     // Always include employee diagnostics
     const empRows = await sql`
       SELECT id, name, status, droplet_id, droplet_ip, droplet_status,
