@@ -460,13 +460,25 @@ function InboxContent() {
 
       try {
         const historyRes = await api.getChatHistory(selectedId);
-        const lastAssistant = [...historyRes.messages].reverse().find((m) => m.role === "assistant");
-        if (lastAssistant && lastAssistant.mode !== "pending") {
+        const msgs = historyRes.messages; // oldest-first
+
+        // Find the last user message — this is the one that triggered the pending state.
+        // Then look for an assistant reply that came AFTER it. This avoids falsely
+        // matching an old assistant message from a previous conversation turn.
+        let lastUserIdx = -1;
+        for (let i = msgs.length - 1; i >= 0; i--) {
+          if (msgs[i].role === "user") { lastUserIdx = i; break; }
+        }
+        const replyAfterUser = lastUserIdx >= 0
+          ? msgs.slice(lastUserIdx + 1).find((m: any) => m.role === "assistant")
+          : null;
+
+        if (replyAfterUser) {
           // The real reply arrived — replace the temporary message
           setMessages((prev) =>
             prev.map((m) =>
               m.id === pendingReplyId
-                ? { ...m, id: lastAssistant.id, content: lastAssistant.content, mode: lastAssistant.mode || undefined }
+                ? { ...m, id: replyAfterUser.id, content: replyAfterUser.content, mode: replyAfterUser.mode || undefined }
                 : m,
             ),
           );
