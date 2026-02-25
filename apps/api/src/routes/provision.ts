@@ -715,15 +715,28 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       let containerHost = employee.containerHost;
       const containerPort = employee.containerPort;
 
-      // Inject SOUL.md as system prompt if not already present in messages
+      // Inject SOUL.md + memory.md as system prompt if not already present in messages
       let chatMessages = body.messages;
       const hasSystemMsg = chatMessages.some((m) => m.role === "system");
       if (!hasSystemMsg) {
-        const soulPath = `/opt/ai-employees/openclaw-configs/${id}/SOUL.md`;
+        const configDir = `/opt/ai-employees/openclaw-configs/${id}`;
+        const soulPath = `${configDir}/SOUL.md`;
         try {
-          const soulMd = readFileSync(soulPath, "utf-8");
-          if (soulMd.trim()) {
-            chatMessages = [{ role: "system", content: soulMd }, ...chatMessages];
+          let systemContent = readFileSync(soulPath, "utf-8");
+
+          // Append memory.md if it exists — persistent context the employee maintains
+          const memoryPath = `${configDir}/workspace/memory.md`;
+          try {
+            const memoryMd = readFileSync(memoryPath, "utf-8");
+            if (memoryMd.trim()) {
+              systemContent += "\n\n---\n\n# Your Memory (from memory.md)\n\nThe following is your persistent memory — context you wrote down to carry over between sessions:\n\n" + memoryMd;
+            }
+          } catch {
+            // memory.md doesn't exist yet — that's fine, employee will create it
+          }
+
+          if (systemContent.trim()) {
+            chatMessages = [{ role: "system", content: systemContent }, ...chatMessages];
           }
         } catch {
           // SOUL.md not found — fall through without system prompt

@@ -507,8 +507,25 @@ export class SlackProxy {
 
     // Fetch recent conversation history from Slack so the employee has context
     const history = await this.fetchChannelHistory(channelId, message.ts);
-    // Build messages array: history + current message (with authority tag)
+
+    // Inject memory.md as system context if it exists — persistent memory the employee maintains
+    const systemMessages: Array<{ role: "system"; content: string }> = [];
+    const memoryPath = `/opt/ai-employees/openclaw-configs/${employee.id}/workspace/memory.md`;
+    try {
+      const memoryMd = readFileSync(memoryPath, "utf-8");
+      if (memoryMd.trim()) {
+        systemMessages.push({
+          role: "system",
+          content: "# Your Memory (from memory.md)\n\nThe following is your persistent memory — context you wrote down to carry over between sessions:\n\n" + memoryMd,
+        });
+      }
+    } catch {
+      // memory.md doesn't exist yet — that's fine
+    }
+
+    // Build messages array: memory context + history + current message (with authority tag)
     const messages = [
+      ...systemMessages,
       ...history,
       { role: "user" as const, content: taggedText },
     ];
