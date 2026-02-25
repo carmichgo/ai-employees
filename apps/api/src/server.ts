@@ -48,7 +48,7 @@ export async function buildServer(config: Env) {
   await fastify.register(employeeRoutes);
   await fastify.register(dashboardRoutes);
   await fastify.register(provisionRoutes);
-  await fastify.register(fileRoutes, { prefix: "/internal" });
+  await fastify.register(fileRoutes);
   await fastify.register(triggerRoutes);
   await fastify.register(taskRoutes);
   await fastify.register(employeeGatewayRoutes);
