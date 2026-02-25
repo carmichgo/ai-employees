@@ -77,13 +77,23 @@ export function generateOpenClawConfig(
   const toolsAllow = buildToolAllow(employee.toolsConfig);
   const agentsList: Record<string, unknown>[] = [];
 
+  // Build model config with failover — if the primary provider has an outage,
+  // agents fall through to the next model instead of going completely dead
+  const primaryModel = employee.modelConfig.primary;
+  const modelWithFallbacks = {
+    primary: primaryModel,
+    fallbacks: primaryModel === OPUS_MODEL
+      ? [SONNET_MODEL]
+      : [OPUS_MODEL],
+  };
+
   if (isExpertTier) {
     // Main orchestrator — runs on Opus, chats with user, decides task routing
     agentsList.push({
       id: agentId,
       default: true,
       workspace: "/home/node/.openclaw/workspace",
-      model: { primary: OPUS_MODEL },
+      model: { primary: OPUS_MODEL, fallbacks: [SONNET_MODEL] },
       identity: {
         name: employee.name,
         emoji: employee.emoji || "🤖",
@@ -95,7 +105,7 @@ export function generateOpenClawConfig(
     agentsList.push({
       id: `${agentId}-fast`,
       workspace: "/home/node/.openclaw/workspace",
-      model: { primary: SONNET_MODEL },
+      model: { primary: SONNET_MODEL, fallbacks: [OPUS_MODEL] },
       identity: {
         name: `${employee.name} (Fast)`,
         emoji: "⚡",
@@ -103,12 +113,12 @@ export function generateOpenClawConfig(
       tools: { allow: toolsAllow },
     });
   } else {
-    // Junior/Senior — single agent with their tier's model
+    // Junior/Senior — single agent with their tier's model + failover
     agentsList.push({
       id: agentId,
       default: true,
       workspace: "/home/node/.openclaw/workspace",
-      model: employee.modelConfig,
+      model: modelWithFallbacks,
       identity: {
         name: employee.name,
         emoji: employee.emoji || "🤖",
@@ -144,14 +154,61 @@ export function generateOpenClawConfig(
       entries: buildPluginEntries(),
     },
 
+    // Logging — info level with sensitive data redaction in tool outputs
+    logging: {
+      level: "info",
+      consoleLevel: "info",
+      consoleStyle: "pretty",
+      redactSensitive: "tools",
+    },
+
+    // Cron scheduler — allows agents to create their own scheduled jobs
+    cron: {
+      enabled: true,
+      maxConcurrentRuns: 2,
+      sessionRetention: "24h",
+      runLog: { maxBytes: "2mb", keepLines: 2000 },
+    },
+
+    // Message queue — batch rapid messages instead of processing each individually
+    messages: {
+      queue: {
+        mode: "collect",
+        debounceMs: 2000,
+        cap: 20,
+        drop: "summarize",
+      },
+      inbound: { debounceMs: 2000 },
+    },
+
+    // Session management — daily reset + disk cleanup to prevent unbounded growth
+    session: {
+      dmScope: "main",
+      reset: { mode: "daily", atHour: 4 },
+      maintenance: {
+        mode: "enforce",
+        pruneAfter: "30d",
+        maxEntries: 500,
+        rotateBytes: "10mb",
+        maxDiskBytes: "500mb",
+      },
+    },
+
+    // Disable mDNS discovery — unnecessary in Docker containers
+    discovery: { mdns: { mode: "off" } },
+
     agents: {
       defaults: {
-        model: { primary: employee.modelConfig.primary },
+        model: modelWithFallbacks,
         // Sandbox OFF — the Docker container itself IS the sandbox
         sandbox: { mode: "off" },
         // SOUL.md can be large (25K+) — raise the per-file bootstrap limit from 20K default
         bootstrapMaxChars: 50000,
         bootstrapTotalMaxChars: 200000,
+        // 15 min timeout — complex autonomous tasks (web research, doc creation) need more
+        // than the default 10 min
+        timeoutSeconds: 900,
+
         // Heartbeat — wakes the agent every 15 min to check for pending work.
         // Without this, the agent goes idle after each conversation turn and
         // only works again when someone sends a message or a cron trigger fires.
@@ -159,9 +216,75 @@ export function generateOpenClawConfig(
           every: "15m",
           target: "none",
           ackMaxChars: 300,
+          session: "main",
+          activeHours: {
+            start: "06:00",
+            end: "23:59",
+            timezone: "America/New_York",
+          },
+        },
+
+        // Compaction — auto-flush working state to memory before context gets compacted.
+        // Without this, crucial task context and progress notes get lost during long sessions.
+        compaction: {
+          mode: "safeguard",
+          reserveTokensFloor: 24000,
+          memoryFlush: {
+            enabled: true,
+            softThresholdTokens: 6000,
+            systemPrompt: "Session nearing compaction. Store durable memories now.",
+            prompt: "Write lasting notes to memory/session-notes.md. Include: current task state, decisions made, progress, and anything you need to remember after compaction.",
+          },
+        },
+
+        // Context pruning — trim old tool outputs (browser snapshots, web fetches, exec results)
+        // to prevent premature compaction and save tokens/cost.
+        contextPruning: {
+          mode: "cache-ttl",
+          ttl: "1h",
+          keepLastAssistants: 3,
+          softTrimRatio: 0.3,
+          hardClearRatio: 0.5,
+          minPrunableToolChars: 50000,
+          softTrim: { maxChars: 4000, headChars: 1500, tailChars: 1500 },
+          hardClear: { enabled: true, placeholder: "[Old tool result content cleared]" },
         },
       },
       list: agentsList,
+    },
+
+    // Tool-level settings
+    tools: {
+      // Loop detection — prevent agents from burning tokens in infinite retry loops
+      loopDetection: {
+        enabled: true,
+        historySize: 30,
+        warningThreshold: 10,
+        criticalThreshold: 20,
+        globalCircuitBreakerThreshold: 30,
+        detectors: {
+          genericRepeat: true,
+          knownPollNoProgress: true,
+          pingPong: true,
+        },
+      },
+      // Exec — longer timeout for builds/data processing, notify on background job completion
+      exec: {
+        backgroundMs: 10000,
+        timeoutSec: 1800,
+        cleanupMs: 1800000,
+        notifyOnExit: true,
+        notifyOnExitEmptySuccess: false,
+      },
+      // Web fetch — caching to avoid redundant fetches
+      web: {
+        fetch: {
+          enabled: true,
+          maxChars: 50000,
+          timeoutSeconds: 30,
+          cacheTtlMinutes: 15,
+        },
+      },
     },
 
     // Only include channels/bindings if there are real integrations
