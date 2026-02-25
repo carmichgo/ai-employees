@@ -200,6 +200,31 @@ export function createBackendClient(config: BackendConfig) {
       return res.json();
     },
 
+    async regenerateConfigs() {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 120000); // 2 min timeout
+      try {
+        const res = await fetch(`${config.url}/internal/regenerate-configs`, {
+          method: "POST",
+          signal: controller.signal,
+          headers: {
+            "Content-Type": "application/json",
+            "x-interservice-secret": config.secret,
+          },
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({ error: res.statusText }));
+          throw new Error(body.error || `Regenerate configs failed: ${res.status}`);
+        }
+        return res.json();
+      } catch (err: any) {
+        if (err.name === "AbortError") throw new Error("Regenerate configs timed out (2 min)");
+        throw err;
+      } finally {
+        clearTimeout(timeout);
+      }
+    },
+
     async hotUpdate(branch?: string) {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 300000); // 5 min timeout
