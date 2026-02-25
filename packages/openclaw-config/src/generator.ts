@@ -152,6 +152,14 @@ export function generateOpenClawConfig(
         // SOUL.md can be large (25K+) — raise the per-file bootstrap limit from 20K default
         bootstrapMaxChars: 50000,
         bootstrapTotalMaxChars: 200000,
+        // Heartbeat — wakes the agent every 15 min to check for pending work.
+        // Without this, the agent goes idle after each conversation turn and
+        // only works again when someone sends a message or a cron trigger fires.
+        heartbeat: {
+          every: "15m",
+          target: "none",
+          ackMaxChars: 300,
+        },
       },
       list: agentsList,
     },
@@ -920,6 +928,47 @@ export function generateSoulMd(employee: EmployeeInput): string {
   parts.push("");
 
   return parts.join("\n");
+}
+
+/**
+ * Generate the HEARTBEAT.md file that drives the autonomous work loop.
+ *
+ * OpenClaw's heartbeat system wakes the agent every N minutes and sends it
+ * this file as a prompt. The agent checks for pending work and either acts
+ * on it or replies HEARTBEAT_OK (which is silently swallowed).
+ *
+ * Without this, employees go idle after each conversation turn — they only
+ * work when someone sends them a message or a cron trigger fires.
+ */
+export function generateHeartbeatMd(): string {
+  return `# Heartbeat — Autonomous Work Loop
+
+When you receive this heartbeat prompt, follow these steps IN ORDER:
+
+## 1. Check your task board
+\`\`\`bash
+curl -s "$BLITZ_API_URL/employee/tasks" \\
+  -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" | jq '.tasks[] | {id, title, status, priority}'
+\`\`\`
+
+## 2. Act on what you find
+
+- **in_progress tasks** → Continue working on them. Add a progress comment.
+- **pending tasks** → Pick the highest-priority one, set it to in_progress, and start working.
+- **blocked tasks** → Check if the blocker is resolved. If yes, unblock and resume.
+- **Nothing to do** → Reply HEARTBEAT_OK
+
+## 3. Work until done (or next heartbeat)
+
+Do not stop after one small step. Complete the task fully, or make substantial progress before stopping. If you finish a task, check for the next one immediately — do not wait for the next heartbeat.
+
+## Rules
+
+- NEVER reply HEARTBEAT_OK if you have pending or in_progress tasks
+- ALWAYS update task status and add progress comments as you work
+- If a task requires waiting (e.g. for a human response), mark it blocked with a comment explaining what you need
+- If you discover new work while working, create a task for it
+`;
 }
 
 /** Generate an email address for the employee */

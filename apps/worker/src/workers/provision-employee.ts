@@ -20,6 +20,7 @@ import {
   generateVideoScript,
   generateDocxSkill,
   generateDocxInstallScript,
+  generateHeartbeatMd,
   type EmployeeInput,
 } from "@ai-employees/openclaw-config";
 import { docker, ensureNetwork, ensureImage } from "../docker/client.js";
@@ -147,12 +148,16 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     mkdirSync(`${configDir}/skills/team-communication`, { recursive: true });
     mkdirSync(`${configDir}/skills/task-management`, { recursive: true });
     mkdirSync(`${configDir}/skills/docx`, { recursive: true });
+    const heartbeatMd = generateHeartbeatMd();
     writeFileSync(`${configDir}/openclaw.json`, JSON.stringify(config, null, 2));
     writeFileSync(`${configDir}/SOUL.md`, soulMd);
+    writeFileSync(`${configDir}/HEARTBEAT.md`, heartbeatMd);
     writeFileSync(`${configDir}/workspace/SOUL.md`, soulMd);
+    writeFileSync(`${configDir}/workspace/HEARTBEAT.md`, heartbeatMd);
     // OpenClaw creates workspace-main at runtime — write there too if it exists
     if (existsSync(`${configDir}/workspace-main`)) {
       writeFileSync(`${configDir}/workspace-main/SOUL.md`, soulMd);
+      writeFileSync(`${configDir}/workspace-main/HEARTBEAT.md`, heartbeatMd);
     }
 
     // Write credential manager CLI script

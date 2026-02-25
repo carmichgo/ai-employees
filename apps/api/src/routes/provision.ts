@@ -471,6 +471,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
           generateImageScript: genImage,
           generateVideoScript: genVideo,
           generateDocxSkill: genDocx,
+          generateHeartbeatMd: genHeartbeat,
         } = await import("@ai-employees/openclaw-config");
 
         const company = await db.query.companies.findFirst({ where: eq(companies.id, emp.companyId) });
@@ -499,12 +500,16 @@ export async function provisionRoutes(fastify: FastifyInstance) {
         const config = genConfig(employeeInput, emp.gatewayToken!, soulMd);
 
         // Write updated configs
+        const heartbeatMd = genHeartbeat();
         writeFileSync(`${configDir}/openclaw.json`, JSON.stringify(config, null, 2));
         writeFileSync(`${configDir}/SOUL.md`, soulMd);
+        writeFileSync(`${configDir}/HEARTBEAT.md`, heartbeatMd);
         writeFileSync(`${configDir}/workspace/SOUL.md`, soulMd);
+        writeFileSync(`${configDir}/workspace/HEARTBEAT.md`, heartbeatMd);
         // OpenClaw creates workspace-main at runtime — must update there too
         if (existsSync(`${configDir}/workspace-main`)) {
           writeFileSync(`${configDir}/workspace-main/SOUL.md`, soulMd);
+          writeFileSync(`${configDir}/workspace-main/HEARTBEAT.md`, heartbeatMd);
         }
         writeFileSync(`${configDir}/cred.js`, genCred(), { mode: 0o755 });
 
@@ -596,6 +601,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
           generateImageScript: genImage,
           generateVideoScript: genVideo,
           generateDocxSkill: genDocx,
+          generateHeartbeatMd: genHeartbeat,
         } = await import("@ai-employees/openclaw-config");
 
         const company = await db.query.companies.findFirst({ where: eq(companies.id, emp.companyId) });
