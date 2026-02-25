@@ -139,7 +139,7 @@ export async function buildServer(config: Env) {
       echo "[$(date -Iseconds)] Regenerating configs with new code..." >> ${logFile} && \
       REGEN_HTTP=$(curl -s -o /tmp/regen-output.txt -w "%{http_code}" -X POST http://localhost:3001/internal/regenerate-configs \
         -H "x-interservice-secret: ${secret}" \
-        -H "Content-Type: application/json" 2>> ${logFile}) && \
+        -H "Content-Type: application/json" -d '{}' 2>> ${logFile}) && \
       echo "[$(date -Iseconds)] Regen response: HTTP $REGEN_HTTP" >> ${logFile} && \
       cat /tmp/regen-output.txt >> ${logFile} 2>&1 && \
       echo "" >> ${logFile} && \
