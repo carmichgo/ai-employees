@@ -523,7 +523,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
         const config = genConfig(employeeInput, emp.gatewayToken!, soulMd);
 
         // Write updated configs
-        const heartbeatMd = genHeartbeat(employeeInput);
+        const heartbeatMd = genHeartbeat();
         writeFileSync(`${configDir}/openclaw.json`, JSON.stringify(config, null, 2));
         writeFileSync(`${configDir}/SOUL.md`, soulMd);
         writeFileSync(`${configDir}/HEARTBEAT.md`, heartbeatMd);
@@ -652,7 +652,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
         const soulMd = genSoul(employeeInput);
         const config = genConfig(employeeInput, emp.gatewayToken!, soulMd);
 
-        const heartbeatMd = genHeartbeat(employeeInput);
+        const heartbeatMd = genHeartbeat();
         writeFileSync(`${configDir}/openclaw.json`, JSON.stringify(config, null, 2));
         writeFileSync(`${configDir}/SOUL.md`, soulMd);
         writeFileSync(`${configDir}/HEARTBEAT.md`, heartbeatMd);
@@ -707,7 +707,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     return { success: errors.length === 0, employeesUpdated: activeEmps.length, steps, errors };
   });
 
-  // POST /internal/employees/:id/chat — proxy chat to container (streaming SSE)
+  // POST /internal/employees/:id/chat — proxy chat to container or call Anthropic directly
   fastify.post<{ Params: { id: string } }>("/internal/employees/:id/chat", async (request, reply) => {
     const { id } = request.params;
     const body = request.body as {
@@ -741,20 +741,25 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     };
 
     // If container is available, route through it (OpenClaw).
+    // The gateway's /v1/chat/completions is a pass-through — it does NOT inject
+    // SOUL.md as a system prompt. So we read SOUL.md from disk and prepend it
+    // as a system message so the AI knows who it is. The Vercel route also
+    // injects a system prompt from the DB (belt-and-suspenders: if either
+    // already has a system message, the first one wins).
     if (employee.containerHost && employee.containerPort) {
       let containerHost = employee.containerHost;
       const containerPort = employee.containerPort;
 
       // Inject SOUL.md + memory.md as system prompt if not already present in messages
-      let chatMsgs = body.messages;
-      const hasSystemMsg = chatMsgs.some((m) => m.role === "system");
+      let chatMessages = body.messages;
+      const hasSystemMsg = chatMessages.some((m) => m.role === "system");
       if (!hasSystemMsg) {
         const configDir = `/opt/ai-employees/openclaw-configs/${id}`;
         const soulPath = `${configDir}/SOUL.md`;
         try {
           let systemContent = readFileSync(soulPath, "utf-8");
 
-          // Append memory.md if it exists
+          // Append memory.md if it exists — persistent context the employee maintains
           const memoryPath = `${configDir}/workspace/memory.md`;
           try {
             const memoryMd = readFileSync(memoryPath, "utf-8");
@@ -762,22 +767,22 @@ export async function provisionRoutes(fastify: FastifyInstance) {
               systemContent += "\n\n---\n\n# Your Memory (from memory.md)\n\nThe following is your persistent memory — context you wrote down to carry over between sessions:\n\n" + memoryMd;
             }
           } catch {
-            // memory.md doesn't exist yet
+            // memory.md doesn't exist yet — that's fine, employee will create it
           }
 
           if (systemContent.trim()) {
-            chatMsgs = [{ role: "system", content: systemContent }, ...chatMsgs];
+            chatMessages = [{ role: "system", content: systemContent }, ...chatMessages];
           }
         } catch {
+          // SOUL.md not found — fall through without system prompt
           console.log(`[chat-proxy] SOUL.md not found at ${soulPath}, proceeding without system prompt`);
         }
       }
 
-      const model = (employee.modelConfig as { primary?: string })?.primary || "anthropic/claude-sonnet-4-5-20250929";
-
-      const sendStreamToContainer = async (host: string) => {
+      const sendToContainer = async (host: string) => {
         const containerUrl = `http://${host}:${containerPort}/v1/chat/completions`;
-        console.log(`[chat-proxy] Streaming from ${containerUrl} model=${model} msgs=${chatMsgs.length}`);
+        const model = (employee.modelConfig as { primary?: string })?.primary || "anthropic/claude-sonnet-4-5-20250929";
+        console.log(`[chat-proxy] Sending to ${containerUrl} model=${model} msgs=${chatMessages.length} token=${employee.gatewayToken ? "set" : "MISSING"}`);
         return fetch(containerUrl, {
           method: "POST",
           headers: {
@@ -786,24 +791,42 @@ export async function provisionRoutes(fastify: FastifyInstance) {
           },
           body: JSON.stringify({
             model,
-            messages: chatMsgs,
-            stream: true,
+            messages: chatMessages,
           }),
         });
       };
 
-      // Try to connect, with retry logic for container restarts
-      let res: Response | null = null;
       try {
+        // Track request sent
         try { await db.update(employees).set({ lastRequestSentAt: new Date() } as any).where(eq(employees.id, id)); } catch {}
-        res = await sendStreamToContainer(containerHost);
+
+        let res = await sendToContainer(containerHost);
+
+        // Track response received
+        try { await db.update(employees).set({ lastResponseAt: new Date() } as any).where(eq(employees.id, id)); } catch {}
+
+        if (!res.ok) {
+          const err = await res.text();
+          return reply.status(res.status).send({ error: `OpenClaw error: ${err}` });
+        }
+        const data = await res.json() as { choices?: { message?: { content?: string } }[]; usage?: unknown };
+        const replyText = data.choices?.[0]?.message?.content || "No response";
+
+        // Always persist — this is the key fix. The dashboard may have timed
+        // out and disconnected, but this handler on the droplet keeps running.
+        // By saving here, the reply is never lost.
+        await saveReply(replyText, "live");
+
+        return { reply: replyText, mode: "live", usage: data.usage };
       } catch (err: unknown) {
+        // Log the exact error for debugging
         const errDetail = err instanceof Error
           ? { message: err.message, code: (err as any).code, cause: (err as any).cause?.message }
           : String(err);
         console.error(`[chat-proxy] Initial fetch failed for ${employee.containerName} at ${containerHost}:${containerPort}:`, errDetail);
 
-        // Retry with backoff
+        // Container unreachable — IP may have changed after docker restart,
+        // or the gateway may still be starting up. Retry with backoff.
         if (employee.containerName) {
           try {
             const newIp = execSync(
@@ -811,115 +834,55 @@ export async function provisionRoutes(fastify: FastifyInstance) {
               { timeout: 5000 },
             ).toString().trim();
 
+            // Also check if the container is actually running
             const containerState = execSync(
               `docker inspect --format '{{.State.Status}}' ${employee.containerName}`,
               { timeout: 5000 },
             ).toString().trim();
+            console.log(`[chat-proxy] Container ${employee.containerName}: state=${containerState}, ip=${newIp}, dbIp=${containerHost}`);
 
             if (containerState !== "running") {
+              console.error(`[chat-proxy] Container ${employee.containerName} is ${containerState}, not running`);
               return reply.status(503).send({ error: `Container is ${containerState} — please wait for it to restart` });
             }
 
             const retryIp = (newIp && newIp !== containerHost) ? newIp : containerHost;
             if (newIp && newIp !== containerHost) {
+              console.log(`[chat-proxy] IP changed for ${employee.containerName}: ${containerHost} -> ${newIp}`);
               await db.update(employees).set({ containerHost: newIp, updatedAt: new Date() }).where(eq(employees.id, id));
             }
 
+            // Retry up to 3 times with delays — the gateway may still be starting
             for (let attempt = 1; attempt <= 3; attempt++) {
-              await new Promise((r) => setTimeout(r, attempt * 2000));
+              await new Promise((r) => setTimeout(r, attempt * 2000)); // 2s, 4s, 6s
               console.log(`[chat-proxy] Retry ${attempt}/3 for ${employee.containerName} at ${retryIp}:${containerPort}`);
               try {
-                res = await sendStreamToContainer(retryIp);
-                break;
+                const retryRes = await sendToContainer(retryIp);
+                if (!retryRes.ok) {
+                  const retryErr = await retryRes.text();
+                  return reply.status(retryRes.status).send({ error: `OpenClaw error: ${retryErr}` });
+                }
+                const data = await retryRes.json() as { choices?: { message?: { content?: string } }[]; usage?: unknown };
+                const retryReplyText = data.choices?.[0]?.message?.content || "No response";
+                await saveReply(retryReplyText, "live");
+                return { reply: retryReplyText, mode: "live", usage: data.usage };
               } catch (retryErr: unknown) {
-                const detail = retryErr instanceof Error ? retryErr.message : String(retryErr);
-                console.error(`[chat-proxy] Retry ${attempt}/3 failed: ${detail}`);
+                const retryDetail = retryErr instanceof Error ? retryErr.message : String(retryErr);
+                console.error(`[chat-proxy] Retry ${attempt}/3 failed: ${retryDetail}`);
               }
             }
           } catch (inspectErr: unknown) {
-            const detail = inspectErr instanceof Error ? inspectErr.message : String(inspectErr);
-            console.error(`[chat-proxy] Docker inspect failed: ${detail}`);
+            const inspectDetail = inspectErr instanceof Error ? inspectErr.message : String(inspectErr);
+            console.error(`[chat-proxy] Docker inspect failed: ${inspectDetail}`);
           }
         }
 
-        if (!res) {
-          const message = err instanceof Error ? err.message : String(err);
-          return reply.status(502).send({ error: `Container unreachable: ${message}` });
-        }
+        const message = err instanceof Error ? err.message : String(err);
+        return reply.status(502).send({ error: `Container unreachable: ${message}` });
       }
-
-      if (!res!.ok) {
-        const err = await res!.text();
-        return reply.status(res!.status).send({ error: `OpenClaw error: ${err}` });
-      }
-
-      try { await db.update(employees).set({ lastResponseAt: new Date() } as any).where(eq(employees.id, id)); } catch {}
-
-      // Check if the response is actually an SSE stream
-      const contentType = res!.headers.get("content-type") || "";
-      if (!contentType.includes("text/event-stream") || !res!.body) {
-        // Fallback: non-streaming response (gateway doesn't support streaming)
-        const data = await res!.json() as { choices?: { message?: { content?: string } }[]; usage?: unknown };
-        const replyText = data.choices?.[0]?.message?.content || "No response";
-        await saveReply(replyText, "live");
-        return { reply: replyText, mode: "live", usage: data.usage };
-      }
-
-      // Stream SSE from container to the Vercel caller.
-      // We pipe through the SSE events, accumulate the full text, and save to DB when done.
-      // hijack() tells Fastify to stop managing the response — we write directly to the socket.
-      // Without this, Fastify can override our Content-Type header (causing the Vercel route
-      // to miss the text/event-stream detection and try to parse SSE as JSON).
-      reply.hijack();
-      reply.raw.writeHead(200, {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
-      });
-
-      let fullText = "";
-      const reader = res!.body.getReader();
-      const decoder = new TextDecoder();
-
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          const chunk = decoder.decode(value, { stream: true });
-          // Forward the raw SSE chunk to the caller
-          reply.raw.write(chunk);
-
-          // Parse SSE lines to accumulate the full text for DB persistence
-          const lines = chunk.split("\n");
-          for (const line of lines) {
-            if (!line.startsWith("data: ")) continue;
-            const data = line.slice(6).trim();
-            if (data === "[DONE]") continue;
-            try {
-              const parsed = JSON.parse(data);
-              const delta = parsed.choices?.[0]?.delta?.content;
-              if (delta) fullText += delta;
-            } catch {
-              // Not valid JSON — skip
-            }
-          }
-        }
-      } catch (streamErr) {
-        console.error(`[chat-proxy] Stream error:`, streamErr);
-      }
-
-      // End the SSE stream
-      reply.raw.end();
-
-      // Persist the full response to DB
-      if (fullText) {
-        await saveReply(fullText, "live");
-      }
-      return;
     }
 
-    // No container available
+    // No container available — employee must have a running container to chat
     return reply.status(503).send({
       error: `${employee.name} is not available — no container is running. The employee needs to be provisioned or reprovisioned.`,
     });
