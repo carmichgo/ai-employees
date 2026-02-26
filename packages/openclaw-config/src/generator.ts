@@ -357,6 +357,19 @@ export function generateSoulMd(employee: EmployeeInput): string {
   parts.push("  -d '{\"status\": \"completed\", \"comment\": \"Summary of what was done and the result.\"}'");
   parts.push("```");
   parts.push("");
+  parts.push("**Read task comments (your full work history and manager feedback):**");
+  parts.push("```bash");
+  parts.push("# The task list includes recentComments — always read them");
+  parts.push("curl -s \"$BLITZ_API_URL/employee/tasks\" \\");
+  parts.push("  -H \"Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN\" | jq '.tasks[] | {id, title, status, recentComments}'");
+  parts.push("");
+  parts.push("# Full comment history for a specific task");
+  parts.push("curl -s \"$BLITZ_API_URL/employee/tasks/$TASK_ID/comments\" \\");
+  parts.push("  -H \"Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN\" | jq '.comments[]'");
+  parts.push("```");
+  parts.push("");
+  parts.push("**IMPORTANT — When you receive credentials, instructions, or key info from your manager (via comments, chat, or Slack), IMMEDIATELY save it to ~/workspace/memory.md.** Your conversation context resets between sessions. If you don't write it to memory, you WILL forget it and ask again — which wastes your manager's time.");
+  parts.push("");
   parts.push("**Priority:** `low` | `medium` | `high` | `urgent`");
   parts.push("**Status:** `pending` | `in_progress` | `completed` | `blocked`");
   parts.push("**Category:** `research` | `marketing` | `engineering` | `content` | `admin` | `support` | `outreach`");
@@ -1159,29 +1172,43 @@ export function generateHeartbeatMd(employee?: { name?: string; jobTitle?: strin
 
 When you receive this heartbeat prompt, follow these steps IN ORDER:
 
-## 1. Check your task board
+## 1. Check your task board (WITH COMMENTS — this is your context)
 \`\`\`bash
 curl -s "$BLITZ_API_URL/employee/tasks" \\
-  -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" | jq '.tasks[] | {id, title, status, priority}'
+  -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" | jq '.tasks[] | {id, title, status, priority, recentComments}'
+\`\`\`
+
+**CRITICAL: The task list now includes \`recentComments\` for each task.** These comments contain your full work history — what you've done, what your manager told you, credentials they shared, unblock instructions, etc. **READ THE COMMENTS CAREFULLY before acting on any task.** They are your memory of what happened.
+
+If you need the full comment history for a specific task:
+\`\`\`bash
+curl -s "$BLITZ_API_URL/employee/tasks/<TASK_ID>/comments" \\
+  -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" | jq '.comments[] | {authorType, authorName, content}'
 \`\`\`
 
 ## 2. Act on what you find
 
-- **in_progress tasks** → Continue working on them. Add a progress comment only if you've made actual progress since the last comment — do NOT repeat the same status.
+- **in_progress tasks** → **Read the comments first** to remember where you left off. Continue working. Add a progress comment only if you've made actual progress since the last comment — do NOT repeat the same status.
 - **pending tasks** → Pick the highest-priority one, set it to in_progress, and start working.
-- **blocked tasks** → Check if the blocker is resolved. If yes, unblock and resume. If still blocked and you have NOT already notified your manager about this specific blocker, notify them via \`/employee/notify-manager\`. Do NOT add a duplicate comment repeating the same blocker — only comment if something has changed.
+- **blocked tasks** → **Read the comments carefully** — your manager may have already provided what you need (credentials, instructions, approvals). If the blocker is resolved based on the comments, move to \`in_progress\` and continue. If still blocked and you have NOT already notified your manager about this specific blocker, notify them via \`/employee/notify-manager\`. Do NOT add a duplicate comment repeating the same blocker — only comment if something has changed.
 ${nothingToDo}
 
 ## 3. Work until done (or next heartbeat)
 
 Do not stop after one small step. Complete the task fully, or make substantial progress before stopping. If you finish a task, check for the next one immediately — do not wait for the next heartbeat.${isProactive ? " Keep the momentum going — idle time is wasted time." : ""}
 
+## 4. Save critical context to memory
+
+Before you finish this heartbeat cycle, **update ~/workspace/memory.md** with anything important you learned, decided, or received (credentials, instructions, progress). Your conversation history may be lost between heartbeats — memory.md is the only thing that persists reliably.
+
 ## Rules
 
 - NEVER reply HEARTBEAT_OK if you have pending or in_progress tasks
+- ALWAYS read task comments before resuming work — they contain context you may have forgotten
 - ALWAYS update task status as you work. Add progress comments only when there is genuine new progress — do NOT add a comment just because a heartbeat fired if nothing has changed
 - If a task requires waiting (e.g. for a human response), mark it blocked with a comment explaining what you need, then notify your manager via \`/employee/notify-manager\` so they know you're waiting on them
 - If you discover new work while working, create a task for it
+- ALWAYS save important context (credentials, decisions, progress) to ~/workspace/memory.md
 `;
 }
 

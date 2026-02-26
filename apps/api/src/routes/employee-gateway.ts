@@ -7,7 +7,7 @@
  */
 import type { FastifyInstance } from "fastify";
 import { execSync } from "node:child_process";
-import { eq, and, ne, desc } from "drizzle-orm";
+import { eq, and, ne, desc, sql } from "drizzle-orm";
 import { db, employees, tasks, taskComments, chatMessages, users, companies } from "@ai-employees/db";
 
 /** Authenticate an employee by their gateway token. Returns the employee or sends an error. */
@@ -209,7 +209,7 @@ export async function employeeGatewayRoutes(fastify: FastifyInstance) {
 
   // ─── Task Management ───────────────────────────────────────────────
 
-  // GET /employee/tasks — list this employee's tasks
+  // GET /employee/tasks — list this employee's tasks (includes recent comments)
   fastify.get("/employee/tasks", async (request, reply) => {
     const auth = await authenticateEmployee(request, reply);
     if ("error" in auth) return auth.error;
@@ -233,7 +233,42 @@ export async function employeeGatewayRoutes(fastify: FastifyInstance) {
       .where(eq(tasks.employeeId, employee.id))
       .orderBy(desc(tasks.createdAt));
 
-    return { tasks: myTasks };
+    // Fetch recent comments for non-completed tasks so the employee has full
+    // context (e.g. manager replies, credentials shared, unblock instructions).
+    // This prevents context loss across heartbeats / session resets.
+    const activeTaskIds = myTasks
+      .filter((t) => t.status !== "completed")
+      .map((t) => t.id);
+
+    const commentsByTask: Record<string, Array<{ authorType: string; authorName: string; content: string; createdAt: Date | null }>> = {};
+    if (activeTaskIds.length > 0) {
+      const allComments = await db
+        .select({
+          taskId: taskComments.taskId,
+          authorType: taskComments.authorType,
+          authorName: taskComments.authorName,
+          content: taskComments.content,
+          createdAt: taskComments.createdAt,
+        })
+        .from(taskComments)
+        .where(
+          sql`${taskComments.taskId} IN (${sql.join(activeTaskIds.map((id) => sql`${id}::uuid`), sql`, `)})`,
+        )
+        .orderBy(desc(taskComments.createdAt));
+
+      // Group by task, keep last 10 comments per task
+      for (const c of allComments) {
+        const arr = commentsByTask[c.taskId] || (commentsByTask[c.taskId] = []);
+        if (arr.length < 10) arr.push(c);
+      }
+    }
+
+    const tasksWithComments = myTasks.map((t) => ({
+      ...t,
+      recentComments: (commentsByTask[t.id] || []).reverse(), // chronological
+    }));
+
+    return { tasks: tasksWithComments };
   });
 
   // POST /employee/tasks — create a self-reported task
@@ -327,6 +362,40 @@ export async function employeeGatewayRoutes(fastify: FastifyInstance) {
     }
 
     return { task };
+  });
+
+  // GET /employee/tasks/:taskId/comments — full comment history for a task
+  fastify.get<{ Params: { taskId: string } }>("/employee/tasks/:taskId/comments", async (request, reply) => {
+    const auth = await authenticateEmployee(request, reply);
+    if ("error" in auth) return auth.error;
+    const { employee } = auth;
+
+    const { taskId } = request.params;
+
+    // Verify task belongs to this employee
+    const [existing] = await db
+      .select({ id: tasks.id })
+      .from(tasks)
+      .where(and(eq(tasks.id, taskId), eq(tasks.employeeId, employee.id)))
+      .limit(1);
+
+    if (!existing) {
+      return reply.status(404).send({ error: "Task not found" });
+    }
+
+    const comments = await db
+      .select({
+        id: taskComments.id,
+        authorType: taskComments.authorType,
+        authorName: taskComments.authorName,
+        content: taskComments.content,
+        createdAt: taskComments.createdAt,
+      })
+      .from(taskComments)
+      .where(eq(taskComments.taskId, taskId))
+      .orderBy(taskComments.createdAt);
+
+    return { comments };
   });
 
   // ─── Manager Notification ──────────────────────────────────────────

@@ -12,8 +12,8 @@
  * per employee per 15 minutes to avoid interrupting ongoing work.
  */
 
-import { eq, and, not, sql } from "drizzle-orm";
-import { db, employees, tasks } from "@ai-employees/db";
+import { eq, and, not, sql, desc } from "drizzle-orm";
+import { db, employees, tasks, taskComments } from "@ai-employees/db";
 import { networkInterfaces } from "os";
 
 /** Get all local IPv4 addresses for this machine */
@@ -162,6 +162,53 @@ async function checkEmployeeTasks(employee: {
     return; // Nothing to nudge about
   }
 
+  // Fetch recent comments for all active tasks so the employee has full context.
+  // This prevents the #1 context loss issue: employee forgets what the manager told
+  // them in comments (e.g. credentials, unblock instructions) after a heartbeat.
+  const allTaskIds = [
+    ...pendingTasks.map((t) => t.id),
+    ...staleTasks.map((t) => t.id),
+    ...blockedTasks.map((t) => t.id),
+    ...activeTasks.map((t) => t.id),
+  ];
+  const commentsByTask: Record<string, Array<{ authorType: string; authorName: string; content: string; createdAt: Date | null }>> = {};
+  if (allTaskIds.length > 0) {
+    const recentComments = await db
+      .select({
+        taskId: taskComments.taskId,
+        authorType: taskComments.authorType,
+        authorName: taskComments.authorName,
+        content: taskComments.content,
+        createdAt: taskComments.createdAt,
+      })
+      .from(taskComments)
+      .where(
+        sql`${taskComments.taskId} IN (${sql.join(allTaskIds.map((id) => sql`${id}::uuid`), sql`, `)})`,
+      )
+      .orderBy(desc(taskComments.createdAt));
+
+    for (const c of recentComments) {
+      const arr = commentsByTask[c.taskId] || (commentsByTask[c.taskId] = []);
+      if (arr.length < 5) arr.push(c); // last 5 comments per task
+    }
+    // Reverse to chronological order
+    for (const arr of Object.values(commentsByTask)) arr.reverse();
+  }
+
+  /** Format recent comments for a task as indented text */
+  function formatTaskComments(taskId: string): string {
+    const comments = commentsByTask[taskId];
+    if (!comments?.length) return "";
+    const lines: string[] = ["  **Recent comments:**"];
+    for (const c of comments) {
+      const who = c.authorType === "manager" ? `🔵 ${c.authorName} (manager)` : `${c.authorName}`;
+      // Truncate very long comments to keep the nudge manageable
+      const content = c.content.length > 300 ? c.content.slice(0, 300) + "..." : c.content;
+      lines.push(`  > **${who}:** ${content}`);
+    }
+    return lines.join("\n");
+  }
+
   // Build the message
   const parts: string[] = ["[Task Board Check]", ""];
   parts.push("Review your task board and make sure every task reflects reality. Your task board is the **source of truth** for your work — it must always be accurate and up to date.");
@@ -175,6 +222,8 @@ async function checkEmployeeTasks(employee: {
       if (t.category) line += ` [${t.category}]`;
       if (t.dueDate) line += ` — due ${new Date(t.dueDate).toLocaleDateString()}`;
       parts.push(line);
+      const comments = formatTaskComments(t.id);
+      if (comments) parts.push(comments);
     }
     parts.push("");
     parts.push(`Pick up these tasks — update their status to \`in_progress\` and start working on them.`);
@@ -187,6 +236,8 @@ async function checkEmployeeTasks(employee: {
     for (const t of staleTasks) {
       const mins = Math.floor((Date.now() - new Date(t.updatedAt).getTime()) / 60_000);
       parts.push(`- **${t.title}** (ID: \`${t.id}\`) — last updated ${mins} min ago`);
+      const comments = formatTaskComments(t.id);
+      if (comments) parts.push(comments);
     }
     parts.push("");
     parts.push(`For each stale task: add a **progress comment** describing what you've done and what's next, or mark it \`completed\`/\`blocked\` if appropriate.`);
@@ -199,9 +250,11 @@ async function checkEmployeeTasks(employee: {
     for (const t of blockedTasks) {
       const mins = Math.floor((Date.now() - new Date(t.updatedAt).getTime()) / 60_000);
       parts.push(`- **${t.title}** (ID: \`${t.id}\`) — blocked since ${mins} min ago`);
+      const comments = formatTaskComments(t.id);
+      if (comments) parts.push(comments);
     }
     parts.push("");
-    parts.push(`Check if the blocker has been resolved. If yes, move to \`in_progress\` and continue. If still blocked, add a comment with current status.`);
+    parts.push(`Check if the blocker has been resolved — **read the comments above carefully**, your manager may have already provided what you need. If resolved, move to \`in_progress\` and continue. If still blocked, add a comment with current status.`);
     parts.push("");
   }
 
@@ -210,6 +263,8 @@ async function checkEmployeeTasks(employee: {
     parts.push("");
     for (const t of activeTasks) {
       parts.push(`- **${t.title}** (ID: \`${t.id}\`)`);
+      const comments = formatTaskComments(t.id);
+      if (comments) parts.push(comments);
     }
     parts.push("");
     parts.push(`Make sure these still reflect what you're working on. Add a progress comment if you haven't recently, or mark \`completed\` if done.`);
