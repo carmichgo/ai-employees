@@ -198,7 +198,7 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
       Cmd: ["node", "openclaw.mjs", "gateway", "--bind", "lan", "--allow-unconfigured"],
       Env: [
         `HOME=/home/node`,
-        `NODE_OPTIONS=--max-old-space-size=1536`,
+        `NODE_OPTIONS=--max-old-space-size=${getNodeHeapForTier(tier)}`,
         `OPENCLAW_GATEWAY_TOKEN=${employee.gatewayToken}`,
         `ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}`,
         ...(GEMINI_API_KEY ? [`GEMINI_API_KEY=${GEMINI_API_KEY}`] : []),
@@ -224,6 +224,9 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
         NetworkMode: OPENCLAW_NETWORK,
         Memory: parseMemory(resources.memory),
         NanoCpus: parseCpus(resources.cpus),
+        // Chromium uses /dev/shm for tab rendering. Docker defaults it to 64MB which
+        // causes Chromium to crash with SIGBUS / "Aw, Snap!" on any non-trivial page.
+        ShmSize: 512 * 1024 * 1024, // 512MB
         RestartPolicy: { Name: "unless-stopped" },
       },
       Labels: {
@@ -483,6 +486,18 @@ async function waitForGateway(host: string, port: number, timeoutMs: number): Pr
     await new Promise((r) => setTimeout(r, interval));
   }
   throw new Error(`Gateway at ${host}:${port} did not respond within ${timeoutMs}ms`);
+}
+
+/** Scale Node.js heap to the tier — leave room for Chromium + OS overhead */
+function getNodeHeapForTier(tier: string): number {
+  // Container memory: junior=2GB, senior/expert=4GB
+  // Reserve ~40% for Chromium + OS, give ~60% to Node
+  const heapByTier: Record<string, number> = {
+    junior: 1024,  // 1GB heap in 2GB container (leaves ~1GB for Chromium)
+    senior: 2048,  // 2GB heap in 4GB container (leaves ~2GB for Chromium)
+    expert: 2048,  // 2GB heap in 4GB container
+  };
+  return heapByTier[tier] || 1024;
 }
 
 function parseMemory(mem: string): number {

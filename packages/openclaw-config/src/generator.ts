@@ -147,12 +147,24 @@ export function generateOpenClawConfig(
       headless: true,
       executablePath: "/usr/local/bin/chromium",
       noSandbox: true,
+      launchArgs: [
+        "--disable-dev-shm-usage",    // use /tmp instead of /dev/shm to avoid SIGBUS crashes
+        "--disable-gpu",               // no GPU in containers
+        "--disable-software-rasterizer",
+        "--single-process",            // reduces memory footprint in constrained containers
+      ],
       profiles: {
         openclaw: {
           driver: "openclaw",
           headless: true,
           executablePath: "/usr/local/bin/chromium",
           noSandbox: true,
+          launchArgs: [
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            "--disable-software-rasterizer",
+            "--single-process",
+          ],
         },
         chrome: {
           driver: "extension",
