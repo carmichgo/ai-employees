@@ -458,6 +458,29 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Admin action: restore-droplets — restore wiped droplet connection info
+    if (action === "restore-droplets") {
+      const restoreData = [
+        { id: "ceb04f93-2fd1-4c5f-8745-ecdb5b52193b", name: "Sarah", dropletId: "554425049", dropletIp: "143.198.31.127", secret: "6bd3b95c7ff3f3643795ec1b771e5df87dcdcdbdb1a74c840c0dc574839f4f91" },
+        { id: "86830514-2a37-4ea1-89e5-7c650a6bdca3", name: "Erick", dropletId: "554259221", dropletIp: "167.99.118.228", secret: "918b19f37a40421c71fc53385e1ba0ad9a8fd215d63ac558cd53e340fed52aff" },
+        { id: "c96fc2da-e10b-4f2d-94b2-b126f3dc5aa7", name: "Jerry", dropletId: "554250026", dropletIp: "159.65.38.6", secret: "0256a23e403e7f121aeade69a5340a3d50800a41feb152354ff2004041670450" },
+        { id: "75b237df-39d1-4c7e-8d5c-de3ae0fcdff8", name: "Adele", dropletId: "554519107", dropletIp: "104.236.126.188", secret: "2f12e8b681bfda43706497bd5719f3b33dc44a2a8ec2e76e30adc64d84de4dc3" },
+      ];
+      for (const r of restoreData) {
+        await sql`
+          UPDATE employees
+          SET droplet_id = ${r.dropletId},
+              droplet_ip = ${r.dropletIp},
+              droplet_status = 'active',
+              interservice_secret = ${r.secret},
+              status = 'provisioning',
+              container_port = 18789
+          WHERE id = ${r.id}
+        `;
+        results.push(`restore: ${r.name} — droplet_ip=${r.dropletIp}, droplet_id=${r.dropletId}`);
+      }
+    }
+
     // Always include employee diagnostics
     const empRows = await sql`
       SELECT id, name, status, droplet_id, droplet_ip, droplet_status,
