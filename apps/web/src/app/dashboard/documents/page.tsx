@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import {
@@ -14,6 +14,9 @@ import {
   FolderOpen,
   Search,
   Users,
+  X,
+  Eye,
+  ExternalLink,
 } from "lucide-react";
 
 type WorkspaceFile = {
@@ -31,6 +34,23 @@ type Employee = {
   jobTitle: string;
   status: string;
 };
+
+const IMAGE_TYPES = ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"];
+const TEXT_TYPES = [
+  "md", "txt", "json", "js", "ts", "py", "sh", "css", "html", "xml",
+  "yaml", "yml", "sql", "csv", "tsv", "log", "env", "toml", "ini",
+  "cfg", "conf", "jsx", "tsx", "rs", "go", "rb", "java", "c", "cpp",
+  "h", "hpp", "makefile", "dockerfile",
+];
+const PDF_TYPES = ["pdf"];
+const VIDEO_TYPES = ["mp4", "webm", "ogg"];
+const AUDIO_TYPES = ["mp3", "wav", "ogg", "m4a"];
+
+function canPreview(type: string): boolean {
+  const t = type.toLowerCase();
+  return IMAGE_TYPES.includes(t) || TEXT_TYPES.includes(t) || PDF_TYPES.includes(t)
+    || VIDEO_TYPES.includes(t) || AUDIO_TYPES.includes(t);
+}
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -53,17 +73,280 @@ function formatDate(iso: string): string {
 }
 
 function getFileIcon(type: string) {
-  const imageTypes = ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"];
   const codeTypes = ["ts", "js", "py", "sh", "json", "yaml", "yml", "css", "html", "xml", "sql"];
   const spreadsheetTypes = ["csv", "tsv", "xlsx", "xls"];
 
-  if (imageTypes.includes(type)) return Image;
+  if (IMAGE_TYPES.includes(type)) return Image;
   if (codeTypes.includes(type)) return Code;
   if (spreadsheetTypes.includes(type)) return FileSpreadsheet;
   if (type === "md" || type === "txt") return FileText;
   if (type === "pdf") return FileText;
   return File;
 }
+
+/* ─── File Viewer Component ────────────────────────────────────── */
+
+function FileViewer({
+  file,
+  fileUrl,
+  onClose,
+}: {
+  file: WorkspaceFile;
+  fileUrl: string;
+  onClose: () => void;
+}) {
+  const [textContent, setTextContent] = useState<string | null>(null);
+  const [loadingText, setLoadingText] = useState(false);
+  const [textError, setTextError] = useState(false);
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const type = file.type.toLowerCase();
+
+  // Fetch text content for text-based files
+  useEffect(() => {
+    if (!TEXT_TYPES.includes(type)) return;
+    setLoadingText(true);
+    setTextError(false);
+    fetch(fileUrl)
+      .then((res) => {
+        if (!res.ok) throw new Error("Failed to load");
+        return res.text();
+      })
+      .then((text) => setTextContent(text))
+      .catch(() => setTextError(true))
+      .finally(() => setLoadingText(false));
+  }, [fileUrl, type]);
+
+  // Close on Escape
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  // Close on overlay click
+  const handleOverlayClick = (e: React.MouseEvent) => {
+    if (e.target === overlayRef.current) onClose();
+  };
+
+  const renderPreview = () => {
+    if (IMAGE_TYPES.includes(type)) {
+      return (
+        <div style={{ display: "flex", justifyContent: "center", alignItems: "center", flex: 1, overflow: "auto", padding: 20 }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={fileUrl}
+            alt={file.name}
+            style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", borderRadius: "var(--radius-sm)" }}
+          />
+        </div>
+      );
+    }
+
+    if (PDF_TYPES.includes(type)) {
+      return (
+        <iframe
+          src={fileUrl}
+          title={file.name}
+          style={{ flex: 1, border: "none", borderRadius: "var(--radius-sm)", background: "white" }}
+        />
+      );
+    }
+
+    if (VIDEO_TYPES.includes(type)) {
+      return (
+        <div style={{ display: "flex", justifyContent: "center", alignItems: "center", flex: 1, padding: 20 }}>
+          <video controls style={{ maxWidth: "100%", maxHeight: "100%", borderRadius: "var(--radius-sm)" }}>
+            <source src={fileUrl} />
+          </video>
+        </div>
+      );
+    }
+
+    if (AUDIO_TYPES.includes(type)) {
+      return (
+        <div style={{ display: "flex", justifyContent: "center", alignItems: "center", flex: 1, padding: 20 }}>
+          <audio controls style={{ width: "100%", maxWidth: 500 }}>
+            <source src={fileUrl} />
+          </audio>
+        </div>
+      );
+    }
+
+    if (TEXT_TYPES.includes(type)) {
+      if (loadingText) {
+        return (
+          <div style={{ display: "flex", justifyContent: "center", alignItems: "center", flex: 1 }}>
+            <Loader2 size={24} style={{ color: "var(--blue)", animation: "spin 2s linear infinite" }} />
+          </div>
+        );
+      }
+      if (textError) {
+        return (
+          <div style={{ display: "flex", justifyContent: "center", alignItems: "center", flex: 1, color: "var(--text-secondary)" }}>
+            Failed to load file content.
+          </div>
+        );
+      }
+      return (
+        <div style={{ flex: 1, overflow: "auto", padding: 20 }}>
+          <pre
+            style={{
+              margin: 0,
+              fontSize: 13,
+              lineHeight: 1.6,
+              fontFamily: "'SF Mono', 'Fira Code', 'Fira Mono', Menlo, Consolas, monospace",
+              color: "var(--text)",
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+              background: "var(--bg-secondary)",
+              padding: 16,
+              borderRadius: "var(--radius-sm)",
+              border: "1px solid var(--border)",
+              minHeight: "100%",
+            }}
+          >
+            {textContent}
+          </pre>
+        </div>
+      );
+    }
+
+    return (
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", flex: 1, color: "var(--text-secondary)" }}>
+        Preview not available for this file type.
+      </div>
+    );
+  };
+
+  return (
+    <div
+      ref={overlayRef}
+      onClick={handleOverlayClick}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.5)",
+        backdropFilter: "blur(4px)",
+        zIndex: 1000,
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        padding: 40,
+      }}
+    >
+      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+      <div
+        style={{
+          background: "var(--bg)",
+          border: "1px solid var(--border)",
+          borderRadius: "var(--radius-lg)",
+          boxShadow: "var(--shadow-lg)",
+          width: "100%",
+          maxWidth: 1000,
+          height: "calc(100vh - 80px)",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+        }}
+      >
+        {/* Viewer header */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            padding: "12px 16px",
+            borderBottom: "1px solid var(--border)",
+            flexShrink: 0,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+            <Eye size={14} style={{ color: "var(--text-tertiary)", flexShrink: 0 }} />
+            <span
+              style={{
+                fontSize: 13,
+                fontWeight: 500,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {file.name}
+            </span>
+            <span style={{ fontSize: 12, color: "var(--text-tertiary)", flexShrink: 0 }}>
+              {formatSize(file.size)}
+            </span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+            <a
+              href={fileUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                padding: "4px 10px",
+                fontSize: 12,
+                color: "var(--text-secondary)",
+                textDecoration: "none",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius-sm)",
+                background: "var(--bg)",
+                cursor: "pointer",
+              }}
+            >
+              <ExternalLink size={12} /> Open
+            </a>
+            <a
+              href={fileUrl}
+              download={file.name}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                padding: "4px 10px",
+                fontSize: 12,
+                color: "var(--text-secondary)",
+                textDecoration: "none",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius-sm)",
+                background: "var(--bg)",
+                cursor: "pointer",
+              }}
+            >
+              <Download size={12} /> Download
+            </a>
+            <button
+              onClick={onClose}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 28,
+                height: 28,
+                border: "none",
+                borderRadius: "var(--radius-sm)",
+                background: "transparent",
+                color: "var(--text-secondary)",
+                cursor: "pointer",
+              }}
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+
+        {/* Viewer body */}
+        {renderPreview()}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Main Page ────────────────────────────────────────────────── */
 
 export default function DocumentsPageWrapper() {
   return (
@@ -90,6 +373,7 @@ function DocumentsPage() {
   const [loadingEmployees, setLoadingEmployees] = useState(true);
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [search, setSearch] = useState("");
+  const [viewingFile, setViewingFile] = useState<WorkspaceFile | null>(null);
 
   // Load employees
   useEffect(() => {
@@ -100,7 +384,6 @@ function DocumentsPage() {
           (e: Employee) => e.status !== "terminated",
         );
         setEmployees(active);
-        // Auto-select first employee if none selected
         if (!selectedId && active.length > 0) {
           router.replace(`/dashboard/documents?employee=${active[0].id}`);
         }
@@ -119,6 +402,7 @@ function DocumentsPage() {
     }
     setLoadingFiles(true);
     setSearch("");
+    setViewingFile(null);
     api
       .listDocuments(selectedId)
       .then((res) => setFiles(res.files || []))
@@ -144,8 +428,20 @@ function DocumentsPage() {
     grouped.get(dir)!.push(file);
   }
 
-  const downloadUrl = (file: WorkspaceFile) =>
+  const fileUrl = (file: WorkspaceFile) =>
     `/api/employees/${selectedId}/workspace/workspace/${file.path}`;
+
+  const handleFileClick = (e: React.MouseEvent, file: WorkspaceFile) => {
+    e.preventDefault();
+    if (canPreview(file.type)) {
+      setViewingFile(file);
+    } else {
+      // Non-previewable: open download in new tab
+      window.open(fileUrl(file), "_blank");
+    }
+  };
+
+  const closeViewer = useCallback(() => setViewingFile(null), []);
 
   if (loadingEmployees) {
     return (
@@ -159,6 +455,15 @@ function DocumentsPage() {
   return (
     <div>
       <h1 style={{ fontSize: 20, fontWeight: 600, marginBottom: 20 }}>Documents</h1>
+
+      {/* File Viewer Modal */}
+      {viewingFile && selectedId && (
+        <FileViewer
+          file={viewingFile}
+          fileUrl={fileUrl(viewingFile)}
+          onClose={closeViewer}
+        />
+      )}
 
       <div style={{ display: "flex", gap: 20, minHeight: "calc(100vh - 120px)" }}>
         {/* Employee list - left panel */}
@@ -378,12 +683,12 @@ function DocumentsPage() {
                       <div className="card" style={{ overflow: "hidden" }}>
                         {dirFiles.map((file, i) => {
                           const Icon = getFileIcon(file.type);
+                          const previewable = canPreview(file.type);
                           return (
                             <a
                               key={file.path}
-                              href={downloadUrl(file)}
-                              target="_blank"
-                              rel="noopener noreferrer"
+                              href={fileUrl(file)}
+                              onClick={(e) => handleFileClick(e, file)}
                               style={{
                                 display: "flex",
                                 alignItems: "center",
@@ -396,6 +701,7 @@ function DocumentsPage() {
                                     ? "1px solid var(--border)"
                                     : "none",
                                 transition: "background 0.1s",
+                                cursor: "pointer",
                               }}
                               onMouseEnter={(e) =>
                                 (e.currentTarget.style.background = "var(--bg-secondary)")
@@ -440,10 +746,17 @@ function DocumentsPage() {
                               >
                                 {formatDate(file.modifiedAt)}
                               </div>
-                              <Download
-                                size={14}
-                                style={{ color: "var(--text-tertiary)", flexShrink: 0 }}
-                              />
+                              {previewable ? (
+                                <Eye
+                                  size={14}
+                                  style={{ color: "var(--blue)", flexShrink: 0 }}
+                                />
+                              ) : (
+                                <Download
+                                  size={14}
+                                  style={{ color: "var(--text-tertiary)", flexShrink: 0 }}
+                                />
+                              )}
                             </a>
                           );
                         })}
