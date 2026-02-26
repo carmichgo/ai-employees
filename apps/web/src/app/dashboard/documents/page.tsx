@@ -429,7 +429,7 @@ function DocumentsPage() {
   }
 
   const fileUrl = (file: WorkspaceFile) =>
-    `/api/employees/${selectedId}/workspace/workspace/${file.path}`;
+    `/api/employees/${selectedId}/workspace/${file.path}`;
 
   const handleFileClick = (e: React.MouseEvent, file: WorkspaceFile) => {
     e.preventDefault();
