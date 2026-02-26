@@ -111,7 +111,7 @@ export default function DocumentsPage() {
   }
 
   const downloadUrl = (file: WorkspaceFile) =>
-    `/api/employees/${employeeId}/workspace/${file.path}`;
+    `/api/employees/${employeeId}/workspace/workspace/${file.path}`;
 
   if (loading) {
     return (

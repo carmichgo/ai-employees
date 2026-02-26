@@ -85,7 +85,7 @@ export async function GET(
       "Cache-Control": "public, max-age=300",
     };
 
-    const inlineMimeTypes = ["image/", "text/html", "text/plain", "application/pdf"];
+    const inlineMimeTypes = ["image/", "text/", "application/pdf", "application/json"];
     const isInline = inlineMimeTypes.some((t) => contentType.startsWith(t));
     if (!isInline) {
       headers["Content-Disposition"] = `attachment; filename="${filename}"`;
