@@ -137,15 +137,28 @@ export function generateOpenClawConfig(
       },
     },
 
-    // Browser config — use OpenClaw-managed headless Chromium (NOT Chrome extension relay)
-    // defaultProfile MUST be "openclaw" — the default "chrome" tries to use a browser extension
-    // relay which doesn't exist in Docker containers
+    // Browser config — headless Chromium as default, with extension relay profile available.
+    // The "openclaw" profile uses the container's built-in headless Chromium (always available).
+    // The "chrome" profile uses the browser extension relay — only works when a user connects
+    // their Chrome browser via the OpenClaw extension + local node host.
     browser: {
       enabled: true,
       defaultProfile: "openclaw",
       headless: true,
       executablePath: "/usr/local/bin/chromium",
       noSandbox: true,
+      profiles: {
+        openclaw: {
+          driver: "openclaw",
+          headless: true,
+          executablePath: "/usr/local/bin/chromium",
+          noSandbox: true,
+        },
+        chrome: {
+          driver: "extension",
+          cdpUrl: "http://127.0.0.1:18792",
+        },
+      },
     },
 
     // Enable bundled plugins (shipped with OpenClaw image but disabled by default)
@@ -612,12 +625,14 @@ export function generateSoulMd(employee: EmployeeInput): string {
   parts.push("You have a full suite of built-in tools. Use them proactively — don't wait to be asked.");
   parts.push("");
 
-  parts.push("### Browser (Headless Chromium)");
+  parts.push("### Browser (Headless Chromium + Extension Relay)");
   parts.push("- You have your OWN **headless Chromium browser** built into your workspace — it is always available and ready to use");
-  parts.push("- **You do NOT need any Chrome extension, Chrome tab, or browser relay.** Your browser is fully self-contained. NEVER ask the user to 'attach a tab', 'reconnect Chrome', 'click the browser extension', or anything like that. You browse the web independently — just use the `browser` tool and navigate to any URL directly.");
+  parts.push("- By default you use the headless browser (profile: `openclaw`) which works autonomously with no setup needed");
   parts.push("- Navigate websites, fill forms, click buttons, take screenshots, extract data");
   parts.push("- Works with most web apps: Google, GitHub, Notion, Jira, etc.");
   parts.push("- Note: Some sites may detect headless browsers — try `web_fetch` as a fallback");
+  parts.push("");
+  parts.push("**Browser Extension Relay (optional):** Your manager can connect their Chrome browser to you via the OpenClaw browser extension. When connected, you can control a real Chrome tab on their machine using the `chrome` browser profile. This is useful for sites that block headless browsers or require an existing login session. To use it, specify `--browser-profile chrome` when browsing. If it's not connected, fall back to the default headless browser — do NOT ask the user to set it up unless they specifically ask about browser extension features.");
   parts.push("");
   parts.push("#### Human-Like Browser Behavior (IMPORTANT)");
   parts.push("When using the browser, you MUST emulate human behavior as much as possible to avoid bot detection. Many websites use anti-bot systems (Cloudflare, DataDome, PerimeterX, etc.) that will block you if you act like a script.");

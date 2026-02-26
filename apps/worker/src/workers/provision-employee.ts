@@ -33,6 +33,7 @@ const BRAVE_API_KEY = process.env.BRAVE_API_KEY || "";
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID || "";
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || "";
+const API_DOMAIN = process.env.API_DOMAIN || "";
 
 /** Derive a per-employee encryption key from the system key + employee ID */
 function deriveEmployeeEncryptionKey(employeeId: string): string {
@@ -228,6 +229,10 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
       Labels: {
         "ai-employees.employee-id": employeeId,
         "ai-employees.company-id": data.companyId,
+        // Traefik labels — expose the OpenClaw gateway externally so users can
+        // connect the OpenClaw browser extension via a local node host.
+        // External URL: https://{API_DOMAIN}/gw/{employeeId}/
+        ...(API_DOMAIN ? buildTraefikLabels(employeeId, API_DOMAIN) : {}),
       },
     });
 
@@ -719,6 +724,27 @@ function archiveSlackChannel(employeeId: string): void {
   })
     .then(() => console.log(`[teardown] Slack channel archive requested for ${employeeId}`))
     .catch((err: Error) => console.log(`[teardown] Slack channel archive failed: ${err.message}`));
+}
+
+/**
+ * Build Traefik labels to expose an employee's OpenClaw gateway externally.
+ * This enables users to connect the OpenClaw browser extension by running
+ * a local node host pointed at https://{API_DOMAIN}/gw/{employeeId}/
+ *
+ * The gateway itself handles auth via OPENCLAW_GATEWAY_TOKEN.
+ */
+function buildTraefikLabels(employeeId: string, apiDomain: string): Record<string, string> {
+  // Traefik router/service names must be alphanumeric + hyphens
+  const routerId = `gw-${employeeId.replace(/[^a-z0-9-]/g, "")}`;
+  return {
+    "traefik.enable": "true",
+    [`traefik.http.routers.${routerId}.rule`]: `Host(\`${apiDomain}\`) && PathPrefix(\`/gw/${employeeId}\`)`,
+    [`traefik.http.routers.${routerId}.entrypoints`]: "websecure",
+    [`traefik.http.routers.${routerId}.tls.certresolver`]: "letsencrypt",
+    [`traefik.http.middlewares.${routerId}-strip.stripprefix.prefixes`]: `/gw/${employeeId}`,
+    [`traefik.http.routers.${routerId}.middlewares`]: `${routerId}-strip`,
+    [`traefik.http.services.${routerId}.loadbalancer.server.port`]: "18789",
+  };
 }
 
 /** Webmail URLs by provider for browser-based email access */

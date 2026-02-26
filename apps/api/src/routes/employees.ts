@@ -290,10 +290,17 @@ export async function employeeRoutes(fastify: FastifyInstance) {
 
 function sanitizeEmployee(e: Record<string, unknown>) {
   // Remove sensitive fields from API responses
-  const { gatewayToken, ...safe } = e as { gatewayToken?: string } & Record<
+  const { gatewayToken, ...safe } = e as { gatewayToken?: string; id?: string } & Record<
     string,
     unknown
   >;
+
+  // Derive external gateway URL for browser extension connection
+  const apiDomain = process.env.API_DOMAIN;
+  if (apiDomain && safe.id) {
+    safe.gatewayUrl = `https://${apiDomain}/gw/${safe.id}`;
+  }
+
   return safe;
 }
 
