@@ -151,7 +151,17 @@ export function generateOpenClawConfig(
         "--disable-dev-shm-usage",    // use /tmp instead of /dev/shm to avoid SIGBUS crashes
         "--disable-gpu",               // no GPU in containers
         "--disable-software-rasterizer",
-        "--single-process",            // reduces memory footprint in constrained containers
+        "--no-zygote",                 // skip zygote process (safe single-process alt for containers)
+        "--disable-extensions",        // no extensions needed — saves memory
+        "--disable-background-networking", // prevent background network activity
+        "--disable-default-apps",      // no default apps
+        "--disable-sync",              // no sync features
+        "--disable-translate",         // no translate popups
+        "--no-first-run",             // skip first-run wizard
+        "--metrics-recording-only",    // disable metrics reporting
+        "--mute-audio",               // no audio needed
+        "--disable-breakpad",         // disable crash reporter to save memory
+        "--disable-component-update",  // no component updates in container
       ],
       profiles: {
         openclaw: {
@@ -163,7 +173,17 @@ export function generateOpenClawConfig(
             "--disable-dev-shm-usage",
             "--disable-gpu",
             "--disable-software-rasterizer",
-            "--single-process",
+            "--no-zygote",
+            "--disable-extensions",
+            "--disable-background-networking",
+            "--disable-default-apps",
+            "--disable-sync",
+            "--disable-translate",
+            "--no-first-run",
+            "--metrics-recording-only",
+            "--mute-audio",
+            "--disable-breakpad",
+            "--disable-component-update",
           ],
         },
         chrome: {
