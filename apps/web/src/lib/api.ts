@@ -413,6 +413,17 @@ class ApiClient {
     );
   }
 
+  // Browser extension relay info
+  async getRelayInfo(employeeId: string) {
+    return this.request<{
+      available: boolean;
+      reason?: string;
+      gatewayUrl?: string;
+      gatewayToken?: string;
+      command?: string;
+    }>(`/api/employees/${employeeId}/relay`);
+  }
+
   // Employee documents (workspace files)
   async listDocuments(employeeId: string) {
     return this.request<{

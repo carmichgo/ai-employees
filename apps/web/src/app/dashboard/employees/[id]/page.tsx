@@ -8,6 +8,7 @@ import {
   MessageCircle, Save, X, Eye, EyeOff, ChevronDown, Upload, FileText, Zap,
   Webhook, Timer, Plus, ToggleLeft, ToggleRight, Copy, Check, KeyRound, Globe, Edit3,
   MessageSquare, Send, Smartphone, Gamepad2, Shield, MonitorSmartphone, Hash, Radio, Phone, Headphones,
+  Monitor,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -189,6 +190,12 @@ export default function EmployeeDetailPage() {
   const [credSaving, setCredSaving] = useState(false);
   const [credNotice, setCredNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
+  // Relay state
+  const [relayInfo, setRelayInfo] = useState<{ available: boolean; gatewayUrl?: string; gatewayToken?: string; command?: string } | null>(null);
+  const [relayLoading, setRelayLoading] = useState(false);
+  const [showRelayToken, setShowRelayToken] = useState(false);
+  const [copiedRelay, setCopiedRelay] = useState<string | null>(null);
+
   const employeeId = params.id as string;
 
   // Show hire confirmation banner from URL params
@@ -223,6 +230,7 @@ export default function EmployeeDetailPage() {
     api.listTriggers(employeeId).then((res) => setTriggersList(res.triggers || [])).catch(() => {});
     api.listCredentials(employeeId).then((res) => setCredentialsList(res.credentials || [])).catch(() => {});
     api.listChannels(employeeId).then((res) => setChannelsList(res.channels || [])).catch(() => {});
+    api.getRelayInfo(employeeId).then((res) => setRelayInfo(res)).catch(() => {});
   }, [employeeId]);
 
   // Auto-poll while provisioning, with auto-reprovision for stuck employees
@@ -482,6 +490,12 @@ export default function EmployeeDetailPage() {
     setTimeout(() => setCopiedToken(null), 2000);
   };
 
+  const copyRelayValue = (key: string, value: string) => {
+    navigator.clipboard.writeText(value);
+    setCopiedRelay(key);
+    setTimeout(() => setCopiedRelay(null), 2000);
+  };
+
   if (loading || !employee) {
     return (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "60vh" }}>
@@ -644,6 +658,99 @@ export default function EmployeeDetailPage() {
           })}
         </div>
       </div>
+
+      {/* ════════════════════════════════════════════════════════════ */}
+      {/* BROWSER EXTENSION RELAY */}
+      {/* ════════════════════════════════════════════════════════════ */}
+      {relayInfo?.available && (
+        <div className="card" style={{ padding: 20, marginBottom: 16, background: "#ffffff", border: "1px solid var(--border)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <Monitor size={14} style={{ color: "var(--text-tertiary)" }} />
+              <p className="label" style={{ margin: 0 }}>Browser Extension Relay</p>
+            </div>
+          </div>
+
+          <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 14 }}>
+            Connect your Chrome browser to {employee.name} so they can browse websites using your real browser session (bypasses bot detection, uses your logins).
+          </div>
+
+          {/* Gateway URL */}
+          <div style={{ marginBottom: 10 }}>
+            <label style={{ fontSize: 12, color: "var(--text-tertiary)", display: "block", marginBottom: 4 }}>Gateway URL</label>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <code style={{
+                flex: 1, fontSize: 11, background: "var(--bg-secondary)", padding: "6px 10px",
+                borderRadius: "var(--radius-sm)", border: "1px solid var(--border)",
+                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)",
+              }}>
+                {relayInfo.gatewayUrl}
+              </code>
+              <button
+                onClick={() => copyRelayValue("url", relayInfo.gatewayUrl!)}
+                style={{ background: "none", border: "none", cursor: "pointer", color: copiedRelay === "url" ? "var(--green)" : "var(--text-tertiary)", padding: 4, flexShrink: 0 }}
+                title="Copy URL"
+              >
+                {copiedRelay === "url" ? <Check size={13} /> : <Copy size={13} />}
+              </button>
+            </div>
+          </div>
+
+          {/* Gateway Token */}
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ fontSize: 12, color: "var(--text-tertiary)", display: "block", marginBottom: 4 }}>Gateway Token</label>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <code style={{
+                flex: 1, fontSize: 11, background: "var(--bg-secondary)", padding: "6px 10px",
+                borderRadius: "var(--radius-sm)", border: "1px solid var(--border)",
+                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)",
+              }}>
+                {showRelayToken ? relayInfo.gatewayToken : "\u2022".repeat(32)}
+              </code>
+              <button
+                onClick={() => setShowRelayToken(!showRelayToken)}
+                style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", padding: 4, flexShrink: 0 }}
+                title={showRelayToken ? "Hide token" : "Show token"}
+              >
+                {showRelayToken ? <EyeOff size={13} /> : <Eye size={13} />}
+              </button>
+              <button
+                onClick={() => copyRelayValue("token", relayInfo.gatewayToken!)}
+                style={{ background: "none", border: "none", cursor: "pointer", color: copiedRelay === "token" ? "var(--green)" : "var(--text-tertiary)", padding: 4, flexShrink: 0 }}
+                title="Copy token"
+              >
+                {copiedRelay === "token" ? <Check size={13} /> : <Copy size={13} />}
+              </button>
+            </div>
+          </div>
+
+          {/* Quick command */}
+          <div style={{
+            background: "var(--bg-secondary)", borderRadius: "var(--radius-md)",
+            padding: 12, border: "1px solid var(--border)",
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>Run this on your local machine:</span>
+              <button
+                onClick={() => copyRelayValue("cmd", relayInfo.command!)}
+                style={{ background: "none", border: "none", cursor: "pointer", color: copiedRelay === "cmd" ? "var(--green)" : "var(--text-tertiary)", padding: 2, fontSize: 11, display: "flex", alignItems: "center", gap: 4 }}
+              >
+                {copiedRelay === "cmd" ? <><Check size={11} /> Copied</> : <><Copy size={11} /> Copy</>}
+              </button>
+            </div>
+            <code style={{
+              display: "block", fontSize: 11, color: "var(--text)", lineHeight: 1.6,
+              wordBreak: "break-all", fontFamily: "monospace",
+            }}>
+              {relayInfo.command}
+            </code>
+          </div>
+
+          <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 10 }}>
+            After connecting, {employee.name} can use <code style={{ fontSize: 10, background: "var(--bg-secondary)", padding: "1px 4px", borderRadius: 3 }}>--browser-profile chrome</code> to control your real Chrome browser.
+          </div>
+        </div>
+      )}
 
       {/* ════════════════════════════════════════════════════════════ */}
       {/* CHANNELS SECTION */}

@@ -290,15 +290,15 @@ export async function employeeRoutes(fastify: FastifyInstance) {
 
 function sanitizeEmployee(e: Record<string, unknown>) {
   // Remove sensitive fields from API responses
-  const { gatewayToken, ...safe } = e as { gatewayToken?: string; id?: string } & Record<
+  const { gatewayToken, ...safe } = e as { gatewayToken?: string; id?: string; dropletIp?: string } & Record<
     string,
     unknown
   >;
 
-  // Derive external gateway URL for browser extension connection
-  const apiDomain = process.env.API_DOMAIN;
-  if (apiDomain && safe.id) {
-    safe.gatewayUrl = `https://${apiDomain}/gw/${safe.id}`;
+  // Derive external gateway URL for browser extension relay.
+  // Uses the API server's own gateway proxy (/gw/:id) — no DNS or Traefik needed.
+  if (safe.id && safe.dropletIp) {
+    safe.gatewayUrl = `http://${safe.dropletIp}:${process.env.API_PORT || 3001}/gw/${safe.id}`;
   }
 
   return safe;
