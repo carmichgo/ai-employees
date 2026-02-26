@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, not } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { tasks, employees, taskComments, triggers } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
@@ -155,7 +155,12 @@ export async function GET(request: NextRequest) {
   }
 
   // Filter by status client-side if needed (drizzle dynamic where chaining can be tricky)
-  const filtered = status ? result.filter((t) => t.status === status) : result;
+  let filtered = status ? result.filter((t) => t.status === status) : result;
+
+  // Hide archived tasks by default (archived when employee is terminated)
+  if (status !== "archived") {
+    filtered = filtered.filter((t) => t.status !== "archived");
+  }
 
   return NextResponse.json({ tasks: filtered });
 }

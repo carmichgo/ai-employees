@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq, and } from "drizzle-orm";
+import { eq, and, not } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { employees } from "@/lib/schema";
+import { employees, tasks } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
 import { updateEmployeeSchema } from "@ai-employees/shared";
 import { getEmployeeBackend, createBackendClient } from "@/lib/backend";
@@ -153,6 +153,16 @@ export async function DELETE(
       console.error("Failed to remove Stripe subscription item:", err.message);
       // Continue — still terminate the employee in DB
     }
+  }
+
+  // Archive all non-completed tasks for this employee
+  try {
+    await db
+      .update(tasks)
+      .set({ status: "archived", updatedAt: new Date() })
+      .where(and(eq(tasks.employeeId, id), not(eq(tasks.status, "completed"))));
+  } catch {
+    // Non-fatal — tasks table may not exist or column may be missing
   }
 
   // Always mark as terminated in the DB
