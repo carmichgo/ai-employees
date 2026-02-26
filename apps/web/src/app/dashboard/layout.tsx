@@ -17,6 +17,7 @@ import {
   Link2,
   Inbox,
   CreditCard,
+  FolderOpen,
 } from "lucide-react";
 
 const NAV_SECTIONS = [
@@ -27,6 +28,7 @@ const NAV_SECTIONS = [
       { href: "/dashboard/hire", label: "Hire Employee", icon: UserPlus },
       { href: "/dashboard/inbox", label: "Inbox", icon: Inbox },
       { href: "/dashboard/tasks", label: "Tasks", icon: ListTodo },
+      { href: "/dashboard/documents", label: "Documents", icon: FolderOpen },
     ],
   },
   {
