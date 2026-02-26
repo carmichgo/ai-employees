@@ -1094,11 +1094,13 @@ export function generateSoulMd(employee: EmployeeInput): string {
 
   parts.push("---");
   parts.push("");
-  parts.push("# ⚠️ REMINDER: YOUR TWO NON-NEGOTIABLE RESPONSIBILITIES");
+  parts.push("# ⚠️ REMINDER: YOUR THREE NON-NEGOTIABLE RESPONSIBILITIES");
   parts.push("");
   parts.push("**1. TASK BOARD** — Before doing work on a request, create a task. During work, add progress comments. After finishing, mark `completed` with a summary. Your task board must always be accurate and up to date — it is the source of truth your manager relies on. Check for existing tasks first — never create duplicates. System messages like `[Task Board Check]` and `[Recurring Task]` already have tasks — just update them.");
   parts.push("");
-  parts.push("**2. MEMORY** — Keep `~/workspace/memory.md` up to date. Write to it after completing tasks, learning new information, making decisions, or setting up accounts. If it's not in memory.md, you WILL forget it next session. This is your brain — maintain it.");
+  parts.push("**2. COMMUNICATE WITH YOUR MANAGER** — Never stay silently stuck. When you hit a blocker, need credentials, have a question, or complete a major deliverable, use the `/employee/notify-manager` API to message your manager. They cannot help you if they don't know you need help. When you mark a task `blocked`, you MUST also notify your manager with what you need.");
+  parts.push("");
+  parts.push("**3. MEMORY** — Keep `~/workspace/memory.md` up to date. Write to it after completing tasks, learning new information, making decisions, or setting up accounts. If it's not in memory.md, you WILL forget it next session. This is your brain — maintain it.");
   parts.push("");
 
   return parts.join("\n");
@@ -1154,7 +1156,7 @@ curl -s "$BLITZ_API_URL/employee/tasks" \\
 
 - **in_progress tasks** → Continue working on them. Add a progress comment.
 - **pending tasks** → Pick the highest-priority one, set it to in_progress, and start working.
-- **blocked tasks** → Check if the blocker is resolved. If yes, unblock and resume.
+- **blocked tasks** → Check if the blocker is resolved. If yes, unblock and resume. If still blocked, notify your manager via \`/employee/notify-manager\` with type "blocker" so they know you need help.
 ${nothingToDo}
 
 ## 3. Work until done (or next heartbeat)
@@ -1165,7 +1167,7 @@ Do not stop after one small step. Complete the task fully, or make substantial p
 
 - NEVER reply HEARTBEAT_OK if you have pending or in_progress tasks
 - ALWAYS update task status and add progress comments as you work
-- If a task requires waiting (e.g. for a human response), mark it blocked with a comment explaining what you need
+- If a task requires waiting (e.g. for a human response), mark it blocked with a comment explaining what you need, then notify your manager via \`/employee/notify-manager\` so they know you're waiting on them
 - If you discover new work while working, create a task for it
 `;
 }

@@ -695,6 +695,21 @@ export class SlackProxy {
     return this.running;
   }
 
+  /** Post a proactive notification from an employee to their Slack channel */
+  async postNotification(employeeId: string, message: string): Promise<boolean> {
+    if (!this.webClient || !this.running) return false;
+
+    // Find the employee's channel mapping
+    for (const [channelId, emp] of this.channelToEmployee.entries()) {
+      if (emp.id === employeeId) {
+        await this.postAsEmployee(this.webClient, channelId, emp, message);
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   /** Create Slack channels for all active employees that don't have one yet */
   async reconcileChannels(): Promise<Array<{ name: string; channelId: string | null }>> {
     if (!this.companyId || !this.webClient) return [];

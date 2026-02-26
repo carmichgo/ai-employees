@@ -8,7 +8,7 @@
 import type { FastifyInstance } from "fastify";
 import { execSync } from "node:child_process";
 import { eq, and, ne, desc } from "drizzle-orm";
-import { db, employees, tasks, taskComments } from "@ai-employees/db";
+import { db, employees, tasks, taskComments, chatMessages, users, companies } from "@ai-employees/db";
 
 /** Authenticate an employee by their gateway token. Returns the employee or sends an error. */
 async function authenticateEmployee(request: { headers: { authorization?: string } }, reply: { status: (code: number) => { send: (body: unknown) => unknown } }) {
@@ -327,5 +327,67 @@ export async function employeeGatewayRoutes(fastify: FastifyInstance) {
     }
 
     return { task };
+  });
+
+  // ─── Manager Notification ──────────────────────────────────────────
+
+  // POST /employee/notify-manager — send a proactive message to the manager
+  // Creates a chat message visible in the dashboard and posts to Slack if connected
+  fastify.post("/employee/notify-manager", async (request, reply) => {
+    const auth = await authenticateEmployee(request, reply);
+    if ("error" in auth) return auth.error;
+    const { employee } = auth;
+
+    const body = request.body as {
+      message: string;
+      type?: "blocker" | "update" | "question" | "fyi"; // optional categorization
+    };
+
+    if (!body.message) {
+      return reply.status(400).send({ error: "Missing 'message' field" });
+    }
+
+    const msgType = body.type || "update";
+    const prefix = msgType === "blocker" ? "[Blocked] "
+      : msgType === "question" ? "[Question] "
+      : msgType === "fyi" ? "[FYI] "
+      : "";
+
+    const fullMessage = `${prefix}${body.message}`;
+
+    // Find the company owner (primary manager) to target the chat message
+    const owner = await db.query.users.findFirst({
+      where: eq(users.companyId, employee.companyId),
+    });
+
+    // 1. Save as a chat message in the dashboard (visible when manager opens employee chat)
+    await db.insert(chatMessages).values({
+      employeeId: employee.id,
+      userId: owner?.id || null,
+      role: "assistant",
+      content: fullMessage,
+      mode: "live",
+    });
+
+    // 2. Post to Slack if the employee has a dedicated channel
+    let slackSent = false;
+    try {
+      const { getSlackProxy } = await import("../slack/proxy.js");
+      const proxy = getSlackProxy();
+      if (proxy?.isRunning()) {
+        await proxy.postNotification(employee.id, fullMessage);
+        slackSent = true;
+      }
+    } catch {
+      // Slack not available — dashboard message is still saved
+    }
+
+    fastify.log.info(`[notify-manager] ${employee.name}: ${fullMessage.slice(0, 100)}`);
+
+    return {
+      success: true,
+      delivered: { dashboard: true, slack: slackSent },
+      message: "Manager has been notified.",
+    };
   });
 }

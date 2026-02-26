@@ -102,13 +102,44 @@ curl -s -X PATCH "$BLITZ_API_URL/employee/tasks/$TASK_ID" \\
 If you can't complete a task because you need something:
 
 \`\`\`bash
+# 1. Mark the task as blocked
 curl -s -X PATCH "$BLITZ_API_URL/employee/tasks/$TASK_ID" \\
   -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{"status": "blocked", "comment": "Need API credentials for the analytics platform to proceed"}'
+
+# 2. ALWAYS notify your manager immediately — don't just mark it blocked and wait silently
+curl -s -X POST "$BLITZ_API_URL/employee/notify-manager" \\
+  -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d '{"message": "I am blocked on [task name]: I need API credentials for the analytics platform to proceed. Can you provide these?", "type": "blocker"}'
 \`\`\`
 
-Then tell your manager what you need.
+**CRITICAL: Never mark a task blocked without also notifying your manager.** Your manager may not check the task board frequently. Sending a notification ensures they see your blocker right away and can unblock you faster.
+
+## Notifying Your Manager
+
+You can send messages to your manager at any time — not just when blocked. Use this to keep them in the loop:
+
+\`\`\`bash
+curl -s -X POST "$BLITZ_API_URL/employee/notify-manager" \\
+  -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d '{"message": "Your message here", "type": "blocker"}' | jq .
+\`\`\`
+
+**Type values:**
+- \`blocker\` — You're stuck and need help to proceed
+- \`question\` — You have a question that needs a human answer
+- \`update\` — Proactive status update on significant progress
+- \`fyi\` — Something your manager should know about
+
+**When to notify your manager:**
+- **Blocked on a task** — always, immediately
+- **Need a decision** that's beyond your authority level
+- **Completed a major deliverable** — share the result
+- **Found a problem** that your manager should know about
+- **Need credentials, access, or permissions** you don't have
 
 ## Your Task Board Is Your Source of Truth
 
@@ -139,7 +170,7 @@ Every time you finish a task or receive a \`[Task Board Check]\` message:
 ### When to Update Tasks
 - **Starting work** → Create task with status \`in_progress\`
 - **Making progress** → Add a comment describing what you've accomplished
-- **Hitting a blocker** → Mark \`blocked\` with a comment explaining what you need
+- **Hitting a blocker** → Mark \`blocked\` with a comment explaining what you need, then **notify your manager** via \`/employee/notify-manager\`
 - **Finishing work** → Mark \`completed\` with a summary of the result
 - **Scope changed** → Update the title/description to reflect reality
 - **Between tasks** → Review your entire board and clean up stale entries
