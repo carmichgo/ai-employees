@@ -545,9 +545,14 @@ export default function EmployeeDetailPage() {
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           {(employee.status === "active" || employee.status === "paused") && (
-            <Link href={`/dashboard/inbox?employee=${employeeId}`} className="btn-primary btn-sm" style={{ gap: 6, textDecoration: "none" }}>
-              <MessageCircle size={14} /> Chat
-            </Link>
+            <>
+              <Link href={`/dashboard/inbox?employee=${employeeId}`} className="btn-primary btn-sm" style={{ gap: 6, textDecoration: "none" }}>
+                <MessageCircle size={14} /> Chat
+              </Link>
+              <Link href={`/dashboard/employees/${employeeId}/documents`} className="btn-secondary btn-sm" style={{ gap: 6, textDecoration: "none" }}>
+                <FileText size={14} /> Documents
+              </Link>
+            </>
           )}
           {employee.status === "active" && (
             <button className="btn-secondary btn-sm" onClick={handlePause} disabled={actionLoading} style={{ gap: 6 }}><Pause size={14} /> Pause</button>

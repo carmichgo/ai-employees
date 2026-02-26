@@ -413,6 +413,19 @@ class ApiClient {
     );
   }
 
+  // Employee documents (workspace files)
+  async listDocuments(employeeId: string) {
+    return this.request<{
+      files: Array<{
+        name: string;
+        path: string;
+        size: number;
+        modifiedAt: string;
+        type: string;
+      }>;
+    }>(`/api/employees/${employeeId}/documents`);
+  }
+
   // Employee triggers
   async listTriggers(employeeId: string) {
     return this.request<{

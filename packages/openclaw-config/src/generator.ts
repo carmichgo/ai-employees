@@ -1066,6 +1066,17 @@ export function generateSoulMd(employee: EmployeeInput): string {
   parts.push("- Save notes about what you installed to your memory so you don't forget");
   parts.push("");
 
+  // Work history awareness
+  parts.push("## Answering Questions About Your Work");
+  parts.push("");
+  parts.push("When someone asks what you've been working on, what you've done, or asks for a status update, **ALWAYS query your task board first** before answering:");
+  parts.push("```bash");
+  parts.push('curl -s "$BLITZ_API_URL/employee/tasks" \\');
+  parts.push('  -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" | jq .');
+  parts.push("```");
+  parts.push("Your memory and conversation history are incomplete — the task board is the **only reliable record** of everything you've done. Base your answer on the actual task data, not on what you vaguely remember from this conversation.");
+  parts.push("");
+
   // Communication style
   parts.push("## Communication Style");
   parts.push("");
@@ -1086,6 +1097,21 @@ export function generateSoulMd(employee: EmployeeInput): string {
   parts.push("- Use headings (## or ###) only for long, structured reports — not in casual chat");
   parts.push("- For steps or sequences, write them as sentences: 'First I did X. Then I did Y. Finally, Z.'");
   parts.push("- Keep responses conversational and natural — like a colleague messaging on Slack, not writing a document");
+  parts.push("");
+
+  // Saving documents for the manager
+  parts.push("## Saving Documents & Deliverables");
+  parts.push("");
+  parts.push("When you create reports, documents, spreadsheets, or any deliverable, **save them to your workspace** so your manager can access them from the dashboard:");
+  parts.push("```bash");
+  parts.push("# Save a document to your workspace (manager can see it in the Documents page)");
+  parts.push("cat > ~/workspace/report-name.md << 'EOF'");
+  parts.push("# Report Title");
+  parts.push("Your report content here...");
+  parts.push("EOF");
+  parts.push("```");
+  parts.push("");
+  parts.push("Your manager can browse and download all files in `~/workspace/` from the dashboard. When you reference a file in a task comment or message, make sure it's saved there — not just in your chat response. Files only exist if they're on disk.");
   parts.push("");
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -1154,9 +1180,9 @@ curl -s "$BLITZ_API_URL/employee/tasks" \\
 
 ## 2. Act on what you find
 
-- **in_progress tasks** → Continue working on them. Add a progress comment.
+- **in_progress tasks** → Continue working on them. Add a progress comment only if you've made actual progress since the last comment — do NOT repeat the same status.
 - **pending tasks** → Pick the highest-priority one, set it to in_progress, and start working.
-- **blocked tasks** → Check if the blocker is resolved. If yes, unblock and resume. If still blocked, notify your manager via \`/employee/notify-manager\` with type "blocker" so they know you need help.
+- **blocked tasks** → Check if the blocker is resolved. If yes, unblock and resume. If still blocked and you have NOT already notified your manager about this specific blocker, notify them via \`/employee/notify-manager\`. Do NOT add a duplicate comment repeating the same blocker — only comment if something has changed.
 ${nothingToDo}
 
 ## 3. Work until done (or next heartbeat)
@@ -1166,7 +1192,7 @@ Do not stop after one small step. Complete the task fully, or make substantial p
 ## Rules
 
 - NEVER reply HEARTBEAT_OK if you have pending or in_progress tasks
-- ALWAYS update task status and add progress comments as you work
+- ALWAYS update task status as you work. Add progress comments only when there is genuine new progress — do NOT add a comment just because a heartbeat fired if nothing has changed
 - If a task requires waiting (e.g. for a human response), mark it blocked with a comment explaining what you need, then notify your manager via \`/employee/notify-manager\` so they know you're waiting on them
 - If you discover new work while working, create a task for it
 `;

@@ -219,6 +219,71 @@ export async function fileRoutes(fastify: FastifyInstance) {
     },
   );
 
+  // GET /internal/employees/:id/documents — list all files in workspace (recursive)
+  // Returns the full directory tree of employee-created files for the manager to browse
+  fastify.get<{ Params: { id: string } }>(
+    "/internal/employees/:id/documents",
+    async (request, reply) => {
+      const { id } = request.params;
+
+      const employee = await db.query.employees.findFirst({
+        where: eq(employees.id, id),
+      });
+      if (!employee) return reply.status(404).send({ error: "Employee not found" });
+
+      const workspaceDir = path.join(CONFIG_BASE, id, "workspace");
+      if (!existsSync(workspaceDir)) {
+        return { files: [] };
+      }
+
+      const files: Array<{
+        name: string;
+        path: string;
+        size: number;
+        modifiedAt: string;
+        type: string;
+      }> = [];
+
+      // Skip directories that are internal/not useful to the manager
+      const skipDirs = new Set(["node_modules", ".git", ".cache", "__pycache__", ".npm", ".local"]);
+
+      const walk = (dir: string, relativeTo: string) => {
+        try {
+          const entries = readdirSync(dir, { withFileTypes: true });
+          for (const entry of entries) {
+            const fullPath = path.join(dir, entry.name);
+            const relPath = path.relative(relativeTo, fullPath);
+
+            if (entry.isDirectory()) {
+              if (!skipDirs.has(entry.name) && !entry.name.startsWith(".")) {
+                walk(fullPath, relativeTo);
+              }
+            } else if (entry.isFile()) {
+              try {
+                const stat = statSync(fullPath);
+                const ext = path.extname(entry.name).toLowerCase();
+                files.push({
+                  name: entry.name,
+                  path: relPath,
+                  size: stat.size,
+                  modifiedAt: stat.mtime.toISOString(),
+                  type: ext.slice(1) || "file",
+                });
+              } catch { /* skip unreadable files */ }
+            }
+          }
+        } catch { /* skip unreadable directories */ }
+      };
+
+      walk(workspaceDir, workspaceDir);
+
+      // Sort by most recently modified first
+      files.sort((a, b) => new Date(b.modifiedAt).getTime() - new Date(a.modifiedAt).getTime());
+
+      return { files };
+    },
+  );
+
   // DELETE /internal/employees/:id/files/:filename — delete a file
   fastify.delete<{ Params: { id: string; filename: string } }>(
     "/internal/employees/:id/files/:filename",

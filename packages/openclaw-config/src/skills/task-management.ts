@@ -159,6 +159,8 @@ curl -s -X PATCH "$BLITZ_API_URL/employee/tasks/$TASK_ID" \\
 
 Progress comments should describe **what you've done and what's next**, not just "still working on it".
 
+**IMPORTANT: Do NOT add duplicate comments.** If nothing has changed since your last comment, do not add another one. This wastes resources. Only comment when you have genuinely new information — new progress, a new finding, a status change, or a resolved blocker. Repeating "still blocked on X" every heartbeat is wasteful.
+
 ### Review Your Tasks Regularly
 Every time you finish a task or receive a \`[Task Board Check]\` message:
 1. **List all your tasks** — \`curl -s "$BLITZ_API_URL/employee/tasks" -H "$AUTH" | jq '.tasks[] | {id, title, status}'\`
