@@ -164,7 +164,7 @@ export async function DELETE(
   }
 }
 
-// POST /api/employees/[id]/chat — send a message
+// POST /api/employees/[id]/chat — send a message (streaming SSE)
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -174,7 +174,7 @@ export async function POST(
 
   const { id } = await params;
 
-  // Get employee with auth check — explicit columns to avoid SELECT * breakage
+  // Get employee with auth check
   const [employee] = await selectEmployee()
     .where(and(eq(employees.id, id), eq(employees.companyId, session.companyId)))
     .limit(1);
@@ -183,7 +183,6 @@ export async function POST(
     return NextResponse.json({ error: "Employee not found" }, { status: 404 });
   }
 
-  // Block chat for statuses that genuinely can't respond
   if (employee.status === "terminated" || employee.status === "paused") {
     return NextResponse.json(
       { error: `Cannot chat — employee is ${employee.status}` },
@@ -202,7 +201,6 @@ export async function POST(
     return NextResponse.json({ error: "Message is required" }, { status: 400 });
   }
 
-  // Ensure chat table exists before first write
   await ensureChatTable();
 
   // Save user message to DB
@@ -226,11 +224,7 @@ export async function POST(
     return NextResponse.json({ reply, mode: "demo" });
   }
 
-  // Route to OpenClaw container via the employee's dedicated droplet.
-  // The droplet API injects the full SOUL.md from disk as the system prompt —
-  // we do NOT inject a separate system prompt here so there's one source of truth.
   try {
-    // Limit conversation history to avoid polluting context with old threads.
     const recentHistory = (conversationHistory || []).slice(-10);
     const messages: Array<{ role: string; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }> = [
       ...recentHistory,
@@ -238,20 +232,14 @@ export async function POST(
     ];
 
     // If files were attached, fetch their content from the droplet workspace
-    // and inject into the last user message so the AI can actually see them.
     if (files && files.length > 0) {
       const imageExts = ["png", "jpg", "jpeg", "gif", "webp", "bmp"];
       const contentParts: Array<{ type: string; text?: string; image_url?: { url: string } }> = [];
-
-      // Start with the user's text
-      if (message) {
-        contentParts.push({ type: "text", text: message });
-      }
+      if (message) contentParts.push({ type: "text", text: message });
 
       for (const file of files) {
         const sanitized = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 255);
         try {
-          // Fetch file from the droplet workspace
           const fileRes = await fetch(
             `http://${employee.dropletIp}:3001/internal/employees/${id}/workspace/workspace/uploads/${encodeURIComponent(sanitized)}`,
             {
@@ -265,39 +253,23 @@ export async function POST(
           const isImage = imageExts.includes(ext) || file.mimeType.startsWith("image/");
 
           if (isImage) {
-            // Convert to base64 data URL for vision
             const buf = Buffer.from(await fileRes.arrayBuffer());
             const b64 = buf.toString("base64");
             const mime = file.mimeType.startsWith("image/") ? file.mimeType : `image/${ext === "jpg" ? "jpeg" : ext}`;
-            contentParts.push({
-              type: "image_url",
-              image_url: { url: `data:${mime};base64,${b64}` },
-            });
+            contentParts.push({ type: "image_url", image_url: { url: `data:${mime};base64,${b64}` } });
           } else {
-            // Read text content for non-image files (<100KB)
             const buf = Buffer.from(await fileRes.arrayBuffer());
             if (buf.length <= 100_000) {
-              contentParts.push({
-                type: "text",
-                text: `\n\n--- Attached file: ${file.name} ---\n${buf.toString("utf-8")}\n--- End of ${file.name} ---`,
-              });
+              contentParts.push({ type: "text", text: `\n\n--- Attached file: ${file.name} ---\n${buf.toString("utf-8")}\n--- End of ${file.name} ---` });
             } else {
-              contentParts.push({
-                type: "text",
-                text: `\n\n[Attached file: ${file.name} — saved to /home/node/.openclaw/workspace/uploads/${sanitized} (${(buf.length / 1024).toFixed(0)}KB, too large to include inline)]`,
-              });
+              contentParts.push({ type: "text", text: `\n\n[Attached file: ${file.name} — saved to /home/node/.openclaw/workspace/uploads/${sanitized} (${(buf.length / 1024).toFixed(0)}KB, too large to include inline)]` });
             }
           }
         } catch {
-          // File fetch failed — tell the AI where the file is
-          contentParts.push({
-            type: "text",
-            text: `\n\n[Attached file: ${file.name} — saved to /home/node/.openclaw/workspace/uploads/${sanitized}]`,
-          });
+          contentParts.push({ type: "text", text: `\n\n[Attached file: ${file.name} — saved to /home/node/.openclaw/workspace/uploads/${sanitized}]` });
         }
       }
 
-      // Replace last user message with multimodal content
       if (contentParts.length > 0) {
         const lastIdx = messages.length - 1;
         messages[lastIdx] = {
@@ -309,35 +281,22 @@ export async function POST(
       }
     }
 
-    // Mark request as sent
     try {
       await db.update(employees).set({ lastRequestSentAt: new Date() }).where(eq(employees.id, id));
     } catch { /* column may not exist yet */ }
 
-    // Timeout slightly under maxDuration so we fail gracefully with a proper error
-    // instead of Vercel killing the function and returning a generic non-JSON error
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 110_000); // 110s
-
-    let res: Response;
-    try {
-      res = await fetch(
-        `http://${employee.dropletIp}:3001/internal/employees/${id}/chat`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-interservice-secret": employee.interserviceSecret,
-          },
-          body: JSON.stringify({ messages, userId: session.userId }),
-          signal: controller.signal,
+    const res = await fetch(
+      `http://${employee.dropletIp}:3001/internal/employees/${id}/chat`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-interservice-secret": employee.interserviceSecret,
         },
-      );
-    } finally {
-      clearTimeout(timeout);
-    }
+        body: JSON.stringify({ messages, userId: session.userId }),
+      },
+    );
 
-    // Mark response received
     try {
       await db.update(employees).set({ lastResponseAt: new Date() }).where(eq(employees.id, id));
     } catch { /* column may not exist yet */ }
@@ -350,17 +309,84 @@ export async function POST(
       );
     }
 
-    const data = await res.json();
+    const contentType = res.headers.get("content-type") || "";
 
-    // Post-process: convert workspace file paths to accessible URLs, then auto-embed images
+    // If the droplet returned an SSE stream, pipe it to the browser
+    if (contentType.includes("text/event-stream") && res.body) {
+      // Pipe the SSE stream from the droplet through to the browser.
+      // We also accumulate the full text to save to DB when the stream ends.
+      const userId = session.userId;
+      const empId = id;
+      const empStatus = employee.status;
+
+      const encoder = new TextEncoder();
+      const decoder = new TextDecoder();
+      let fullText = "";
+
+      const transformStream = new TransformStream({
+        transform(chunk, controller) {
+          const text = decoder.decode(chunk, { stream: true });
+          controller.enqueue(chunk);
+
+          // Parse SSE lines to accumulate full text
+          const lines = text.split("\n");
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            const data = line.slice(6).trim();
+            if (data === "[DONE]") continue;
+            try {
+              const parsed = JSON.parse(data);
+              const delta = parsed.choices?.[0]?.delta?.content;
+              if (delta) fullText += delta;
+            } catch {
+              // Not valid JSON — skip
+            }
+          }
+        },
+        async flush() {
+          // Stream done — save the accumulated reply to DB
+          if (fullText) {
+            const processed = autoEmbedImages(rewriteWorkspacePaths(fullText, empId), empId);
+            try {
+              await db.insert(chatMessages).values({
+                employeeId: empId,
+                userId,
+                role: "assistant",
+                content: processed,
+                mode: "live",
+              });
+            } catch (saveErr) {
+              console.error(`[chat] Failed to save streamed reply:`, saveErr);
+            }
+          }
+          // Restore status if needed
+          if (empStatus !== "active") {
+            try {
+              await db.update(employees)
+                .set({ status: "active", errorMessage: null, updatedAt: new Date() })
+                .where(eq(employees.id, empId));
+            } catch { /* non-fatal */ }
+          }
+        },
+      });
+
+      const readable = res.body.pipeThrough(transformStream);
+
+      return new Response(readable, {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+        },
+      });
+    }
+
+    // Fallback: non-streaming JSON response (older droplet code)
+    const data = await res.json();
     let reply = data.reply || "";
     reply = rewriteWorkspacePaths(reply, id);
     reply = autoEmbedImages(reply, id);
 
-    // Save assistant reply to DB. The API on the droplet also saves as a
-    // backup (in case this Vercel function times out), but we save here as
-    // the primary path since it's more reliable than depending on the
-    // droplet having the latest code deployed.
     try {
       await db.insert(chatMessages).values({
         employeeId: id,
@@ -370,33 +396,17 @@ export async function POST(
         mode: data.mode || "live",
       });
     } catch (saveErr) {
-      // Non-fatal — the reply will still be returned to the user
       console.error(`[chat] Failed to save assistant reply:`, saveErr);
     }
 
-    // If the employee was in error/provisioning/onboarding but responded, restore to active
     if (employee.status !== "active") {
-      await db
-        .update(employees)
+      await db.update(employees)
         .set({ status: "active", errorMessage: null, updatedAt: new Date() })
         .where(eq(employees.id, id));
     }
 
     return NextResponse.json({ ...data, reply });
   } catch (err: any) {
-    // Handle timeout — the AI is still working but took too long for this HTTP request.
-    // The API handler on the droplet keeps running (no timeout) and will save the
-    // real reply to chat_messages when the container finishes. We return a temporary
-    // message with mode "pending" so the UI knows to poll for the actual reply.
-    const isTimeout = err?.name === "AbortError";
-    if (isTimeout) {
-      return NextResponse.json({
-        reply: `Still working on this — the response will appear here when it's ready.`,
-        mode: "pending",
-      });
-    }
-
-    // If the employee was already in error state, give a friendlier message
     if (employee.status === "error") {
       const reply = `I'm having trouble connecting right now — my workspace is recovering. Please try again in a moment.`;
       await db.insert(chatMessages).values({

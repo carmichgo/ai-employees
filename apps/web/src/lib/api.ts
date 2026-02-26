@@ -281,6 +281,77 @@ class ApiClient {
     );
   }
 
+  /**
+   * Streaming chat — returns chunks via callback as they arrive from the AI.
+   * Falls back to non-streaming if the response isn't SSE.
+   */
+  async chatWithEmployeeStream(
+    id: string,
+    message: string,
+    conversationHistory: Array<{ role: string; content: string }> | undefined,
+    files: Array<{ name: string; mimeType: string }> | undefined,
+    onChunk: (text: string, fullSoFar: string) => void,
+  ): Promise<{ reply: string; mode: string }> {
+    const token = this.getToken();
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (token) headers.Authorization = `Bearer ${token}`;
+
+    const res = await fetch(`${API_URL}/api/employees/${id}/chat`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ message, conversationHistory, files }),
+    });
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const msg = body.detail
+        ? `${body.error || "Error"}: ${body.detail}`
+        : body.error || "Request failed";
+      throw new ApiError(res.status, msg);
+    }
+
+    const contentType = res.headers.get("content-type") || "";
+
+    // If SSE stream, read chunks
+    if (contentType.includes("text/event-stream") && res.body) {
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let full = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split("\n");
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const data = line.slice(6).trim();
+          if (data === "[DONE]") continue;
+          try {
+            const parsed = JSON.parse(data);
+            const delta = parsed.choices?.[0]?.delta?.content;
+            if (delta) {
+              full += delta;
+              onChunk(delta, full);
+            }
+          } catch {
+            // Not valid JSON — skip
+          }
+        }
+      }
+
+      return { reply: full, mode: "live" };
+    }
+
+    // Fallback: non-streaming JSON response
+    const data = await res.json();
+    if (data.reply) onChunk(data.reply, data.reply);
+    return { reply: data.reply || "", mode: data.mode || "live" };
+  }
+
   async clearChatHistory(id: string) {
     return this.request<{ success: boolean; message: string }>(
       `/api/employees/${id}/chat`,

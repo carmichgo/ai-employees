@@ -649,29 +649,39 @@ function InboxContent() {
         .filter((m) => m.id !== "welcome")
         .map((m) => ({ role: m.role, content: m.content }));
 
-      const res = await api.chatWithEmployee(
+      // Create the assistant message placeholder for streaming
+      const msgId = `assistant-${Date.now()}`;
+      const assistantMessage: Message = {
+        id: msgId,
+        role: "assistant",
+        content: "",
+        timestamp: new Date(),
+        mode: "live",
+      };
+      setMessages((prev) => [...prev, assistantMessage]);
+
+      const res = await api.chatWithEmployeeStream(
         sendForId,
         messageText,
         history,
         successFiles.length > 0 ? successFiles : undefined,
+        // onChunk: update the assistant message as text streams in
+        (_delta, fullSoFar) => {
+          if (sendingForRef.current !== sendForId) return;
+          setMessages((prev) =>
+            prev.map((m) => (m.id === msgId ? { ...m, content: fullSoFar } : m)),
+          );
+        },
       );
 
       // Discard response if user switched to a different employee
       if (sendingForRef.current !== sendForId) return;
 
-      const msgId = `assistant-${Date.now()}`;
-      const assistantMessage: Message = {
-        id: msgId,
-        role: "assistant",
-        content: res.reply,
-        timestamp: new Date(),
-        mode: res.mode,
-      };
+      // Final update with complete reply (may include post-processing from server)
+      setMessages((prev) =>
+        prev.map((m) => (m.id === msgId ? { ...m, content: res.reply, mode: res.mode } : m)),
+      );
 
-      setMessages((prev) => [...prev, assistantMessage]);
-
-      // If the response is still pending (container working, HTTP timed out),
-      // start polling for the real reply.
       if (res.mode === "pending") {
         setPendingReplyId(msgId);
       } else if (autoSpeak) {
