@@ -148,7 +148,7 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     mkdirSync(`${configDir}/skills/team-communication`, { recursive: true });
     mkdirSync(`${configDir}/skills/task-management`, { recursive: true });
     mkdirSync(`${configDir}/skills/docx`, { recursive: true });
-    const heartbeatMd = generateHeartbeatMd();
+    const heartbeatMd = generateHeartbeatMd(employeeInput);
     writeFileSync(`${configDir}/openclaw.json`, JSON.stringify(config, null, 2));
     writeFileSync(`${configDir}/SOUL.md`, soulMd);
     writeFileSync(`${configDir}/HEARTBEAT.md`, heartbeatMd);

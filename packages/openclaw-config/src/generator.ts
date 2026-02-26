@@ -1087,7 +1087,32 @@ export function generateSoulMd(employee: EmployeeInput): string {
  * Without this, employees go idle after each conversation turn — they only
  * work when someone sends them a message or a cron trigger fires.
  */
-export function generateHeartbeatMd(): string {
+export function generateHeartbeatMd(employee?: { name?: string; jobTitle?: string; goals?: string | null; personalityConfig?: { proactivity?: string } | null }): string {
+  const proactivity = employee?.personalityConfig?.proactivity || "proactive";
+  const isProactive = proactivity === "proactive" || proactivity === "very-proactive";
+  const isVeryProactive = proactivity === "very-proactive";
+
+  let nothingToDo: string;
+  if (isVeryProactive) {
+    nothingToDo = `- **Nothing on the board** → DON'T just reply HEARTBEAT_OK. Think about your role as **${employee?.jobTitle || "employee"}** and find work that needs doing. Examples:
+  - Check email/Slack for messages that need responses
+  - Review your memory.md for ongoing projects or commitments
+  - Research something relevant to your role or company goals
+  - Write content, reports, or documentation your team could use
+  - Monitor relevant channels, social media, or industry news
+  - Improve or organize your workspace and files
+  - Plan ahead — what should you be working on this week?
+  Create a task for whatever you decide to work on, then start.${employee?.goals ? `\n  Your goals for context: ${employee.goals}` : ""}`;
+  } else if (isProactive) {
+    nothingToDo = `- **Nothing on the board** → Before replying HEARTBEAT_OK, quickly check:
+  - Any unread emails or Slack messages to respond to?
+  - Anything in memory.md you committed to doing?
+  - Any natural follow-up from recently completed work?
+  If you find something, create a task and start working. If genuinely nothing to do, reply HEARTBEAT_OK.`;
+  } else {
+    nothingToDo = `- **Nothing to do** → Reply HEARTBEAT_OK`;
+  }
+
   return `# Heartbeat — Autonomous Work Loop
 
 When you receive this heartbeat prompt, follow these steps IN ORDER:
@@ -1103,11 +1128,11 @@ curl -s "$BLITZ_API_URL/employee/tasks" \\
 - **in_progress tasks** → Continue working on them. Add a progress comment.
 - **pending tasks** → Pick the highest-priority one, set it to in_progress, and start working.
 - **blocked tasks** → Check if the blocker is resolved. If yes, unblock and resume.
-- **Nothing to do** → Reply HEARTBEAT_OK
+${nothingToDo}
 
 ## 3. Work until done (or next heartbeat)
 
-Do not stop after one small step. Complete the task fully, or make substantial progress before stopping. If you finish a task, check for the next one immediately — do not wait for the next heartbeat.
+Do not stop after one small step. Complete the task fully, or make substantial progress before stopping. If you finish a task, check for the next one immediately — do not wait for the next heartbeat.${isProactive ? " Keep the momentum going — idle time is wasted time." : ""}
 
 ## Rules
 

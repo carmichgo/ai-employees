@@ -523,7 +523,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
         const config = genConfig(employeeInput, emp.gatewayToken!, soulMd);
 
         // Write updated configs
-        const heartbeatMd = genHeartbeat();
+        const heartbeatMd = genHeartbeat(employeeInput);
         writeFileSync(`${configDir}/openclaw.json`, JSON.stringify(config, null, 2));
         writeFileSync(`${configDir}/SOUL.md`, soulMd);
         writeFileSync(`${configDir}/HEARTBEAT.md`, heartbeatMd);
@@ -652,7 +652,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
         const soulMd = genSoul(employeeInput);
         const config = genConfig(employeeInput, emp.gatewayToken!, soulMd);
 
-        const heartbeatMd = genHeartbeat();
+        const heartbeatMd = genHeartbeat(employeeInput);
         writeFileSync(`${configDir}/openclaw.json`, JSON.stringify(config, null, 2));
         writeFileSync(`${configDir}/SOUL.md`, soulMd);
         writeFileSync(`${configDir}/HEARTBEAT.md`, heartbeatMd);
