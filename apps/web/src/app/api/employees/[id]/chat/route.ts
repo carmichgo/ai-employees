@@ -381,9 +381,37 @@ export async function POST(
       });
     }
 
-    // Fallback: non-streaming JSON response (older droplet code)
-    const data = await res.json();
-    let reply = data.reply || "";
+    // Fallback: non-streaming JSON response (older droplet code).
+    // Read as text first — if the body is actually SSE (content-type header was wrong),
+    // extract the full text from SSE events instead of failing on JSON.parse.
+    const rawText = await res.text();
+    let data: any;
+    let reply: string;
+
+    try {
+      data = JSON.parse(rawText);
+      reply = data.reply || "";
+    } catch {
+      // Not valid JSON — likely SSE data that slipped through without the right content-type.
+      // Parse SSE events to extract the full text.
+      console.warn(`[chat] Fallback: response is not JSON (likely SSE). Extracting text from SSE events.`);
+      let extracted = "";
+      for (const line of rawText.split("\n")) {
+        if (!line.startsWith("data: ")) continue;
+        const payload = line.slice(6).trim();
+        if (payload === "[DONE]") continue;
+        try {
+          const parsed = JSON.parse(payload);
+          const delta = parsed.choices?.[0]?.delta?.content;
+          if (delta) extracted += delta;
+        } catch {
+          // skip unparseable SSE lines
+        }
+      }
+      data = {};
+      reply = extracted || rawText.slice(0, 500); // worst case, use raw text
+    }
+
     reply = rewriteWorkspacePaths(reply, id);
     reply = autoEmbedImages(reply, id);
 

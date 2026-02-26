@@ -355,7 +355,7 @@ function InboxContent() {
           await playAudioUrl(audioUrl);
         }
       }
-      if (ttsAvailableRef.current !== false) return;
+      if ((ttsAvailableRef.current as boolean | null) !== false) return;
     }
 
     // Fallback: browser SpeechSynthesis

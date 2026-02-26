@@ -867,6 +867,10 @@ export async function provisionRoutes(fastify: FastifyInstance) {
 
       // Stream SSE from container to the Vercel caller.
       // We pipe through the SSE events, accumulate the full text, and save to DB when done.
+      // hijack() tells Fastify to stop managing the response — we write directly to the socket.
+      // Without this, Fastify can override our Content-Type header (causing the Vercel route
+      // to miss the text/event-stream detection and try to parse SSE as JSON).
+      reply.hijack();
       reply.raw.writeHead(200, {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
