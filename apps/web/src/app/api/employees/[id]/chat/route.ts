@@ -350,7 +350,25 @@ export async function POST(
       );
     }
 
-    const data = await res.json();
+    // Parse response — handle both JSON and SSE fallback in case the
+    // droplet returns streaming data unexpectedly.
+    let data: any;
+    const rawText = await res.text();
+    try {
+      data = JSON.parse(rawText);
+    } catch {
+      // If JSON parse fails, the droplet may have returned SSE. Extract text.
+      let assembled = "";
+      for (const line of rawText.split("\n")) {
+        if (!line.startsWith("data: ") || line.trim() === "data: [DONE]") continue;
+        try {
+          const chunk = JSON.parse(line.slice(6));
+          const delta = chunk.choices?.[0]?.delta?.content || chunk.reply;
+          if (delta) assembled += delta;
+        } catch { /* skip */ }
+      }
+      data = { reply: assembled || rawText.slice(0, 500), mode: "live" };
+    }
 
     // Post-process: convert workspace file paths to accessible URLs, then auto-embed images
     let reply = data.reply || "";

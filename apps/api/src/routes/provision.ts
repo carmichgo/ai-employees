@@ -792,6 +792,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
           body: JSON.stringify({
             model,
             messages: chatMessages,
+            stream: false,
           }),
         });
       };
@@ -809,8 +810,28 @@ export async function provisionRoutes(fastify: FastifyInstance) {
           const err = await res.text();
           return reply.status(res.status).send({ error: `OpenClaw error: ${err}` });
         }
-        const data = await res.json() as { choices?: { message?: { content?: string } }[]; usage?: unknown };
-        const replyText = data.choices?.[0]?.message?.content || "No response";
+
+        // Parse response — handle both JSON and SSE (streaming) formats.
+        // The container may return SSE even without stream:true in some configs.
+        let replyText: string;
+        const contentType = res.headers.get("content-type") || "";
+        if (contentType.includes("text/event-stream")) {
+          // SSE: accumulate text chunks from "data: {...}" lines
+          const sseText = await res.text();
+          replyText = "";
+          for (const line of sseText.split("\n")) {
+            if (!line.startsWith("data: ") || line.trim() === "data: [DONE]") continue;
+            try {
+              const chunk = JSON.parse(line.slice(6));
+              const delta = chunk.choices?.[0]?.delta?.content;
+              if (delta) replyText += delta;
+            } catch { /* skip unparseable lines */ }
+          }
+          replyText = replyText || "No response";
+        } else {
+          const data = await res.json() as { choices?: { message?: { content?: string } }[]; usage?: unknown };
+          replyText = data.choices?.[0]?.message?.content || "No response";
+        }
 
         // Always persist — this is the key fix. The dashboard may have timed
         // out and disconnected, but this handler on the droplet keeps running.
@@ -862,8 +883,25 @@ export async function provisionRoutes(fastify: FastifyInstance) {
                   const retryErr = await retryRes.text();
                   return reply.status(retryRes.status).send({ error: `OpenClaw error: ${retryErr}` });
                 }
-                const data = await retryRes.json() as { choices?: { message?: { content?: string } }[]; usage?: unknown };
-                const retryReplyText = data.choices?.[0]?.message?.content || "No response";
+                // Handle both JSON and SSE responses
+                let retryReplyText: string;
+                const retryCt = retryRes.headers.get("content-type") || "";
+                if (retryCt.includes("text/event-stream")) {
+                  const sseText = await retryRes.text();
+                  retryReplyText = "";
+                  for (const line of sseText.split("\n")) {
+                    if (!line.startsWith("data: ") || line.trim() === "data: [DONE]") continue;
+                    try {
+                      const chunk = JSON.parse(line.slice(6));
+                      const delta = chunk.choices?.[0]?.delta?.content;
+                      if (delta) retryReplyText += delta;
+                    } catch { /* skip */ }
+                  }
+                  retryReplyText = retryReplyText || "No response";
+                } else {
+                  const data = await retryRes.json() as { choices?: { message?: { content?: string } }[]; usage?: unknown };
+                  retryReplyText = data.choices?.[0]?.message?.content || "No response";
+                }
                 await saveReply(retryReplyText, "live");
                 return { reply: retryReplyText, mode: "live", usage: data.usage };
               } catch (retryErr: unknown) {
