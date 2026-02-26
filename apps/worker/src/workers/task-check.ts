@@ -234,6 +234,7 @@ async function checkEmployeeTasks(employee: {
       await db.update(employees).set({ lastRequestSentAt: new Date() } as any).where(eq(employees.id, employee.id));
     } catch { /* column may not exist yet */ }
 
+    const model = (employee.modelConfig as { primary?: string })?.primary || "anthropic/claude-sonnet-4-5-20250929";
     const url = `http://${employee.containerHost}:${employee.containerPort}/v1/chat/completions`;
     const res = await fetch(url, {
       method: "POST",
@@ -242,11 +243,21 @@ async function checkEmployeeTasks(employee: {
         Authorization: `Bearer ${employee.gatewayToken}`,
       },
       body: JSON.stringify({
-        model: (employee.modelConfig as { primary: string }).primary,
+        model,
         messages: [{ role: "user", content: message }],
+        stream: true,
       }),
-      signal: AbortSignal.timeout(120_000), // 2 min timeout — employee may need to run commands
+      signal: AbortSignal.timeout(300_000), // 5 min timeout — employee may need to run commands
     });
+
+    // Drain the stream so the request completes
+    if (res.body) {
+      const reader = res.body.getReader();
+      while (true) {
+        const { done } = await reader.read();
+        if (done) break;
+      }
+    }
 
     // Mark response received
     try {
@@ -260,7 +271,10 @@ async function checkEmployeeTasks(employee: {
     } else {
       console.log(`[task-check] Failed to nudge ${employee.name}: HTTP ${res.status}`);
     }
-  } catch {
-    console.log(`[task-check] Could not reach ${employee.name}'s container`);
+  } catch (err: unknown) {
+    const detail = err instanceof Error
+      ? `${err.message}${(err as any).code ? ` (${(err as any).code})` : ""}${(err as any).cause?.message ? ` cause: ${(err as any).cause.message}` : ""}`
+      : String(err);
+    console.error(`[task-check] Could not reach ${employee.name}'s container at ${employee.containerHost}:${employee.containerPort}: ${detail}`);
   }
 }
