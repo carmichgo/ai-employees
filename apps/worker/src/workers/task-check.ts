@@ -108,7 +108,7 @@ async function checkEmployeeTasks(employee: {
     );
 
   // Find stale in_progress tasks (not updated in 30+ min)
-  const staleThreshold = new Date(Date.now() - STALE_THRESHOLD_MS);
+  const staleThresholdIso = new Date(Date.now() - STALE_THRESHOLD_MS).toISOString();
   const staleTasks = await db
     .select({
       id: tasks.id,
@@ -122,7 +122,7 @@ async function checkEmployeeTasks(employee: {
       and(
         eq(tasks.employeeId, employee.id),
         eq(tasks.status, "in_progress"),
-        sql`${tasks.updatedAt} < ${staleThreshold}`,
+        sql`${tasks.updatedAt} < ${staleThresholdIso}::timestamptz`,
       ),
     );
 
@@ -139,7 +139,7 @@ async function checkEmployeeTasks(employee: {
       and(
         eq(tasks.employeeId, employee.id),
         eq(tasks.status, "in_progress"),
-        sql`${tasks.updatedAt} >= ${staleThreshold}`,
+        sql`${tasks.updatedAt} >= ${staleThresholdIso}::timestamptz`,
       ),
     );
 

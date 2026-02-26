@@ -49,17 +49,20 @@ export async function pollAllEmployeeHealth(): Promise<void> {
 async function pollEmployeeHealth(employee: {
   id: string;
   containerId: string | null;
+  containerName: string | null;
   containerHost: string | null;
   containerPort: number | null;
   status: string;
 }) {
-  if (!employee.containerId) {
+  // Use containerId or fall back to containerName (Docker accepts both)
+  const containerRef = employee.containerId || employee.containerName;
+  if (!containerRef) {
     return;
   }
 
   try {
     // Check Docker container status
-    const container = docker.getContainer(employee.containerId);
+    const container = docker.getContainer(containerRef);
     const info = await container.inspect();
 
     if (info.State.Status !== "running") {
