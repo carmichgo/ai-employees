@@ -363,7 +363,7 @@ export async function employeeGatewayRoutes(fastify: FastifyInstance) {
     // 1. Save as a chat message in the dashboard (visible when manager opens employee chat)
     await db.insert(chatMessages).values({
       employeeId: employee.id,
-      userId: owner?.id || null,
+      userId: owner?.id ?? "",
       role: "assistant",
       content: fullMessage,
       mode: "live",

@@ -828,6 +828,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
         // Parse response — handle both JSON and SSE (streaming) formats.
         // The container may return SSE even without stream:true in some configs.
         let replyText: string;
+        let usage: unknown;
         const contentType = res.headers.get("content-type") || "";
         if (contentType.includes("text/event-stream")) {
           // SSE: accumulate text chunks from "data: {...}" lines
@@ -845,6 +846,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
         } else {
           const data = await res.json() as { choices?: { message?: { content?: string } }[]; usage?: unknown };
           replyText = data.choices?.[0]?.message?.content || "No response";
+          usage = data.usage;
         }
 
         // Always persist — this is the key fix. The dashboard may have timed
@@ -852,7 +854,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
         // By saving here, the reply is never lost.
         await saveReply(replyText, "live");
 
-        return { reply: replyText, mode: "live", usage: data.usage };
+        return { reply: replyText, mode: "live", usage };
       } catch (err: unknown) {
         // Log the exact error for debugging
         const errDetail = err instanceof Error
@@ -899,6 +901,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
                 }
                 // Handle both JSON and SSE responses
                 let retryReplyText: string;
+                let retryUsage: unknown;
                 const retryCt = retryRes.headers.get("content-type") || "";
                 if (retryCt.includes("text/event-stream")) {
                   const sseText = await retryRes.text();
@@ -913,11 +916,12 @@ export async function provisionRoutes(fastify: FastifyInstance) {
                   }
                   retryReplyText = retryReplyText || "No response";
                 } else {
-                  const data = await retryRes.json() as { choices?: { message?: { content?: string } }[]; usage?: unknown };
-                  retryReplyText = data.choices?.[0]?.message?.content || "No response";
+                  const retryData = await retryRes.json() as { choices?: { message?: { content?: string } }[]; usage?: unknown };
+                  retryReplyText = retryData.choices?.[0]?.message?.content || "No response";
+                  retryUsage = retryData.usage;
                 }
                 await saveReply(retryReplyText, "live");
-                return { reply: retryReplyText, mode: "live", usage: data.usage };
+                return { reply: retryReplyText, mode: "live", usage: retryUsage };
               } catch (retryErr: unknown) {
                 const retryDetail = retryErr instanceof Error ? retryErr.message : String(retryErr);
                 console.error(`[chat-proxy] Retry ${attempt}/3 failed: ${retryDetail}`);
