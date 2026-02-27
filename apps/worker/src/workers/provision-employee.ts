@@ -6,7 +6,11 @@ import { db, employees, companies, users } from "@ai-employees/db";
 import { getResourcesForTier, type EmployeeTier } from "@ai-employees/shared";
 import {
   generateOpenClawConfig,
+  generateIdentityMd,
   generateSoulMd,
+  generateUserMd,
+  generateToolsMd,
+  generateAgentsMd,
   generateEmployeeEmail,
   generateCredentialManagerScript,
   generateCaptchaSolvingSkill,
@@ -131,12 +135,24 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
       channels: channelInputs,
     };
 
+    // Generate all OpenClaw workspace files per the OpenClaw documentation:
+    //   IDENTITY.md — Agent name, emoji, vibe
+    //   SOUL.md     — Persona, philosophy, values, communication style
+    //   USER.md     — Info about the human manager
+    //   TOOLS.md    — Tool usage notes and guidance
+    //   AGENTS.md   — Operating instructions, task logging, memory, safety
+    //   HEARTBEAT.md — Autonomous work loop instructions
+    const identityMd = generateIdentityMd(employeeInput);
     const soulMd = generateSoulMd(employeeInput);
+    const userMd = generateUserMd(employeeInput);
+    const toolsMd = generateToolsMd(employeeInput);
+    const agentsMd = generateAgentsMd(employeeInput);
+    const heartbeatMd = generateHeartbeatMd(employeeInput);
     const config = generateOpenClawConfig(employeeInput, employee.gatewayToken!, soulMd);
 
     const resources = getResourcesForTier(tier);
 
-    // Write OpenClaw config + soul.md + skills to a host directory that gets bind-mounted
+    // Write OpenClaw config + workspace files + skills to a host directory that gets bind-mounted
     const configDir = `/opt/ai-employees/openclaw-configs/${employeeId}`;
     mkdirSync(`${configDir}/workspace`, { recursive: true });
     mkdirSync(`${configDir}/workspace/uploads`, { recursive: true });
@@ -149,15 +165,33 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     mkdirSync(`${configDir}/skills/team-communication`, { recursive: true });
     mkdirSync(`${configDir}/skills/task-management`, { recursive: true });
     mkdirSync(`${configDir}/skills/docx`, { recursive: true });
-    const heartbeatMd = generateHeartbeatMd(employeeInput);
+
+    // Write main config
     writeFileSync(`${configDir}/openclaw.json`, JSON.stringify(config, null, 2));
+
+    // Write OpenClaw workspace files (root .openclaw dir — loaded into system prompt)
+    writeFileSync(`${configDir}/IDENTITY.md`, identityMd);
     writeFileSync(`${configDir}/SOUL.md`, soulMd);
+    writeFileSync(`${configDir}/USER.md`, userMd);
+    writeFileSync(`${configDir}/TOOLS.md`, toolsMd);
+    writeFileSync(`${configDir}/AGENTS.md`, agentsMd);
     writeFileSync(`${configDir}/HEARTBEAT.md`, heartbeatMd);
+
+    // Also write to workspace/ subdirectory (OpenClaw reads from here too)
+    writeFileSync(`${configDir}/workspace/IDENTITY.md`, identityMd);
     writeFileSync(`${configDir}/workspace/SOUL.md`, soulMd);
+    writeFileSync(`${configDir}/workspace/USER.md`, userMd);
+    writeFileSync(`${configDir}/workspace/TOOLS.md`, toolsMd);
+    writeFileSync(`${configDir}/workspace/AGENTS.md`, agentsMd);
     writeFileSync(`${configDir}/workspace/HEARTBEAT.md`, heartbeatMd);
+
     // OpenClaw creates workspace-main at runtime — write there too if it exists
     if (existsSync(`${configDir}/workspace-main`)) {
+      writeFileSync(`${configDir}/workspace-main/IDENTITY.md`, identityMd);
       writeFileSync(`${configDir}/workspace-main/SOUL.md`, soulMd);
+      writeFileSync(`${configDir}/workspace-main/USER.md`, userMd);
+      writeFileSync(`${configDir}/workspace-main/TOOLS.md`, toolsMd);
+      writeFileSync(`${configDir}/workspace-main/AGENTS.md`, agentsMd);
       writeFileSync(`${configDir}/workspace-main/HEARTBEAT.md`, heartbeatMd);
     }
 

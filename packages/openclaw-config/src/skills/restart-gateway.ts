@@ -9,13 +9,17 @@
 export function generateRestartGatewaySkill(): string {
   return `# Restart Gateway
 
-You can restart your own gateway to apply configuration changes. This is useful after you've modified your SOUL.md, skills, openclaw.json, or other configuration files.
+You can restart your own gateway to apply configuration changes. This is useful after you've modified your workspace files, skills, openclaw.json, or other configuration files.
 
 ## When to Restart
 
 Restart your gateway when you've made changes to:
 - \`~/.openclaw/openclaw.json\` — agent configuration, model settings, tools
-- \`~/.openclaw/SOUL.md\` — your identity and behavioral instructions
+- \`~/.openclaw/AGENTS.md\` — operating instructions and work procedures
+- \`~/.openclaw/SOUL.md\` — your persona and behavioral philosophy
+- \`~/.openclaw/USER.md\` — info about your manager
+- \`~/.openclaw/TOOLS.md\` — tool usage notes
+- \`~/.openclaw/IDENTITY.md\` — your name, emoji, vibe
 - \`~/.openclaw/skills/\` — any skill files (SKILL.md)
 - Any configuration that only takes effect on startup
 

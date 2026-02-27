@@ -495,7 +495,11 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       try {
         // Dynamically import the config generators (freshly built)
         const {
+          generateIdentityMd: genIdentity,
           generateSoulMd: genSoul,
+          generateUserMd: genUser,
+          generateToolsMd: genTools,
+          generateAgentsMd: genAgents,
           generateOpenClawConfig: genConfig,
           generateCaptchaSolvingSkill: genCaptcha,
           generateAccountCreationSkill: genAccount,
@@ -533,20 +537,24 @@ export async function provisionRoutes(fastify: FastifyInstance) {
           channels: [],
         };
 
+        const identityMd = genIdentity(employeeInput);
         const soulMd = genSoul(employeeInput);
+        const userMd = genUser(employeeInput);
+        const toolsMd = genTools(employeeInput);
+        const agentsMd = genAgents(employeeInput);
         const config = genConfig(employeeInput, emp.gatewayToken!, soulMd);
 
-        // Write updated configs
+        // Write updated configs — all OpenClaw workspace files
         const heartbeatMd = genHeartbeat();
         writeFileSync(`${configDir}/openclaw.json`, JSON.stringify(config, null, 2));
-        writeFileSync(`${configDir}/SOUL.md`, soulMd);
-        writeFileSync(`${configDir}/HEARTBEAT.md`, heartbeatMd);
-        writeFileSync(`${configDir}/workspace/SOUL.md`, soulMd);
-        writeFileSync(`${configDir}/workspace/HEARTBEAT.md`, heartbeatMd);
-        // OpenClaw creates workspace-main at runtime — must update there too
-        if (existsSync(`${configDir}/workspace-main`)) {
-          writeFileSync(`${configDir}/workspace-main/SOUL.md`, soulMd);
-          writeFileSync(`${configDir}/workspace-main/HEARTBEAT.md`, heartbeatMd);
+        // Write all OpenClaw workspace files
+        const workspaceFiles = { "IDENTITY.md": identityMd, "SOUL.md": soulMd, "USER.md": userMd, "TOOLS.md": toolsMd, "AGENTS.md": agentsMd, "HEARTBEAT.md": heartbeatMd };
+        for (const [name, content] of Object.entries(workspaceFiles)) {
+          writeFileSync(`${configDir}/${name}`, content);
+          writeFileSync(`${configDir}/workspace/${name}`, content);
+          if (existsSync(`${configDir}/workspace-main`)) {
+            writeFileSync(`${configDir}/workspace-main/${name}`, content);
+          }
         }
         writeFileSync(`${configDir}/cred.js`, genCred(), { mode: 0o755 });
 
@@ -625,7 +633,11 @@ export async function provisionRoutes(fastify: FastifyInstance) {
 
       try {
         const {
+          generateIdentityMd: genIdentity,
           generateSoulMd: genSoul,
+          generateUserMd: genUser,
+          generateToolsMd: genTools,
+          generateAgentsMd: genAgents,
           generateOpenClawConfig: genConfig,
           generateCaptchaSolvingSkill: genCaptcha,
           generateAccountCreationSkill: genAccount,
@@ -663,19 +675,23 @@ export async function provisionRoutes(fastify: FastifyInstance) {
           channels: [],
         };
 
+        const identityMd = genIdentity(employeeInput);
         const soulMd = genSoul(employeeInput);
+        const userMd = genUser(employeeInput);
+        const toolsMd = genTools(employeeInput);
+        const agentsMd = genAgents(employeeInput);
         const config = genConfig(employeeInput, emp.gatewayToken!, soulMd);
 
         const heartbeatMd = genHeartbeat();
         writeFileSync(`${configDir}/openclaw.json`, JSON.stringify(config, null, 2));
-        writeFileSync(`${configDir}/SOUL.md`, soulMd);
-        writeFileSync(`${configDir}/HEARTBEAT.md`, heartbeatMd);
-        writeFileSync(`${configDir}/workspace/SOUL.md`, soulMd);
-        writeFileSync(`${configDir}/workspace/HEARTBEAT.md`, heartbeatMd);
-        // OpenClaw creates workspace-main at runtime — must update there too
-        if (existsSync(`${configDir}/workspace-main`)) {
-          writeFileSync(`${configDir}/workspace-main/SOUL.md`, soulMd);
-          writeFileSync(`${configDir}/workspace-main/HEARTBEAT.md`, heartbeatMd);
+        // Write all OpenClaw workspace files
+        const workspaceFiles = { "IDENTITY.md": identityMd, "SOUL.md": soulMd, "USER.md": userMd, "TOOLS.md": toolsMd, "AGENTS.md": agentsMd, "HEARTBEAT.md": heartbeatMd };
+        for (const [name, content] of Object.entries(workspaceFiles)) {
+          writeFileSync(`${configDir}/${name}`, content);
+          writeFileSync(`${configDir}/workspace/${name}`, content);
+          if (existsSync(`${configDir}/workspace-main`)) {
+            writeFileSync(`${configDir}/workspace-main/${name}`, content);
+          }
         }
         writeFileSync(`${configDir}/cred.js`, genCred(), { mode: 0o755 });
 
@@ -764,14 +780,27 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       let containerHost = employee.containerHost;
       const containerPort = employee.containerPort;
 
-      // Inject SOUL.md + memory.md as system prompt if not already present in messages
+      // Inject OpenClaw workspace files + memory.md as system prompt if not already present
+      // OpenClaw reads AGENTS.md, SOUL.md, USER.md, TOOLS.md, IDENTITY.md at session start.
+      // For the chat-proxy path (direct HTTP), we need to replicate that by loading them all.
       let chatMessages = body.messages;
       const hasSystemMsg = chatMessages.some((m) => m.role === "system");
       if (!hasSystemMsg) {
         const configDir = `/opt/ai-employees/openclaw-configs/${id}`;
-        const soulPath = `${configDir}/SOUL.md`;
         try {
-          let systemContent = readFileSync(soulPath, "utf-8");
+          // Load workspace files in the order OpenClaw reads them
+          const workspaceFileNames = ["AGENTS.md", "SOUL.md", "USER.md", "TOOLS.md", "IDENTITY.md"];
+          const parts: string[] = [];
+          for (const name of workspaceFileNames) {
+            try {
+              const content = readFileSync(`${configDir}/${name}`, "utf-8").trim();
+              if (content) parts.push(content);
+            } catch {
+              // File not found — skip (blank files are skipped per OpenClaw spec)
+            }
+          }
+
+          let systemContent = parts.join("\n\n---\n\n");
 
           // Append memory.md if it exists — persistent context the employee maintains
           const memoryPath = `${configDir}/workspace/memory.md`;
@@ -788,8 +817,8 @@ export async function provisionRoutes(fastify: FastifyInstance) {
             chatMessages = [{ role: "system", content: systemContent }, ...chatMessages];
           }
         } catch {
-          // SOUL.md not found — fall through without system prompt
-          console.log(`[chat-proxy] SOUL.md not found at ${soulPath}, proceeding without system prompt`);
+          // Workspace files not found — fall through without system prompt
+          console.log(`[chat-proxy] Workspace files not found for ${id}, proceeding without system prompt`);
         }
       }
 
