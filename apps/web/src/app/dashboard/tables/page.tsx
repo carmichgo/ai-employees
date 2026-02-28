@@ -283,6 +283,10 @@ export default function TablesPage() {
   // Column header menu
   const [colMenuOpen, setColMenuOpen] = useState<string | null>(null);
 
+  // Add column popover ref
+  const addColBtnRef = useRef<HTMLTableCellElement>(null);
+  const addColPopoverRef = useRef<HTMLDivElement>(null);
+
   // Table rename
   const [editingTableName, setEditingTableName] = useState(false);
   const [editTableNameVal, setEditTableNameVal] = useState("");
@@ -1104,6 +1108,7 @@ export default function TablesPage() {
 
                 {/* Add column button */}
                 <th
+                  ref={addColBtnRef}
                   style={{
                     width: 40,
                     minWidth: 40,
@@ -1111,6 +1116,7 @@ export default function TablesPage() {
                     background: "var(--bg-secondary)",
                     borderBottom: "1px solid var(--border)",
                     textAlign: "center",
+                    position: "relative",
                   }}
                 >
                   <button
@@ -1267,46 +1273,45 @@ export default function TablesPage() {
         tr:hover .row-del { display: block !important; }
       `}</style>
 
-      {/* Add Column Modal */}
+      {/* Add Column Popover */}
       {showAddCol && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.4)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 100,
-          }}
-          onClick={() => setShowAddCol(false)}
-        >
+        <>
+          {/* Invisible backdrop to close on outside click */}
           <div
+            style={{ position: "fixed", inset: 0, zIndex: 99 }}
+            onClick={() => setShowAddCol(false)}
+          />
+          <div
+            ref={addColPopoverRef}
             onClick={(e) => e.stopPropagation()}
             style={{
+              position: "fixed",
+              top: (() => {
+                const rect = addColBtnRef.current?.getBoundingClientRect();
+                return rect ? rect.bottom + 4 : 0;
+              })(),
+              left: (() => {
+                const rect = addColBtnRef.current?.getBoundingClientRect();
+                return rect ? rect.right - 300 : 0;
+              })(),
+              width: 300,
               background: "var(--bg)",
               borderRadius: "var(--radius-lg)",
-              padding: 24,
-              width: 380,
-              boxShadow: "var(--shadow-lg, 0 10px 40px rgba(0,0,0,0.15))",
+              padding: 16,
+              boxShadow: "0 4px 24px rgba(0,0,0,0.16), 0 0 0 1px var(--border)",
+              zIndex: 100,
             }}
           >
-            <h3 style={{ fontSize: 16, fontWeight: 600, margin: "0 0 16px", color: "var(--text)" }}>
-              Add Column
-            </h3>
-            <div style={{ marginBottom: 12 }}>
-              <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>
-                Column Name
-              </label>
+            <div style={{ marginBottom: 10 }}>
               <input
                 autoFocus
                 value={newColName}
                 onChange={(e) => setNewColName(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleAddColumn()}
-                placeholder="e.g. Email, Amount, Due Date..."
+                placeholder="Field name"
                 style={{
                   width: "100%",
-                  padding: "8px 10px",
+                  padding: "7px 10px",
                   border: "1px solid var(--border)",
                   borderRadius: "var(--radius-sm)",
                   fontSize: 13,
@@ -1317,11 +1322,11 @@ export default function TablesPage() {
                 }}
               />
             </div>
-            <div style={{ marginBottom: 12 }}>
-              <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>
+            <div style={{ marginBottom: newColType === "select" ? 10 : 0 }}>
+              <label style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", display: "block", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>
                 Type
               </label>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                 {COLUMN_TYPES.map((ct) => {
                   const Icon = ct.icon;
                   const selected = newColType === ct.value;
@@ -1332,18 +1337,22 @@ export default function TablesPage() {
                       style={{
                         display: "flex",
                         alignItems: "center",
-                        gap: 4,
-                        padding: "5px 10px",
-                        border: selected ? "1px solid var(--blue)" : "1px solid var(--border)",
-                        background: selected ? "rgba(59,130,246,0.08)" : "var(--bg)",
-                        color: selected ? "var(--blue)" : "var(--text-secondary)",
+                        gap: 8,
+                        padding: "6px 8px",
+                        border: "none",
+                        background: selected ? "rgba(59,130,246,0.1)" : "transparent",
+                        color: selected ? "var(--blue)" : "var(--text)",
                         borderRadius: "var(--radius-sm)",
-                        fontSize: 12,
+                        fontSize: 13,
                         cursor: "pointer",
                         fontWeight: selected ? 500 : 400,
+                        width: "100%",
+                        textAlign: "left",
                       }}
+                      onMouseEnter={(e) => { if (!selected) e.currentTarget.style.background = "var(--bg-secondary)"; }}
+                      onMouseLeave={(e) => { if (!selected) e.currentTarget.style.background = "transparent"; }}
                     >
-                      <Icon size={12} />
+                      <Icon size={14} />
                       {ct.label}
                     </button>
                   );
@@ -1351,8 +1360,8 @@ export default function TablesPage() {
               </div>
             </div>
             {newColType === "select" && (
-              <div style={{ marginBottom: 12 }}>
-                <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>
+              <div style={{ marginBottom: 0 }}>
+                <label style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", display: "block", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>
                   Options (comma-separated)
                 </label>
                 <input
@@ -1362,7 +1371,7 @@ export default function TablesPage() {
                   placeholder="e.g. Todo, In Progress, Done"
                   style={{
                     width: "100%",
-                    padding: "8px 10px",
+                    padding: "7px 10px",
                     border: "1px solid var(--border)",
                     borderRadius: "var(--radius-sm)",
                     fontSize: 13,
@@ -1374,15 +1383,15 @@ export default function TablesPage() {
                 />
               </div>
             )}
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
               <button
                 onClick={() => setShowAddCol(false)}
                 style={{
-                  padding: "8px 14px",
+                  padding: "6px 12px",
                   background: "none",
                   border: "1px solid var(--border)",
                   borderRadius: "var(--radius-sm)",
-                  fontSize: 13,
+                  fontSize: 12,
                   cursor: "pointer",
                   color: "var(--text-secondary)",
                 }}
@@ -1393,21 +1402,21 @@ export default function TablesPage() {
                 onClick={handleAddColumn}
                 disabled={!newColName.trim()}
                 style={{
-                  padding: "8px 14px",
-                  background: newColName.trim() ? "var(--text)" : "var(--bg-secondary)",
-                  color: newColName.trim() ? "var(--bg)" : "var(--text-tertiary)",
+                  padding: "6px 12px",
+                  background: newColName.trim() ? "var(--blue)" : "var(--bg-secondary)",
+                  color: newColName.trim() ? "#fff" : "var(--text-tertiary)",
                   border: "none",
                   borderRadius: "var(--radius-sm)",
-                  fontSize: 13,
+                  fontSize: 12,
                   fontWeight: 500,
                   cursor: newColName.trim() ? "pointer" : "default",
                 }}
               >
-                Add Column
+                Add field
               </button>
             </div>
           </div>
-        </div>
+        </>
       )}
 
       {/* Click outside to close column menu */}
