@@ -316,11 +316,34 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     console.log(`[provision] Installing CLI tools for ${employee.name}...`);
     installCliTools(employee.containerName!);
 
-    // After installCliTools restarts the container, wait for it to fully come up
-    // before checking IP — Docker needs a moment to assign the network IP.
-    // Heavy tool installs (Chromium, LibreOffice, pandoc) make the container
-    // heavier to restart, so give it extra time.
-    await new Promise((r) => setTimeout(r, 10000));
+    // After installCliTools restarts the container, poll until Docker reports it
+    // as "running" before checking IP — Docker needs a moment to assign the
+    // network IP, and heavy containers can take 15-30s to come up.
+    {
+      const maxWaitMs = 30_000;
+      const pollInterval = 2000;
+      const startWait = Date.now();
+      let containerRunning = false;
+      while (Date.now() - startWait < maxWaitMs) {
+        try {
+          const statusOut = execSync(
+            `docker inspect --format='{{.State.Status}}' ${employee.containerName}`,
+            { timeout: 5000, stdio: "pipe" },
+          ).toString().trim();
+          if (statusOut === "running") {
+            containerRunning = true;
+            break;
+          }
+          console.log(`[provision] Container status after restart: ${statusOut}, waiting...`);
+        } catch { /* ignore */ }
+        await new Promise((r) => setTimeout(r, pollInterval));
+      }
+      if (!containerRunning) {
+        console.log(`[provision] Container not running after ${maxWaitMs / 1000}s — will still attempt IP refresh`);
+      }
+      // Extra 3s for network IP assignment after "running" state
+      await new Promise((r) => setTimeout(r, 3000));
+    }
 
     // Get the new IP address after restart
     try {
@@ -333,16 +356,21 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
           .set({ containerHost: newIp, updatedAt: new Date() })
           .where(eq(employees.id, employeeId));
         console.log(`[provision] Updated container IP after CLI install: ${newIp}`);
+      } else if (!newIp) {
+        console.log(`[provision] WARNING: No IP address found after restart — gateway polling may fail`);
+      } else {
+        console.log(`[provision] Container IP unchanged after restart: ${containerIp}`);
       }
-    } catch {
-      console.log(`[provision] Could not refresh container IP after CLI install (non-critical)`);
+    } catch (inspectErr) {
+      const msg = inspectErr instanceof Error ? inspectErr.message : String(inspectErr);
+      console.log(`[provision] Could not refresh container IP after CLI install: ${msg.slice(0, 200)}`);
     }
 
     // Wait for the OpenClaw gateway to be ready before marking active.
     // 240s timeout accounts for heavy containers after CLI tool installs
     // (Chromium, LibreOffice, pandoc add significant startup weight).
     if (containerIp) {
-      await waitForGateway(containerIp, 18789, 240_000);
+      await waitForGateway(containerIp, 18789, 240_000, employee.containerName!);
     }
 
     await db
@@ -508,12 +536,20 @@ export async function cleanupOrphanedContainers(): Promise<void> {
   }
 }
 
-/** Poll the gateway until it responds or timeout is reached. Throws on timeout. */
-async function waitForGateway(host: string, port: number, timeoutMs: number): Promise<void> {
+/** Poll the gateway until it responds or timeout is reached. Throws on timeout.
+ *  Also checks Docker container health periodically to fail fast if the container is dead. */
+async function waitForGateway(
+  host: string,
+  port: number,
+  timeoutMs: number,
+  containerName?: string,
+): Promise<void> {
   const start = Date.now();
   const interval = 2000;
   let attempts = 0;
   let lastError = "";
+  let consecutiveFetchFails = 0;
+
   while (Date.now() - start < timeoutMs) {
     attempts++;
     try {
@@ -525,12 +561,54 @@ async function waitForGateway(host: string, port: number, timeoutMs: number): Pr
         return;
       }
       lastError = `HTTP ${res.status}`;
+      consecutiveFetchFails = 0;
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err);
+      consecutiveFetchFails++;
     }
-    if (attempts % 15 === 0) {
+
+    // Every 30s (15 attempts), or after 10 consecutive fetch failures,
+    // check if the container is actually running.
+    if (containerName && (attempts % 15 === 0 || consecutiveFetchFails === 10)) {
+      try {
+        const statusOutput = execSync(
+          `docker inspect --format='{{.State.Status}} {{.State.ExitCode}} {{.State.OOMKilled}}' ${containerName}`,
+          { timeout: 5000, stdio: "pipe" },
+        ).toString().trim();
+        const [status, exitCode, oomKilled] = statusOutput.split(" ");
+        console.log(
+          `[provision] Container ${containerName} state: status=${status} exitCode=${exitCode} oomKilled=${oomKilled} ` +
+          `(${Math.round((Date.now() - start) / 1000)}s elapsed, last error: ${lastError})`,
+        );
+
+        // If the container has exited or is dead, try to restart it once
+        if (status === "exited" || status === "dead") {
+          console.log(`[provision] Container is ${status} (exit=${exitCode}, oom=${oomKilled}). Attempting restart...`);
+          try {
+            // Log last 30 lines of container logs for diagnostics
+            const logs = execSync(`docker logs --tail 30 ${containerName}`, { timeout: 10_000, stdio: "pipe" })
+              .toString().trim();
+            if (logs) console.log(`[provision] Container logs before restart:\n${logs}`);
+          } catch { /* ignore log fetch errors */ }
+
+          try {
+            execSync(`docker start ${containerName}`, { timeout: 30_000 });
+            console.log(`[provision] Container restarted, waiting 10s for it to initialize...`);
+            await new Promise((r) => setTimeout(r, 10_000));
+            consecutiveFetchFails = 0;
+          } catch (restartErr) {
+            const msg = restartErr instanceof Error ? restartErr.message : String(restartErr);
+            console.log(`[provision] Failed to restart container: ${msg.slice(0, 200)}`);
+          }
+        }
+      } catch {
+        // docker inspect failed — container might be gone entirely
+        console.log(`[provision] Could not inspect container ${containerName} (${Math.round((Date.now() - start) / 1000)}s elapsed)`);
+      }
+    } else if (attempts % 15 === 0) {
       console.log(`[provision] Still waiting for gateway at ${host}:${port} (${Math.round((Date.now() - start) / 1000)}s elapsed, last error: ${lastError})`);
     }
+
     await new Promise((r) => setTimeout(r, interval));
   }
   throw new Error(`Gateway at ${host}:${port} did not respond within ${timeoutMs}ms (${attempts} attempts, last error: ${lastError})`);
@@ -720,14 +798,32 @@ CREDEOF
     }
   }
 
-  // Restart container so the gateway picks up Chromium and other new binaries
-  try {
-    console.log(`[cli-tools] Restarting container to pick up installed tools...`);
-    execSync(`docker restart ${containerName}`, { timeout: 30_000 });
-    console.log(`[cli-tools] Container restarted successfully`);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.log(`[cli-tools] Container restart failed: ${msg.slice(0, 200)}`);
+  // Restart container so the gateway picks up Chromium and other new binaries.
+  // Use a longer timeout (60s) — heavy containers with Chromium + LibreOffice
+  // can take 30+ seconds to stop and restart. Retry once on failure.
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      console.log(`[cli-tools] Restarting container to pick up installed tools (attempt ${attempt})...`);
+      execSync(`docker restart ${containerName}`, { timeout: 60_000 });
+      console.log(`[cli-tools] Container restarted successfully`);
+      break;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.log(`[cli-tools] Container restart attempt ${attempt} failed: ${msg.slice(0, 200)}`);
+      if (attempt === 1) {
+        // Before retrying, try a stop + start sequence which can be more reliable
+        try {
+          console.log(`[cli-tools] Trying stop + start fallback...`);
+          execSync(`docker stop -t 30 ${containerName}`, { timeout: 40_000, stdio: "pipe" });
+          execSync(`docker start ${containerName}`, { timeout: 30_000, stdio: "pipe" });
+          console.log(`[cli-tools] Container started via stop+start fallback`);
+          break;
+        } catch (fallbackErr) {
+          const fbMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+          console.log(`[cli-tools] Stop+start fallback also failed: ${fbMsg.slice(0, 200)}`);
+        }
+      }
+    }
   }
 }
 
