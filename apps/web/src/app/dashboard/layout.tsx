@@ -18,6 +18,7 @@ import {
   Inbox,
   CreditCard,
   FolderOpen,
+  Table2,
 } from "lucide-react";
 
 const NAV_SECTIONS = [
@@ -29,6 +30,7 @@ const NAV_SECTIONS = [
       { href: "/dashboard/inbox", label: "Inbox", icon: Inbox },
       { href: "/dashboard/tasks", label: "Tasks", icon: ListTodo },
       { href: "/dashboard/documents", label: "Documents", icon: FolderOpen },
+      { href: "/dashboard/tables", label: "Tables", icon: Table2 },
     ],
   },
   {
@@ -79,7 +81,7 @@ export default function DashboardLayout({
     return pathname.startsWith(href);
   };
 
-  const isFullWidth = pathname.startsWith("/dashboard/inbox");
+  const isFullWidth = pathname.startsWith("/dashboard/inbox") || pathname.startsWith("/dashboard/tables");
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", position: "relative", isolation: "isolate" }}>

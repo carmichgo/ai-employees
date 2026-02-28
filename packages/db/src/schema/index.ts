@@ -8,3 +8,4 @@ export * from "./usage-records.js";
 export * from "./triggers.js";
 export * from "./tasks.js";
 export * from "./chat-messages.js";
+export * from "./spreadsheet-tables.js";

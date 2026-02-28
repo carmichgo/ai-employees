@@ -656,6 +656,103 @@ class ApiClient {
     }>("/api/billing/overview");
   }
 
+  // Tables (Airtable-style DB)
+  async listTables() {
+    return this.request<{
+      tables: Array<{
+        id: string;
+        companyId: string;
+        name: string;
+        description: string | null;
+        createdAt: string;
+        updatedAt: string;
+      }>;
+    }>("/api/tables");
+  }
+
+  async getTable(tableId: string) {
+    return this.request<{
+      table: any;
+      columns: Array<{
+        id: string;
+        tableId: string;
+        name: string;
+        type: string;
+        options: any;
+        position: number;
+        createdAt: string;
+      }>;
+      rows: Array<{
+        id: string;
+        tableId: string;
+        cells: Record<string, any>;
+        position: number;
+        createdAt: string;
+        updatedAt: string;
+      }>;
+    }>(`/api/tables?tableId=${tableId}`);
+  }
+
+  async createTable(data: { name: string; description?: string }) {
+    return this.request<{ table: any; columns: any[] }>("/api/tables", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateTable(tableId: string, data: { name?: string; description?: string }) {
+    return this.request<{ table: any }>(`/api/tables?tableId=${tableId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteTable(tableId: string) {
+    return this.request<{ message: string }>(`/api/tables?tableId=${tableId}`, {
+      method: "DELETE",
+    });
+  }
+
+  async addColumn(tableId: string, data: { name: string; type?: string; options?: any }) {
+    return this.request<{ column: any }>("/api/tables/columns", {
+      method: "POST",
+      body: JSON.stringify({ tableId, ...data }),
+    });
+  }
+
+  async updateColumn(columnId: string, data: { name?: string; type?: string; options?: any; position?: number }) {
+    return this.request<{ column: any }>(`/api/tables/columns?columnId=${columnId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteColumn(columnId: string) {
+    return this.request<{ message: string }>(`/api/tables/columns?columnId=${columnId}`, {
+      method: "DELETE",
+    });
+  }
+
+  async addRow(tableId: string, cells?: Record<string, any>) {
+    return this.request<{ row: any }>("/api/tables/rows", {
+      method: "POST",
+      body: JSON.stringify({ tableId, cells }),
+    });
+  }
+
+  async updateRow(rowId: string, cells: Record<string, any>) {
+    return this.request<{ row: any }>(`/api/tables/rows?rowId=${rowId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ cells }),
+    });
+  }
+
+  async deleteRow(rowId: string) {
+    return this.request<{ message: string }>(`/api/tables/rows?rowId=${rowId}`, {
+      method: "DELETE",
+    });
+  }
+
   getSlackInstallUrl(): string {
     const token = this.getToken();
     // The install route is a redirect, so we navigate to it directly

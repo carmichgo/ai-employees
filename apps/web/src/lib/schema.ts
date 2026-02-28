@@ -232,6 +232,44 @@ export const usageRecords = pgTable("usage_records", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// ── Spreadsheet Tables (Airtable-style DB) ──────────────
+export const spreadsheetTables = pgTable("spreadsheet_tables", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  companyId: uuid("company_id")
+    .notNull()
+    .references(() => companies.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const spreadsheetColumns = pgTable("spreadsheet_columns", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tableId: uuid("table_id")
+    .notNull()
+    .references(() => spreadsheetTables.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 255 }).notNull(),
+  type: varchar("type", { length: 30 }).notNull().default("text"),
+  // type: text | number | boolean | date | select | url | email
+  options: jsonb("options").notNull().default({}),
+  // For select: { choices: ["Option A", "Option B"] }
+  position: integer("position").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const spreadsheetRows = pgTable("spreadsheet_rows", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tableId: uuid("table_id")
+    .notNull()
+    .references(() => spreadsheetTables.id, { onDelete: "cascade" }),
+  cells: jsonb("cells").notNull().default({}),
+  // { [columnId]: value }
+  position: integer("position").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // ── Pending Hires (stores hire payload while Stripe Checkout is in progress) ──
 export const pendingHires = pgTable("pending_hires", {
   id: uuid("id").primaryKey().defaultRandom(),
