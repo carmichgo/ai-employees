@@ -466,6 +466,31 @@ export function generateToolsMd(employee: EmployeeInput): string {
   parts.push("- You can install additional packages when needed");
   parts.push("");
 
+  parts.push("## Tables (Shared Company Spreadsheets)");
+  parts.push("You have access to a shared spreadsheet/database system visible to your manager and teammates in the dashboard. Use these instead of creating local CSV files when the data should be persistent and visible to your team.");
+  parts.push("");
+  parts.push("**When to use Tables vs local files:**");
+  parts.push("- **Use Tables** when data should be visible in the dashboard, shared with your team, or updated over time (e.g., lead lists, inventory tracking, research results, CRM data)");
+  parts.push("- **Use local CSV/files** for temporary data, one-off exports, or files you need to attach to emails/messages");
+  parts.push("");
+  parts.push("**Column types:** `text`, `number`, `boolean` (checkbox), `date`, `select` (dropdown), `url`, `email`");
+  parts.push("- For `select` columns, pass `options: { choices: [\"Option A\", \"Option B\"] }`");
+  parts.push("");
+  parts.push("**API endpoints** (via `$BLITZ_API_URL/employee/tables`):");
+  parts.push("- `GET /employee/tables` — list all tables");
+  parts.push("- `GET /employee/tables/:id` — get table with columns and rows");
+  parts.push("- `POST /employee/tables` — create table (with optional columns)");
+  parts.push("- `PATCH /employee/tables/:id` — update table name/description");
+  parts.push("- `DELETE /employee/tables/:id` — delete table");
+  parts.push("- `POST /employee/tables/:id/columns` — add a column");
+  parts.push("- `DELETE /employee/tables/:id/columns/:colId` — delete a column");
+  parts.push("- `POST /employee/tables/:id/rows` — add a row");
+  parts.push("- `PATCH /employee/tables/:id/rows/:rowId` — update row cells");
+  parts.push("- `DELETE /employee/tables/:id/rows/:rowId` — delete a row");
+  parts.push("");
+  parts.push("See the **Tables API** section in AGENTS.md for full usage examples.");
+  parts.push("");
+
   parts.push("## Email — `himalaya`");
   parts.push("- Built-in email client for IMAP/SMTP");
   parts.push("- If email credentials are configured (check EMAIL_ADDRESS env var):");
@@ -739,6 +764,70 @@ export function generateAgentsMd(employee: EmployeeInput): string {
   parts.push("- **Complex multi-step tasks** (account creation, full campaigns): tens of minutes, not days");
   parts.push("");
   parts.push("**Never estimate in human time.** A task that would take a human 2 hours should take you 5-15 minutes. When your manager asks for a plan with ETAs, give realistic AI-speed estimates. Do NOT pad estimates or use human-scale timelines like 'this will take a few days' — you can likely finish it in minutes.");
+  parts.push("");
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // TABLES API — shared company spreadsheets
+  // ═══════════════════════════════════════════════════════════════════════
+
+  parts.push("## Tables API — Shared Company Spreadsheets");
+  parts.push("");
+  parts.push("You can create and manage spreadsheet tables that are visible in the company dashboard. These are shared with your manager and teammates — use them for persistent, structured data instead of local CSV files.");
+  parts.push("");
+  parts.push("**List all tables:**");
+  parts.push("```bash");
+  parts.push("curl -s \"$BLITZ_API_URL/employee/tables\" \\");
+  parts.push("  -H \"Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN\" | jq '.tables[] | {id, name}'");
+  parts.push("```");
+  parts.push("");
+  parts.push("**Get a table (with columns and rows):**");
+  parts.push("```bash");
+  parts.push("curl -s \"$BLITZ_API_URL/employee/tables/$TABLE_ID\" \\");
+  parts.push("  -H \"Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN\" | jq '.'");
+  parts.push("```");
+  parts.push("");
+  parts.push("**Create a table with columns:**");
+  parts.push("```bash");
+  parts.push("TABLE=$(curl -s -X POST \"$BLITZ_API_URL/employee/tables\" \\");
+  parts.push("  -H \"Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN\" \\");
+  parts.push("  -H \"Content-Type: application/json\" \\");
+  parts.push("  -d '{\"name\": \"Lead Tracker\", \"columns\": [{\"name\": \"Company\", \"type\": \"text\"}, {\"name\": \"Contact Email\", \"type\": \"email\"}, {\"name\": \"Status\", \"type\": \"select\", \"options\": {\"choices\": [\"New\", \"Contacted\", \"Qualified\", \"Won\"]}}]}')");
+  parts.push("TABLE_ID=$(echo \"$TABLE\" | jq -r '.table.id')");
+  parts.push("```");
+  parts.push("");
+  parts.push("**Add a row (cells map column IDs to values):**");
+  parts.push("```bash");
+  parts.push("# First get column IDs from the table");
+  parts.push("COLS=$(curl -s \"$BLITZ_API_URL/employee/tables/$TABLE_ID\" \\");
+  parts.push("  -H \"Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN\" | jq '.columns')");
+  parts.push("");
+  parts.push("# Then add a row using column IDs as keys");
+  parts.push("COL1_ID=$(echo \"$COLS\" | jq -r '.[0].id')");
+  parts.push("COL2_ID=$(echo \"$COLS\" | jq -r '.[1].id')");
+  parts.push("curl -s -X POST \"$BLITZ_API_URL/employee/tables/$TABLE_ID/rows\" \\");
+  parts.push("  -H \"Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN\" \\");
+  parts.push("  -H \"Content-Type: application/json\" \\");
+  parts.push("  -d \"{\\\"cells\\\": {\\\"$COL1_ID\\\": \\\"Acme Corp\\\", \\\"$COL2_ID\\\": \\\"john@acme.com\\\"}}\"");
+  parts.push("```");
+  parts.push("");
+  parts.push("**Update a row:**");
+  parts.push("```bash");
+  parts.push("curl -s -X PATCH \"$BLITZ_API_URL/employee/tables/$TABLE_ID/rows/$ROW_ID\" \\");
+  parts.push("  -H \"Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN\" \\");
+  parts.push("  -H \"Content-Type: application/json\" \\");
+  parts.push("  -d \"{\\\"cells\\\": {\\\"$COL_ID\\\": \\\"Updated Value\\\"}}\"");
+  parts.push("```");
+  parts.push("");
+  parts.push("**Delete a row or column:**");
+  parts.push("```bash");
+  parts.push("curl -s -X DELETE \"$BLITZ_API_URL/employee/tables/$TABLE_ID/rows/$ROW_ID\" \\");
+  parts.push("  -H \"Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN\"");
+  parts.push("");
+  parts.push("curl -s -X DELETE \"$BLITZ_API_URL/employee/tables/$TABLE_ID/columns/$COL_ID\" \\");
+  parts.push("  -H \"Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN\"");
+  parts.push("```");
+  parts.push("");
+  parts.push("**Column types:** `text`, `number`, `boolean`, `date`, `select`, `url`, `email`");
   parts.push("");
 
   // Authority — who can assign tasks vs. who can ask questions

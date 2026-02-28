@@ -8,7 +8,7 @@
 import type { FastifyInstance } from "fastify";
 import { execSync } from "node:child_process";
 import { eq, and, ne, desc, sql } from "drizzle-orm";
-import { db, employees, tasks, taskComments, chatMessages, users, companies } from "@ai-employees/db";
+import { db, employees, tasks, taskComments, chatMessages, users, companies, spreadsheetTables, spreadsheetColumns, spreadsheetRows } from "@ai-employees/db";
 
 /** Authenticate an employee by their gateway token. Returns the employee or sends an error. */
 async function authenticateEmployee(request: { headers: { authorization?: string } }, reply: { status: (code: number) => { send: (body: unknown) => unknown } }) {
@@ -396,6 +396,352 @@ export async function employeeGatewayRoutes(fastify: FastifyInstance) {
       .orderBy(taskComments.createdAt);
 
     return { comments };
+  });
+
+  // ─── Spreadsheet Tables ────────────────────────────────────────────
+
+  // GET /employee/tables — list all tables for this company
+  fastify.get("/employee/tables", async (request, reply) => {
+    const auth = await authenticateEmployee(request, reply);
+    if ("error" in auth) return auth.error;
+    const { employee } = auth;
+
+    const tables = await db
+      .select({
+        id: spreadsheetTables.id,
+        name: spreadsheetTables.name,
+        description: spreadsheetTables.description,
+        createdAt: spreadsheetTables.createdAt,
+        updatedAt: spreadsheetTables.updatedAt,
+      })
+      .from(spreadsheetTables)
+      .where(eq(spreadsheetTables.companyId, employee.companyId))
+      .orderBy(desc(spreadsheetTables.createdAt));
+
+    return { tables };
+  });
+
+  // GET /employee/tables/:tableId — get a single table with columns and rows
+  fastify.get<{ Params: { tableId: string } }>("/employee/tables/:tableId", async (request, reply) => {
+    const auth = await authenticateEmployee(request, reply);
+    if ("error" in auth) return auth.error;
+    const { employee } = auth;
+
+    const { tableId } = request.params;
+
+    const [table] = await db
+      .select()
+      .from(spreadsheetTables)
+      .where(and(eq(spreadsheetTables.id, tableId), eq(spreadsheetTables.companyId, employee.companyId)))
+      .limit(1);
+
+    if (!table) {
+      return reply.status(404).send({ error: "Table not found" });
+    }
+
+    const cols = await db
+      .select()
+      .from(spreadsheetColumns)
+      .where(eq(spreadsheetColumns.tableId, tableId))
+      .orderBy(spreadsheetColumns.position);
+
+    const rows = await db
+      .select()
+      .from(spreadsheetRows)
+      .where(eq(spreadsheetRows.tableId, tableId))
+      .orderBy(spreadsheetRows.position);
+
+    return { table, columns: cols, rows };
+  });
+
+  // POST /employee/tables — create a new table
+  fastify.post("/employee/tables", async (request, reply) => {
+    const auth = await authenticateEmployee(request, reply);
+    if ("error" in auth) return auth.error;
+    const { employee } = auth;
+
+    const body = request.body as {
+      name: string;
+      description?: string;
+      columns?: Array<{ name: string; type?: string; options?: Record<string, unknown> }>;
+    };
+
+    if (!body.name) {
+      return reply.status(400).send({ error: "name is required" });
+    }
+
+    const [table] = await db
+      .insert(spreadsheetTables)
+      .values({
+        companyId: employee.companyId,
+        name: body.name,
+        description: body.description || null,
+      })
+      .returning();
+
+    // Create initial columns if provided, otherwise create a default "Name" column
+    const colDefs = body.columns?.length
+      ? body.columns
+      : [{ name: "Name", type: "text" }];
+
+    const cols = [];
+    for (let i = 0; i < colDefs.length; i++) {
+      const [col] = await db
+        .insert(spreadsheetColumns)
+        .values({
+          tableId: table.id,
+          name: colDefs[i].name,
+          type: colDefs[i].type || "text",
+          options: colDefs[i].options || {},
+          position: i,
+        })
+        .returning();
+      cols.push(col);
+    }
+
+    return { table, columns: cols };
+  });
+
+  // PATCH /employee/tables/:tableId — update table name/description
+  fastify.patch<{ Params: { tableId: string } }>("/employee/tables/:tableId", async (request, reply) => {
+    const auth = await authenticateEmployee(request, reply);
+    if ("error" in auth) return auth.error;
+    const { employee } = auth;
+
+    const { tableId } = request.params;
+    const body = request.body as { name?: string; description?: string };
+
+    const [existing] = await db
+      .select({ id: spreadsheetTables.id })
+      .from(spreadsheetTables)
+      .where(and(eq(spreadsheetTables.id, tableId), eq(spreadsheetTables.companyId, employee.companyId)))
+      .limit(1);
+
+    if (!existing) {
+      return reply.status(404).send({ error: "Table not found" });
+    }
+
+    const updates: Record<string, unknown> = { updatedAt: new Date() };
+    if (body.name) updates.name = body.name;
+    if (body.description !== undefined) updates.description = body.description;
+
+    const [table] = await db
+      .update(spreadsheetTables)
+      .set(updates)
+      .where(eq(spreadsheetTables.id, tableId))
+      .returning();
+
+    return { table };
+  });
+
+  // DELETE /employee/tables/:tableId — delete a table (cascades columns and rows)
+  fastify.delete<{ Params: { tableId: string } }>("/employee/tables/:tableId", async (request, reply) => {
+    const auth = await authenticateEmployee(request, reply);
+    if ("error" in auth) return auth.error;
+    const { employee } = auth;
+
+    const { tableId } = request.params;
+
+    const [existing] = await db
+      .select({ id: spreadsheetTables.id })
+      .from(spreadsheetTables)
+      .where(and(eq(spreadsheetTables.id, tableId), eq(spreadsheetTables.companyId, employee.companyId)))
+      .limit(1);
+
+    if (!existing) {
+      return reply.status(404).send({ error: "Table not found" });
+    }
+
+    await db.delete(spreadsheetRows).where(eq(spreadsheetRows.tableId, tableId));
+    await db.delete(spreadsheetColumns).where(eq(spreadsheetColumns.tableId, tableId));
+    await db.delete(spreadsheetTables).where(eq(spreadsheetTables.id, tableId));
+
+    return { success: true };
+  });
+
+  // POST /employee/tables/:tableId/columns — add a column to a table
+  fastify.post<{ Params: { tableId: string } }>("/employee/tables/:tableId/columns", async (request, reply) => {
+    const auth = await authenticateEmployee(request, reply);
+    if ("error" in auth) return auth.error;
+    const { employee } = auth;
+
+    const { tableId } = request.params;
+    const body = request.body as {
+      name: string;
+      type?: string;
+      options?: Record<string, unknown>;
+    };
+
+    if (!body.name) {
+      return reply.status(400).send({ error: "name is required" });
+    }
+
+    const [table] = await db
+      .select({ id: spreadsheetTables.id })
+      .from(spreadsheetTables)
+      .where(and(eq(spreadsheetTables.id, tableId), eq(spreadsheetTables.companyId, employee.companyId)))
+      .limit(1);
+
+    if (!table) {
+      return reply.status(404).send({ error: "Table not found" });
+    }
+
+    // Get max position
+    const existingCols = await db
+      .select({ position: spreadsheetColumns.position })
+      .from(spreadsheetColumns)
+      .where(eq(spreadsheetColumns.tableId, tableId))
+      .orderBy(desc(spreadsheetColumns.position))
+      .limit(1);
+
+    const nextPos = existingCols.length > 0 ? existingCols[0].position + 1 : 0;
+
+    const [column] = await db
+      .insert(spreadsheetColumns)
+      .values({
+        tableId,
+        name: body.name,
+        type: body.type || "text",
+        options: body.options || {},
+        position: nextPos,
+      })
+      .returning();
+
+    return { column };
+  });
+
+  // DELETE /employee/tables/:tableId/columns/:columnId — delete a column
+  fastify.delete<{ Params: { tableId: string; columnId: string } }>("/employee/tables/:tableId/columns/:columnId", async (request, reply) => {
+    const auth = await authenticateEmployee(request, reply);
+    if ("error" in auth) return auth.error;
+    const { employee } = auth;
+
+    const { tableId, columnId } = request.params;
+
+    const [table] = await db
+      .select({ id: spreadsheetTables.id })
+      .from(spreadsheetTables)
+      .where(and(eq(spreadsheetTables.id, tableId), eq(spreadsheetTables.companyId, employee.companyId)))
+      .limit(1);
+
+    if (!table) {
+      return reply.status(404).send({ error: "Table not found" });
+    }
+
+    await db.delete(spreadsheetColumns).where(and(eq(spreadsheetColumns.id, columnId), eq(spreadsheetColumns.tableId, tableId)));
+
+    return { success: true };
+  });
+
+  // POST /employee/tables/:tableId/rows — add a row
+  fastify.post<{ Params: { tableId: string } }>("/employee/tables/:tableId/rows", async (request, reply) => {
+    const auth = await authenticateEmployee(request, reply);
+    if ("error" in auth) return auth.error;
+    const { employee } = auth;
+
+    const { tableId } = request.params;
+    const body = request.body as {
+      cells?: Record<string, unknown>;
+    };
+
+    const [table] = await db
+      .select({ id: spreadsheetTables.id })
+      .from(spreadsheetTables)
+      .where(and(eq(spreadsheetTables.id, tableId), eq(spreadsheetTables.companyId, employee.companyId)))
+      .limit(1);
+
+    if (!table) {
+      return reply.status(404).send({ error: "Table not found" });
+    }
+
+    // Get max position
+    const existingRows = await db
+      .select({ position: spreadsheetRows.position })
+      .from(spreadsheetRows)
+      .where(eq(spreadsheetRows.tableId, tableId))
+      .orderBy(desc(spreadsheetRows.position))
+      .limit(1);
+
+    const nextPos = existingRows.length > 0 ? existingRows[0].position + 1 : 0;
+
+    const [row] = await db
+      .insert(spreadsheetRows)
+      .values({
+        tableId,
+        cells: body.cells || {},
+        position: nextPos,
+      })
+      .returning();
+
+    return { row };
+  });
+
+  // PATCH /employee/tables/:tableId/rows/:rowId — update row cells
+  fastify.patch<{ Params: { tableId: string; rowId: string } }>("/employee/tables/:tableId/rows/:rowId", async (request, reply) => {
+    const auth = await authenticateEmployee(request, reply);
+    if ("error" in auth) return auth.error;
+    const { employee } = auth;
+
+    const { tableId, rowId } = request.params;
+    const body = request.body as { cells: Record<string, unknown> };
+
+    if (!body.cells) {
+      return reply.status(400).send({ error: "cells is required" });
+    }
+
+    const [table] = await db
+      .select({ id: spreadsheetTables.id })
+      .from(spreadsheetTables)
+      .where(and(eq(spreadsheetTables.id, tableId), eq(spreadsheetTables.companyId, employee.companyId)))
+      .limit(1);
+
+    if (!table) {
+      return reply.status(404).send({ error: "Table not found" });
+    }
+
+    // Merge new cells with existing
+    const [existing] = await db
+      .select({ cells: spreadsheetRows.cells })
+      .from(spreadsheetRows)
+      .where(and(eq(spreadsheetRows.id, rowId), eq(spreadsheetRows.tableId, tableId)))
+      .limit(1);
+
+    if (!existing) {
+      return reply.status(404).send({ error: "Row not found" });
+    }
+
+    const mergedCells = { ...(existing.cells as Record<string, unknown>), ...body.cells };
+
+    const [row] = await db
+      .update(spreadsheetRows)
+      .set({ cells: mergedCells, updatedAt: new Date() })
+      .where(eq(spreadsheetRows.id, rowId))
+      .returning();
+
+    return { row };
+  });
+
+  // DELETE /employee/tables/:tableId/rows/:rowId — delete a row
+  fastify.delete<{ Params: { tableId: string; rowId: string } }>("/employee/tables/:tableId/rows/:rowId", async (request, reply) => {
+    const auth = await authenticateEmployee(request, reply);
+    if ("error" in auth) return auth.error;
+    const { employee } = auth;
+
+    const { tableId, rowId } = request.params;
+
+    const [table] = await db
+      .select({ id: spreadsheetTables.id })
+      .from(spreadsheetTables)
+      .where(and(eq(spreadsheetTables.id, tableId), eq(spreadsheetTables.companyId, employee.companyId)))
+      .limit(1);
+
+    if (!table) {
+      return reply.status(404).send({ error: "Table not found" });
+    }
+
+    await db.delete(spreadsheetRows).where(and(eq(spreadsheetRows.id, rowId), eq(spreadsheetRows.tableId, tableId)));
+
+    return { success: true };
   });
 
   // ─── Manager Notification ──────────────────────────────────────────
