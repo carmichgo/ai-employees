@@ -24,6 +24,7 @@ import {
   generateVideoScript,
   generateDocxSkill,
   generateDocxInstallScript,
+  generateSkillBuildingSkill,
   generateHeartbeatMd,
   type EmployeeInput,
 } from "@ai-employees/openclaw-config";
@@ -165,6 +166,7 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     mkdirSync(`${configDir}/skills/team-communication`, { recursive: true });
     mkdirSync(`${configDir}/skills/task-management`, { recursive: true });
     mkdirSync(`${configDir}/skills/docx`, { recursive: true });
+    mkdirSync(`${configDir}/skills/skill-building`, { recursive: true });
 
     // Write main config
     writeFileSync(`${configDir}/openclaw.json`, JSON.stringify(config, null, 2));
@@ -207,6 +209,7 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     writeFileSync(`${configDir}/skills/team-communication/SKILL.md`, generateTeamCommunicationSkill());
     writeFileSync(`${configDir}/skills/task-management/SKILL.md`, generateTaskManagementSkill());
     writeFileSync(`${configDir}/skills/docx/SKILL.md`, generateDocxSkill());
+    writeFileSync(`${configDir}/skills/skill-building/SKILL.md`, generateSkillBuildingSkill());
 
     // Write CLI wrapper scripts for image/video generation (installed into container below)
     writeFileSync(`${configDir}/generate-image.sh`, generateImageScript(), { mode: 0o755 });

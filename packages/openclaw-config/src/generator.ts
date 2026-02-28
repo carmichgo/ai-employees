@@ -1008,16 +1008,35 @@ export function generateAgentsMd(employee: EmployeeInput): string {
   parts.push("Your manager can browse and download all files in `~/workspace/` from the dashboard. When you reference a file in a task comment or message, make sure it's saved there — not just in your chat response. Files only exist if they're on disk.");
   parts.push("");
 
+  // Skill building — build before you execute
+  parts.push("## Build Skills Before You Execute (IMPORTANT)");
+  parts.push("");
+  parts.push("When you encounter a **non-trivial task you haven't done before**, do NOT wing it. Instead, **build a skill first, then execute using that skill.** This makes your work repeatable, reliable, and improvable over time.");
+  parts.push("");
+  parts.push("**The workflow:**");
+  parts.push("1. **Recognize the gap** — 'Do I have a skill for this?' Check `ls ~/.openclaw/skills/` and your memory");
+  parts.push("2. **Research** — Read docs, search the web, find best practices. Understand the task deeply before acting.");
+  parts.push("3. **Write the skill** — Create a SKILL.md in `~/.openclaw/skills/<name>/SKILL.md` with step-by-step instructions, exact commands, error handling, and examples");
+  parts.push("4. **Execute** — Follow your freshly written skill to do the work");
+  parts.push("5. **Iterate** — After execution, update the skill with what you learned (better approaches, new edge cases, fixes)");
+  parts.push("");
+  parts.push("**Every time you use an existing skill, evaluate if it can be improved.** Found a better way? Update the skill immediately. Hit a new error? Add it to the error handling section. API changed? Update the endpoints. Your skills compound over time — they are your competitive advantage.");
+  parts.push("");
+  parts.push("See the **Skill Building** skill (`~/.openclaw/skills/skill-building/SKILL.md`) for the full process, naming conventions, and guidelines.");
+  parts.push("");
+
   // Final reminder
   parts.push("---");
   parts.push("");
-  parts.push("## ⚠️ REMINDER: YOUR THREE NON-NEGOTIABLE RESPONSIBILITIES");
+  parts.push("## ⚠️ REMINDER: YOUR FOUR NON-NEGOTIABLE RESPONSIBILITIES");
   parts.push("");
   parts.push("**1. TASK BOARD** — Before doing work on a request, create a task. During work, add progress comments. After finishing, mark `completed` with a summary. Your task board must always be accurate and up to date — it is the source of truth your manager relies on. Check for existing tasks first — never create duplicates. System messages like `[Task Board Check]` and `[Recurring Task]` already have tasks — just update them.");
   parts.push("");
   parts.push("**2. COMMUNICATE WITH YOUR MANAGER** — Never stay silently stuck. When you hit a blocker, need credentials, have a question, or complete a major deliverable, use the `/employee/notify-manager` API to message your manager. They cannot help you if they don't know you need help. When you mark a task `blocked`, you MUST also notify your manager with what you need.");
   parts.push("");
   parts.push("**3. MEMORY** — Keep `~/workspace/memory.md` up to date. Write to it after completing tasks, learning new information, making decisions, or setting up accounts. If it's not in memory.md, you WILL forget it next session. This is your brain — maintain it.");
+  parts.push("");
+  parts.push("**4. BUILD SKILLS** — Before doing something complex for the first time, build a reusable skill (`~/.openclaw/skills/<name>/SKILL.md`). Research first, write the skill, then execute. After execution, update the skill with lessons learned. Your skills are your institutional knowledge — they make you better over time.");
   parts.push("");
 
   return parts.join("\n");

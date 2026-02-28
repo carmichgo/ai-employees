@@ -19,3 +19,4 @@ export { generateTeamCommunicationSkill } from "./skills/team-communication.js";
 export { generateTaskManagementSkill } from "./skills/task-management.js";
 export { generateMediaGenerationSkill, generateImageScript, generateVideoScript } from "./skills/media-generation.js";
 export { generateDocxSkill, generateDocxInstallScript } from "./skills/docx.js";
+export { generateSkillBuildingSkill } from "./skills/skill-building.js";

@@ -512,6 +512,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
           generateImageScript: genImage,
           generateVideoScript: genVideo,
           generateDocxSkill: genDocx,
+          generateSkillBuildingSkill: genSkillBuilding,
           generateHeartbeatMd: genHeartbeat,
         } = await import("@ai-employees/openclaw-config");
 
@@ -569,6 +570,8 @@ export async function provisionRoutes(fastify: FastifyInstance) {
         writeFileSync(`${skillDir}/task-management/SKILL.md`, genTaskMgmt());
         mkdirSync(`${skillDir}/docx`, { recursive: true });
         writeFileSync(`${skillDir}/docx/SKILL.md`, genDocx());
+        mkdirSync(`${skillDir}/skill-building`, { recursive: true });
+        writeFileSync(`${skillDir}/skill-building/SKILL.md`, genSkillBuilding());
         writeFileSync(`${configDir}/generate-image.sh`, genImage(), { mode: 0o755 });
         writeFileSync(`${configDir}/generate-video.sh`, genVideo(), { mode: 0o755 });
 
@@ -650,6 +653,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
           generateImageScript: genImage,
           generateVideoScript: genVideo,
           generateDocxSkill: genDocx,
+          generateSkillBuildingSkill: genSkillBuilding,
           generateHeartbeatMd: genHeartbeat,
         } = await import("@ai-employees/openclaw-config");
 
@@ -705,6 +709,8 @@ export async function provisionRoutes(fastify: FastifyInstance) {
         writeFileSync(`${skillDir}/task-management/SKILL.md`, genTaskMgmt());
         mkdirSync(`${skillDir}/docx`, { recursive: true });
         writeFileSync(`${skillDir}/docx/SKILL.md`, genDocx());
+        mkdirSync(`${skillDir}/skill-building`, { recursive: true });
+        writeFileSync(`${skillDir}/skill-building/SKILL.md`, genSkillBuilding());
         writeFileSync(`${configDir}/generate-image.sh`, genImage(), { mode: 0o755 });
         writeFileSync(`${configDir}/generate-video.sh`, genVideo(), { mode: 0o755 });
 
