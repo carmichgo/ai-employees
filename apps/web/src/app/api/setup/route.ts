@@ -274,6 +274,41 @@ export async function POST(request: NextRequest) {
       )
     `;
 
+    // Spreadsheet tables (Airtable-style built-in database)
+    await sql`
+      CREATE TABLE IF NOT EXISTS spreadsheet_tables (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+        name VARCHAR(255) NOT NULL,
+        description TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `;
+    await sql`
+      CREATE TABLE IF NOT EXISTS spreadsheet_columns (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        table_id UUID NOT NULL REFERENCES spreadsheet_tables(id) ON DELETE CASCADE,
+        name VARCHAR(255) NOT NULL,
+        type VARCHAR(30) NOT NULL DEFAULT 'text',
+        options JSONB NOT NULL DEFAULT '{}',
+        position INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `;
+    await sql`
+      CREATE TABLE IF NOT EXISTS spreadsheet_rows (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        table_id UUID NOT NULL REFERENCES spreadsheet_tables(id) ON DELETE CASCADE,
+        cells JSONB NOT NULL DEFAULT '{}',
+        position INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `;
+    await sql`CREATE INDEX IF NOT EXISTS idx_spreadsheet_columns_table_id ON spreadsheet_columns(table_id, position)`;
+    await sql`CREATE INDEX IF NOT EXISTS idx_spreadsheet_rows_table_id ON spreadsheet_rows(table_id, position)`;
+
     return NextResponse.json({ success: true, message: "All tables and migrations applied" });
   } catch (error: any) {
     console.error("Setup error:", error);

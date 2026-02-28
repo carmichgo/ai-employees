@@ -264,6 +264,7 @@ export default function TablesPage() {
   const [loading, setLoading] = useState(true);
   const [tableLoading, setTableLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   // Modals
   const [showCreateTable, setShowCreateTable] = useState(false);
@@ -289,10 +290,12 @@ export default function TablesPage() {
   // ── Load tables list ──────────────────────────────
   const loadTables = useCallback(async () => {
     try {
+      setError(null);
       const res = await api.listTables();
       setTables(res.tables);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to load tables:", err);
+      setError(err?.message || "Failed to load tables");
     } finally {
       setLoading(false);
     }
@@ -321,8 +324,13 @@ export default function TablesPage() {
   }, [selectedTableId, loadTable]);
 
   // ── Create table ──────────────────────────────────
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+
   const handleCreateTable = async () => {
     if (!newTableName.trim()) return;
+    setCreating(true);
+    setCreateError(null);
     try {
       const res = await api.createTable({ name: newTableName.trim(), description: newTableDesc.trim() || undefined });
       setTables((prev) => [res.table, ...prev]);
@@ -332,8 +340,11 @@ export default function TablesPage() {
       setNewTableName("");
       setNewTableDesc("");
       setShowCreateTable(false);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to create table:", err);
+      setCreateError(err?.message || "Failed to create table. Please try again.");
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -522,7 +533,42 @@ export default function TablesPage() {
           </button>
         </div>
 
-        {tables.length === 0 ? (
+        {error && (
+          <div
+            style={{
+              padding: "10px 14px",
+              marginBottom: 16,
+              background: "var(--red-bg, #fef2f2)",
+              border: "1px solid var(--red-border, #fecaca)",
+              borderRadius: "var(--radius-md)",
+              color: "var(--red, #dc2626)",
+              fontSize: 13,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 8,
+            }}
+          >
+            <span>{error}</span>
+            <button
+              onClick={() => { setError(null); loadTables(); }}
+              style={{
+                background: "none",
+                border: "1px solid var(--red-border, #fecaca)",
+                borderRadius: "var(--radius-sm)",
+                padding: "4px 10px",
+                fontSize: 12,
+                cursor: "pointer",
+                color: "var(--red, #dc2626)",
+                whiteSpace: "nowrap",
+              }}
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        {tables.length === 0 && !error ? (
           <div
             style={{
               textAlign: "center",
@@ -687,9 +733,24 @@ export default function TablesPage() {
                   }}
                 />
               </div>
+              {createError && (
+                <div
+                  style={{
+                    padding: "8px 12px",
+                    marginBottom: 12,
+                    background: "var(--red-bg, #fef2f2)",
+                    border: "1px solid var(--red-border, #fecaca)",
+                    borderRadius: "var(--radius-sm)",
+                    color: "var(--red, #dc2626)",
+                    fontSize: 12,
+                  }}
+                >
+                  {createError}
+                </div>
+              )}
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                 <button
-                  onClick={() => setShowCreateTable(false)}
+                  onClick={() => { setShowCreateTable(false); setCreateError(null); }}
                   style={{
                     padding: "8px 14px",
                     background: "none",
@@ -704,19 +765,20 @@ export default function TablesPage() {
                 </button>
                 <button
                   onClick={handleCreateTable}
-                  disabled={!newTableName.trim()}
+                  disabled={!newTableName.trim() || creating}
                   style={{
                     padding: "8px 14px",
-                    background: newTableName.trim() ? "var(--text)" : "var(--bg-secondary)",
-                    color: newTableName.trim() ? "var(--bg)" : "var(--text-tertiary)",
+                    background: newTableName.trim() && !creating ? "var(--text)" : "var(--bg-secondary)",
+                    color: newTableName.trim() && !creating ? "var(--bg)" : "var(--text-tertiary)",
                     border: "none",
                     borderRadius: "var(--radius-sm)",
                     fontSize: 13,
                     fontWeight: 500,
-                    cursor: newTableName.trim() ? "pointer" : "default",
+                    cursor: newTableName.trim() && !creating ? "pointer" : "default",
+                    opacity: creating ? 0.7 : 1,
                   }}
                 >
-                  Create Table
+                  {creating ? "Creating..." : "Create Table"}
                 </button>
               </div>
             </div>
