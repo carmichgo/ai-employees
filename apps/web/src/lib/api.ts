@@ -481,6 +481,41 @@ class ApiClient {
     );
   }
 
+  // Employee skills
+  async listSkills(employeeId: string) {
+    return this.request<{
+      skills: Array<{
+        id: string;
+        skillSlug: string;
+        source: string;
+        enabled: boolean;
+        config: Record<string, unknown>;
+        createdAt: string;
+      }>;
+    }>(`/api/employees/${employeeId}/skills`);
+  }
+
+  async installSkill(employeeId: string, data: { slug: string; source?: string; content?: string }) {
+    return this.request<{ message: string; skill: any }>(
+      `/api/employees/${employeeId}/skills`,
+      { method: "POST", body: JSON.stringify(data) },
+    );
+  }
+
+  async toggleSkill(employeeId: string, slug: string, enabled: boolean) {
+    return this.request<{ message: string; skill: any }>(
+      `/api/employees/${employeeId}/skills?slug=${encodeURIComponent(slug)}`,
+      { method: "PATCH", body: JSON.stringify({ enabled }) },
+    );
+  }
+
+  async uninstallSkill(employeeId: string, slug: string) {
+    return this.request<{ message: string }>(
+      `/api/employees/${employeeId}/skills?slug=${encodeURIComponent(slug)}`,
+      { method: "DELETE" },
+    );
+  }
+
   // Tasks
   async listTasks(params?: { employeeId?: string; status?: string }) {
     const qs = new URLSearchParams();

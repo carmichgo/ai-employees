@@ -8,7 +8,7 @@ import {
   MessageCircle, Save, X, Eye, EyeOff, ChevronDown, Upload, FileText, Zap,
   Webhook, Timer, Plus, ToggleLeft, ToggleRight, Copy, Check, KeyRound, Globe, Edit3,
   MessageSquare, Send, Smartphone, Gamepad2, Shield, MonitorSmartphone, Hash, Radio, Phone, Headphones,
-  Monitor,
+  Monitor, Sparkles,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -190,6 +190,15 @@ export default function EmployeeDetailPage() {
   const [credSaving, setCredSaving] = useState(false);
   const [credNotice, setCredNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
+  // Skills state
+  const [skillsList, setSkillsList] = useState<Array<{ id: string; skillSlug: string; source: string; enabled: boolean; config: Record<string, unknown>; createdAt: string }>>([]);
+  const [showInstallSkill, setShowInstallSkill] = useState(false);
+  const [installMode, setInstallMode] = useState<"slug" | "upload">("slug");
+  const [newSkillSlug, setNewSkillSlug] = useState("");
+  const [newSkillContent, setNewSkillContent] = useState("");
+  const [skillSaving, setSkillSaving] = useState(false);
+  const [skillNotice, setSkillNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
   // Relay state
   const [relayInfo, setRelayInfo] = useState<{ available: boolean; gatewayUrl?: string; gatewayToken?: string; command?: string } | null>(null);
   const [relayLoading, setRelayLoading] = useState(false);
@@ -230,6 +239,7 @@ export default function EmployeeDetailPage() {
     api.listTriggers(employeeId).then((res) => setTriggersList(res.triggers || [])).catch(() => {});
     api.listCredentials(employeeId).then((res) => setCredentialsList(res.credentials || [])).catch(() => {});
     api.listChannels(employeeId).then((res) => setChannelsList(res.channels || [])).catch(() => {});
+    api.listSkills(employeeId).then((res) => setSkillsList(res.skills || [])).catch(() => {});
     api.getRelayInfo(employeeId).then((res) => setRelayInfo(res)).catch(() => {});
   }, [employeeId]);
 
@@ -488,6 +498,63 @@ export default function EmployeeDetailPage() {
     navigator.clipboard.writeText(`${window.location.origin}/api/webhooks/${token}`);
     setCopiedToken(token);
     setTimeout(() => setCopiedToken(null), 2000);
+  };
+
+  // ── Skill handlers ──
+  const handleInstallSkill = async () => {
+    setSkillSaving(true);
+    setSkillNotice(null);
+    try {
+      const data: { slug: string; source?: string; content?: string } = { slug: newSkillSlug.trim().toLowerCase() };
+      if (installMode === "upload" && newSkillContent.trim()) {
+        data.content = newSkillContent.trim();
+        data.source = "custom";
+      }
+      const res = await api.installSkill(employeeId, data);
+      setSkillsList((prev) => [...prev, res.skill]);
+      setNewSkillSlug("");
+      setNewSkillContent("");
+      setShowInstallSkill(false);
+      setSkillNotice({ type: "success", message: res.message });
+    } catch (err: any) {
+      setSkillNotice({ type: "error", message: err.message });
+    } finally {
+      setSkillSaving(false);
+    }
+  };
+
+  const handleToggleSkill = async (skill: { id: string; skillSlug: string; enabled: boolean }) => {
+    try {
+      const res = await api.toggleSkill(employeeId, skill.skillSlug, !skill.enabled);
+      setSkillsList((prev) => prev.map((s) => s.id === skill.id ? { ...s, enabled: res.skill.enabled } : s));
+    } catch (err: any) {
+      setSkillNotice({ type: "error", message: err.message });
+    }
+  };
+
+  const handleUninstallSkill = async (slug: string) => {
+    if (!confirm(`Uninstall skill "${slug}"? This will remove it from ${employee.name}.`)) return;
+    try {
+      await api.uninstallSkill(employeeId, slug);
+      setSkillsList((prev) => prev.filter((s) => s.skillSlug !== slug));
+      setSkillNotice({ type: "success", message: `Skill "${slug}" uninstalled` });
+    } catch (err: any) {
+      setSkillNotice({ type: "error", message: err.message });
+    }
+  };
+
+  const handleSkillFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const content = ev.target?.result as string;
+      setNewSkillContent(content);
+      // Auto-derive slug from filename: "my-skill.md" → "my-skill"
+      const slug = file.name.replace(/\.md$/i, "").replace(/^SKILL$/i, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      if (slug && !newSkillSlug) setNewSkillSlug(slug);
+    };
+    reader.readAsText(file);
   };
 
   const copyRelayValue = (key: string, value: string) => {
@@ -970,6 +1037,181 @@ export default function EmployeeDetailPage() {
         <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 10 }}>
           Files appear in the employee&apos;s workspace at <code style={{ fontSize: 10, background: "var(--bg-secondary)", padding: "1px 4px", borderRadius: 3 }}>/uploads/</code> — max 10MB each
         </div>
+      </div>
+
+      {/* ════════════════════════════════════════════════════════════ */}
+      {/* SKILLS SECTION */}
+      {/* ════════════════════════════════════════════════════════════ */}
+      <div className="card" style={{ padding: 20, marginBottom: 16, background: "#ffffff", border: "1px solid var(--border)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Sparkles size={14} style={{ color: "var(--text-tertiary)" }} />
+            <p className="label" style={{ margin: 0 }}>Skills</p>
+            <span style={{ fontSize: 11, color: "var(--text-tertiary)", background: "var(--bg-secondary)", padding: "2px 6px", borderRadius: "var(--radius-sm)" }}>
+              {skillsList.length}
+            </span>
+          </div>
+          {!showInstallSkill && (
+            <button
+              className="btn-secondary btn-sm"
+              onClick={() => setShowInstallSkill(true)}
+              style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
+            >
+              <Plus size={12} /> Install Skill
+            </button>
+          )}
+        </div>
+
+        {/* Skill notice */}
+        {skillNotice && (
+          <div style={{
+            padding: "8px 12px", borderRadius: "var(--radius-md)", marginBottom: 12, fontSize: 13,
+            background: skillNotice.type === "success" ? "rgba(34, 197, 94, 0.08)" : "rgba(220, 38, 38, 0.08)",
+            color: skillNotice.type === "success" ? "var(--green)" : "var(--red)",
+            border: `1px solid ${skillNotice.type === "success" ? "rgba(34, 197, 94, 0.15)" : "rgba(220, 38, 38, 0.15)"}`,
+          }}>
+            {skillNotice.message}
+          </div>
+        )}
+
+        {/* Install skill form */}
+        {showInstallSkill && (
+          <div style={{ background: "var(--bg-secondary)", borderRadius: "var(--radius-md)", padding: 16, marginBottom: 16, display: "flex", flexDirection: "column", gap: 12, border: "1px solid var(--border)" }}>
+            {/* Mode toggle */}
+            <div style={{ display: "flex", gap: 6 }}>
+              <button
+                onClick={() => setInstallMode("slug")}
+                style={{
+                  fontSize: 12, padding: "4px 12px", borderRadius: "var(--radius-sm)",
+                  background: installMode === "slug" ? "var(--blue)" : "transparent",
+                  color: installMode === "slug" ? "#fff" : "var(--text-secondary)",
+                  border: `1px solid ${installMode === "slug" ? "var(--blue)" : "var(--border)"}`,
+                  cursor: "pointer",
+                }}
+              >
+                By Name
+              </button>
+              <button
+                onClick={() => setInstallMode("upload")}
+                style={{
+                  fontSize: 12, padding: "4px 12px", borderRadius: "var(--radius-sm)",
+                  background: installMode === "upload" ? "var(--blue)" : "transparent",
+                  color: installMode === "upload" ? "#fff" : "var(--text-secondary)",
+                  border: `1px solid ${installMode === "upload" ? "var(--blue)" : "var(--border)"}`,
+                  cursor: "pointer",
+                }}
+              >
+                Upload SKILL.md
+              </button>
+            </div>
+
+            <div>
+              <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>
+                Skill Slug
+              </label>
+              <input
+                type="text"
+                placeholder="e.g., linkedin-posting"
+                value={newSkillSlug}
+                onChange={(e) => setNewSkillSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
+                className="input"
+                style={{ width: "100%", fontSize: 13, fontFamily: "monospace" }}
+              />
+              <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 4 }}>
+                Lowercase letters, numbers, and hyphens only (e.g. <code style={{ fontSize: 10, background: "#ffffff", padding: "1px 4px", borderRadius: 3 }}>my-custom-skill</code>)
+              </div>
+            </div>
+
+            {installMode === "upload" && (
+              <>
+                <div>
+                  <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>
+                    Upload a SKILL.md file or paste content
+                  </label>
+                  <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                    <label style={{
+                      fontSize: 12, padding: "6px 12px", borderRadius: "var(--radius-sm)",
+                      background: "#ffffff", border: "1px solid var(--border)", cursor: "pointer",
+                      display: "flex", alignItems: "center", gap: 6, color: "var(--text-secondary)",
+                    }}>
+                      <Upload size={12} /> Choose File
+                      <input
+                        type="file"
+                        accept=".md,.txt"
+                        onChange={handleSkillFileUpload}
+                        style={{ display: "none" }}
+                      />
+                    </label>
+                  </div>
+                  <textarea
+                    placeholder={"# My Skill\n\nDescribe what this skill does...\n\n## When to Use This Skill\n\n## Process\n\n### Step 1: ..."}
+                    value={newSkillContent}
+                    onChange={(e) => setNewSkillContent(e.target.value)}
+                    className="input"
+                    rows={8}
+                    style={{ width: "100%", fontSize: 12, resize: "vertical", fontFamily: "monospace", lineHeight: 1.5 }}
+                  />
+                </div>
+              </>
+            )}
+
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                className="btn-primary btn-sm"
+                onClick={handleInstallSkill}
+                disabled={skillSaving || !newSkillSlug.trim() || (installMode === "upload" && !newSkillContent.trim())}
+                style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
+              >
+                <Save size={12} /> {skillSaving ? "Installing..." : "Install"}
+              </button>
+              <button
+                className="btn-secondary btn-sm"
+                onClick={() => { setShowInstallSkill(false); setNewSkillSlug(""); setNewSkillContent(""); setSkillNotice(null); }}
+                style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
+              >
+                <X size={12} /> Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Skills list */}
+        {skillsList.length === 0 && !showInstallSkill ? (
+          <div style={{ fontSize: 13, color: "var(--text-tertiary)", lineHeight: 1.6 }}>
+            No custom skills installed. Skills teach {employee.name} repeatable processes — install from ClawHub or upload your own SKILL.md files.
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {skillsList.map((skill) => (
+              <div key={skill.id} style={{
+                padding: "10px 12px", background: skill.enabled ? "#ffffff" : "var(--bg-secondary)", borderRadius: "var(--radius-md)",
+                border: "1px solid var(--border)",
+                opacity: skill.enabled ? 1 : 0.6,
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <Sparkles size={13} style={{ color: "var(--blue)" }} />
+                    <span style={{ fontSize: 13, fontWeight: 500, fontFamily: "monospace", color: "var(--text)" }}>{skill.skillSlug}</span>
+                    <span style={{ fontSize: 10, color: "var(--text-tertiary)", background: "var(--bg-secondary)", padding: "1px 6px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border)" }}>
+                      {skill.source}
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <button onClick={() => handleToggleSkill(skill)} style={{ background: "none", border: "none", cursor: "pointer", color: skill.enabled ? "var(--green)" : "var(--text-tertiary)", padding: 2 }} title={skill.enabled ? "Disable" : "Enable"}>
+                      {skill.enabled ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
+                    </button>
+                    <button onClick={() => handleUninstallSkill(skill.skillSlug)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", padding: 2 }} title="Uninstall">
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </div>
+                <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 4 }}>
+                  Installed {new Date(skill.createdAt).toLocaleDateString()}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* ════════════════════════════════════════════════════════════ */}

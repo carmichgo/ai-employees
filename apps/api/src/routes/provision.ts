@@ -431,6 +431,65 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     }
   });
 
+  // POST /internal/employees/:id/skills/install — write a custom SKILL.md to the employee's container
+  fastify.post<{ Params: { id: string } }>("/internal/employees/:id/skills/install", async (request, reply) => {
+    const { id } = request.params;
+    const { slug, content } = request.body as { slug: string; content: string };
+
+    if (!slug || !content) {
+      return reply.status(400).send({ error: "slug and content are required" });
+    }
+
+    const employee = await db.query.employees.findFirst({
+      where: eq(employees.id, id),
+    });
+    if (!employee) {
+      return reply.status(404).send({ error: "Employee not found" });
+    }
+
+    const configDir = `/opt/ai-employees/openclaw-configs/${id}`;
+    const skillDir = `${configDir}/skills/${slug}`;
+
+    try {
+      mkdirSync(skillDir, { recursive: true });
+      writeFileSync(`${skillDir}/SKILL.md`, content);
+      execSync(`chown -R 1000:1000 ${skillDir}`, { timeout: 5000 });
+      return { success: true, message: `Skill "${slug}" installed` };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      return reply.status(500).send({ error: `Failed to install skill: ${message}` });
+    }
+  });
+
+  // POST /internal/employees/:id/skills/uninstall — remove a skill directory from the employee's container
+  fastify.post<{ Params: { id: string } }>("/internal/employees/:id/skills/uninstall", async (request, reply) => {
+    const { id } = request.params;
+    const { slug } = request.body as { slug: string };
+
+    if (!slug) {
+      return reply.status(400).send({ error: "slug is required" });
+    }
+
+    const employee = await db.query.employees.findFirst({
+      where: eq(employees.id, id),
+    });
+    if (!employee) {
+      return reply.status(404).send({ error: "Employee not found" });
+    }
+
+    const skillDir = `/opt/ai-employees/openclaw-configs/${id}/skills/${slug}`;
+
+    try {
+      if (existsSync(skillDir)) {
+        execSync(`rm -rf ${JSON.stringify(skillDir)}`, { timeout: 5000 });
+      }
+      return { success: true, message: `Skill "${slug}" uninstalled` };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      return reply.status(500).send({ error: `Failed to uninstall skill: ${message}` });
+    }
+  });
+
   // POST /internal/hot-update — pull latest code, rebuild, restart services + regenerate employee configs
   fastify.post("/internal/hot-update", async (request, reply) => {
     const body = request.body as { branch?: string } | undefined;

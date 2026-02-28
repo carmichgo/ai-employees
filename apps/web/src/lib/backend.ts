@@ -200,6 +200,22 @@ export function createBackendClient(config: BackendConfig) {
       return res.json();
     },
 
+    async installSkill(employeeId: string, slug: string, content: string) {
+      const res = await backendFetch(config, `/internal/employees/${employeeId}/skills/install`, {
+        method: "POST",
+        body: JSON.stringify({ slug, content }),
+      });
+      return res.json();
+    },
+
+    async uninstallSkill(employeeId: string, slug: string) {
+      const res = await backendFetch(config, `/internal/employees/${employeeId}/skills/uninstall`, {
+        method: "POST",
+        body: JSON.stringify({ slug }),
+      });
+      return res.json();
+    },
+
     async regenerateConfigs() {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 120000); // 2 min timeout
