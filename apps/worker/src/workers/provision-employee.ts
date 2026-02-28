@@ -317,8 +317,10 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     installCliTools(employee.containerName!);
 
     // After installCliTools restarts the container, wait for it to fully come up
-    // before checking IP — Docker needs a moment to assign the network IP
-    await new Promise((r) => setTimeout(r, 5000));
+    // before checking IP — Docker needs a moment to assign the network IP.
+    // Heavy tool installs (Chromium, LibreOffice, pandoc) make the container
+    // heavier to restart, so give it extra time.
+    await new Promise((r) => setTimeout(r, 10000));
 
     // Get the new IP address after restart
     try {
@@ -336,9 +338,11 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
       console.log(`[provision] Could not refresh container IP after CLI install (non-critical)`);
     }
 
-    // Wait for the OpenClaw gateway to be ready before marking active
+    // Wait for the OpenClaw gateway to be ready before marking active.
+    // 240s timeout accounts for heavy containers after CLI tool installs
+    // (Chromium, LibreOffice, pandoc add significant startup weight).
     if (containerIp) {
-      await waitForGateway(containerIp, 18789, 120_000);
+      await waitForGateway(containerIp, 18789, 240_000);
     }
 
     await db
@@ -508,21 +512,28 @@ export async function cleanupOrphanedContainers(): Promise<void> {
 async function waitForGateway(host: string, port: number, timeoutMs: number): Promise<void> {
   const start = Date.now();
   const interval = 2000;
+  let attempts = 0;
+  let lastError = "";
   while (Date.now() - start < timeoutMs) {
+    attempts++;
     try {
       const res = await fetch(`http://${host}:${port}/v1/models`, {
         signal: AbortSignal.timeout(3000),
       });
       if (res.ok) {
-        console.log(`[provision] Gateway ready at ${host}:${port} (${Date.now() - start}ms)`);
+        console.log(`[provision] Gateway ready at ${host}:${port} (${Date.now() - start}ms, ${attempts} attempts)`);
         return;
       }
-    } catch {
-      // Not ready yet
+      lastError = `HTTP ${res.status}`;
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+    }
+    if (attempts % 15 === 0) {
+      console.log(`[provision] Still waiting for gateway at ${host}:${port} (${Math.round((Date.now() - start) / 1000)}s elapsed, last error: ${lastError})`);
     }
     await new Promise((r) => setTimeout(r, interval));
   }
-  throw new Error(`Gateway at ${host}:${port} did not respond within ${timeoutMs}ms`);
+  throw new Error(`Gateway at ${host}:${port} did not respond within ${timeoutMs}ms (${attempts} attempts, last error: ${lastError})`);
 }
 
 /** Scale Node.js heap to the tier — leave room for Chromium + OS overhead */
