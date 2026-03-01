@@ -6,7 +6,7 @@
   "crons": [
     {
       "path": "/api/cron/droplet-health",
-      "schedule": "*/5 * * * *"
+      "schedule": "0 0 * * *"
     }
   ]
 }

@@ -12,7 +12,9 @@ import {
 /**
  * GET /api/cron/droplet-health
  *
- * External droplet health monitor — runs as a Vercel cron job every 5 minutes.
+ * External droplet health monitor — runs as a Vercel cron (daily on Hobby plan).
+ * For more frequent checks, use an external cron service (cron-job.org, UptimeRobot)
+ * to call: GET /api/cron/droplet-health?secret=<CRON_SECRET>
  *
  * This is the EXTERNAL watchdog that catches droplet failures the internal
  * health-poll worker can't (because it runs ON the droplet and dies with it).
@@ -25,16 +27,20 @@ import {
  *     - Already unhealthy + lastHealthAt > 10 min ago: power-cycle via DO API
  *  4. If reachable: ensure dropletStatus = "active", update lastHealthAt
  *
- * Auth: Vercel cron jobs send a secret in the Authorization header.
+ * Auth: Vercel cron header OR ?secret= query param OR Authorization bearer.
  */
 
 const CRON_SECRET = process.env.CRON_SECRET;
 
 export async function GET(request: NextRequest) {
   // Verify this is a legitimate cron invocation
+  // Accepts: Vercel cron header, Authorization bearer, or ?secret= query param
   if (CRON_SECRET) {
     const auth = request.headers.get("authorization");
-    if (auth !== `Bearer ${CRON_SECRET}`) {
+    const querySecret = new URL(request.url).searchParams.get("secret");
+    const isAuthorized =
+      auth === `Bearer ${CRON_SECRET}` || querySecret === CRON_SECRET;
+    if (!isAuthorized) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
   }
