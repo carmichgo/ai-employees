@@ -117,6 +117,22 @@ export async function POST(request: NextRequest) {
     await sql`CREATE INDEX IF NOT EXISTS idx_spreadsheet_rows_table_id ON spreadsheet_rows(table_id, position)`;
     results.push("0010: spreadsheet tables (tables, columns, rows) — OK");
 
+    // Migration 0011: Create spreadsheet_bases table and add base_id to spreadsheet_tables
+    await sql`
+      CREATE TABLE IF NOT EXISTS spreadsheet_bases (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+        name VARCHAR(255) NOT NULL,
+        description TEXT,
+        color VARCHAR(20) DEFAULT '#3b82f6',
+        icon VARCHAR(10) DEFAULT '📊',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `;
+    await sql`ALTER TABLE spreadsheet_tables ADD COLUMN IF NOT EXISTS base_id UUID REFERENCES spreadsheet_bases(id) ON DELETE CASCADE`;
+    results.push("0011: spreadsheet_bases table + base_id column — OK");
+
     // Admin actions
     const action = request.nextUrl.searchParams.get("action");
 
