@@ -15,6 +15,8 @@ import {
   FolderOpen,
   Search,
   Trash2,
+  CheckSquare,
+  Square,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -77,19 +79,8 @@ export default function DocumentsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [deleting, setDeleting] = useState<string | null>(null);
-
-  const handleDelete = async (file: WorkspaceFile) => {
-    if (!confirm(`Delete "${file.name}"? This cannot be undone.`)) return;
-    setDeleting(file.path);
-    try {
-      await api.deleteDocument(employeeId, file.path);
-      setFiles((prev) => prev.filter((f) => f.path !== file.path));
-    } catch {
-      alert("Failed to delete file");
-    } finally {
-      setDeleting(null);
-    }
-  };
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [batchDeleting, setBatchDeleting] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -125,9 +116,72 @@ export default function DocumentsPage() {
     grouped.get(dir)!.push(file);
   }
 
+  const toggleSelect = (filePath: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(filePath)) next.delete(filePath);
+      else next.add(filePath);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selected.size === filteredFiles.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(filteredFiles.map((f) => f.path)));
+    }
+  };
+
+  const handleDelete = async (file: WorkspaceFile) => {
+    if (!confirm(`Delete "${file.name}"? This cannot be undone.`)) return;
+    setDeleting(file.path);
+    try {
+      await api.deleteDocument(employeeId, file.path);
+      setFiles((prev) => prev.filter((f) => f.path !== file.path));
+      setSelected((prev) => { const next = new Set(prev); next.delete(file.path); return next; });
+    } catch {
+      alert("Failed to delete file");
+    } finally {
+      setDeleting(null);
+    }
+  };
+
+  const handleDeleteFolder = async (dir: string, dirFiles: WorkspaceFile[]) => {
+    if (!confirm(`Delete folder "${dir}" and all ${dirFiles.length} file(s) inside? This cannot be undone.`)) return;
+    setDeleting(dir);
+    try {
+      await api.deleteFolder(employeeId, dir);
+      const pathsInDir = new Set(dirFiles.map((f) => f.path));
+      setFiles((prev) => prev.filter((f) => !pathsInDir.has(f.path)));
+      setSelected((prev) => { const next = new Set(prev); pathsInDir.forEach((p) => next.delete(p)); return next; });
+    } catch {
+      alert("Failed to delete folder");
+    } finally {
+      setDeleting(null);
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    if (selected.size === 0) return;
+    if (!confirm(`Delete ${selected.size} selected file(s)? This cannot be undone.`)) return;
+    setBatchDeleting(true);
+    const toDelete = Array.from(selected);
+    const failed: string[] = [];
+    for (const filePath of toDelete) {
+      try {
+        await api.deleteDocument(employeeId, filePath);
+      } catch {
+        failed.push(filePath);
+      }
+    }
+    setFiles((prev) => prev.filter((f) => failed.includes(f.path) || !selected.has(f.path)));
+    setSelected(new Set(failed));
+    setBatchDeleting(false);
+    if (failed.length > 0) alert(`Failed to delete ${failed.length} file(s).`);
+  };
+
   const downloadUrl = (file: WorkspaceFile) => {
-    // Skills and workspace-main files have paths relative to config base (e.g. "skills/foo/SKILL.md", "workspace-main/file.png")
-    // Regular workspace files need the "workspace/" prefix added
     const needsPrefix = !file.path.startsWith("skills/") && !file.path.startsWith("workspace-main/");
     const prefix = needsPrefix ? "workspace/" : "";
     return `/api/employees/${employeeId}/workspace/${prefix}${file.path}`;
@@ -205,6 +259,52 @@ export default function DocumentsPage() {
         />
       </div>
 
+      {/* Batch actions bar */}
+      {filteredFiles.length > 0 && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            marginBottom: 12,
+            fontSize: 12,
+            color: "var(--text-secondary)",
+          }}
+        >
+          <button
+            onClick={toggleSelectAll}
+            title={selected.size === filteredFiles.length ? "Deselect all" : "Select all"}
+            style={{
+              display: "flex", alignItems: "center", gap: 4,
+              background: "none", border: "none", cursor: "pointer",
+              color: "var(--text-secondary)", fontSize: 12, padding: "2px 0",
+            }}
+          >
+            {selected.size === filteredFiles.length && filteredFiles.length > 0
+              ? <CheckSquare size={14} />
+              : <Square size={14} />}
+            {selected.size > 0 ? `${selected.size} selected` : "Select all"}
+          </button>
+          {selected.size > 0 && (
+            <button
+              onClick={handleBatchDelete}
+              disabled={batchDeleting}
+              style={{
+                display: "flex", alignItems: "center", gap: 4,
+                background: "none", border: "1px solid var(--red, #dc2626)", borderRadius: "var(--radius-sm)",
+                cursor: "pointer", color: "var(--red, #dc2626)", fontSize: 12, padding: "3px 10px",
+                opacity: batchDeleting ? 0.5 : 1,
+              }}
+            >
+              {batchDeleting
+                ? <Loader2 size={12} style={{ animation: "spin 0.8s linear infinite" }} />
+                : <Trash2 size={12} />}
+              Delete selected
+            </button>
+          )}
+        </div>
+      )}
+
       {/* File list */}
       {filteredFiles.length === 0 ? (
         <div className="card" style={{ padding: 40, textAlign: "center" }}>
@@ -224,6 +324,20 @@ export default function DocumentsPage() {
                   display: "flex", alignItems: "center", gap: 4,
                 }}>
                   <FolderOpen size={12} /> {dir}
+                  <button
+                    onClick={() => handleDeleteFolder(dir, dirFiles)}
+                    disabled={deleting === dir}
+                    title={`Delete folder "${dir}"`}
+                    style={{
+                      marginLeft: "auto", background: "none", border: "none",
+                      cursor: "pointer", padding: 2, color: "var(--text-tertiary)",
+                      opacity: deleting === dir ? 0.5 : 1, display: "flex", alignItems: "center",
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.color = "var(--red, #dc2626)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-tertiary)"; }}
+                  >
+                    {deleting === dir ? <Loader2 size={12} style={{ animation: "spin 0.8s linear infinite" }} /> : <Trash2 size={12} />}
+                  </button>
                 </div>
               )}
               <div className="card" style={{ overflow: "hidden" }}>
@@ -241,6 +355,12 @@ export default function DocumentsPage() {
                       onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg-secondary)"}
                       onMouseLeave={(e) => e.currentTarget.style.background = ""}
                     >
+                      <button
+                        onClick={(e) => { e.stopPropagation(); toggleSelect(file.path); }}
+                        style={{ background: "none", border: "none", cursor: "pointer", padding: 0, flexShrink: 0, color: selected.has(file.path) ? "var(--blue, #2563eb)" : "var(--text-tertiary)", display: "flex" }}
+                      >
+                        {selected.has(file.path) ? <CheckSquare size={14} /> : <Square size={14} />}
+                      </button>
                       <a
                         href={downloadUrl(file)}
                         target="_blank"
@@ -267,7 +387,7 @@ export default function DocumentsPage() {
                         title="Delete file"
                         style={{
                           background: "none", border: "none", cursor: "pointer", padding: 4,
-                          color: deleting === file.path ? "var(--text-tertiary)" : "var(--text-tertiary)",
+                          color: "var(--text-tertiary)",
                           opacity: deleting === file.path ? 0.5 : 1,
                           flexShrink: 0,
                         }}

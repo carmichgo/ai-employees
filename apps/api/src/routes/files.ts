@@ -14,6 +14,7 @@ import {
   readdirSync,
   readFileSync,
   unlinkSync,
+  rmSync,
   statSync,
   existsSync,
 } from "node:fs";
@@ -315,7 +316,7 @@ export async function fileRoutes(fastify: FastifyInstance) {
     },
   );
 
-  // DELETE /internal/employees/:id/workspace/* — delete any workspace file
+  // DELETE /internal/employees/:id/workspace/* — delete a file or directory
   fastify.delete<{ Params: { id: string; "*": string } }>(
     "/internal/employees/:id/workspace/*",
     async (request, reply) => {
@@ -335,7 +336,7 @@ export async function fileRoutes(fastify: FastifyInstance) {
       const baseDir = path.join(CONFIG_BASE, id);
       const fullPath = path.join(baseDir, normalized);
 
-      if (!fullPath.startsWith(baseDir)) {
+      if (!fullPath.startsWith(baseDir + "/")) {
         return reply.status(400).send({ error: "Invalid path" });
       }
 
@@ -344,8 +345,9 @@ export async function fileRoutes(fastify: FastifyInstance) {
       }
 
       const stat = statSync(fullPath);
-      if (!stat.isFile()) {
-        return reply.status(400).send({ error: "Not a file" });
+      if (stat.isDirectory()) {
+        rmSync(fullPath, { recursive: true, force: true });
+        return { message: "Folder deleted" };
       }
 
       unlinkSync(fullPath);

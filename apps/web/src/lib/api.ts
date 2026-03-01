@@ -449,6 +449,15 @@ class ApiClient {
     );
   }
 
+  async deleteFolder(employeeId: string, folderPath: string) {
+    const needsPrefix = !folderPath.startsWith("skills/") && !folderPath.startsWith("workspace-main/");
+    const prefix = needsPrefix ? "workspace/" : "";
+    return this.request<{ message: string }>(
+      `/api/employees/${employeeId}/workspace/${prefix}${folderPath}`,
+      { method: "DELETE" },
+    );
+  }
+
   // Employee triggers
   async listTriggers(employeeId: string) {
     return this.request<{

@@ -3,6 +3,8 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   FileText,
   Download,
@@ -18,6 +20,8 @@ import {
   Eye,
   ExternalLink,
   Trash2,
+  CheckSquare,
+  Square,
 } from "lucide-react";
 
 type WorkspaceFile = {
@@ -190,6 +194,50 @@ function FileViewer({
           </div>
         );
       }
+
+      // Render markdown files with formatted output
+      if (type === "md" && textContent !== null) {
+        return (
+          <div style={{ flex: 1, overflow: "auto", padding: 20 }}>
+            <div
+              className="markdown-body"
+              style={{
+                fontSize: 14,
+                lineHeight: 1.7,
+                color: "var(--text)",
+                padding: 24,
+                background: "var(--bg-secondary)",
+                borderRadius: "var(--radius-sm)",
+                border: "1px solid var(--border)",
+              }}
+            >
+              <style>{`
+                .markdown-body h1 { font-size: 1.8em; font-weight: 700; margin: 0 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+                .markdown-body h2 { font-size: 1.4em; font-weight: 600; margin: 24px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+                .markdown-body h3 { font-size: 1.15em; font-weight: 600; margin: 20px 0 8px; }
+                .markdown-body h4, .markdown-body h5, .markdown-body h6 { font-size: 1em; font-weight: 600; margin: 16px 0 8px; }
+                .markdown-body p { margin: 0 0 12px; }
+                .markdown-body ul, .markdown-body ol { margin: 0 0 12px; padding-left: 24px; }
+                .markdown-body li { margin: 4px 0; }
+                .markdown-body blockquote { margin: 0 0 12px; padding: 8px 16px; border-left: 3px solid var(--border); color: var(--text-secondary); background: var(--bg); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+                .markdown-body code { font-family: 'SF Mono', 'Fira Code', Menlo, Consolas, monospace; font-size: 0.9em; background: var(--bg); padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border); }
+                .markdown-body pre { margin: 0 0 12px; padding: 16px; background: var(--bg); border-radius: var(--radius-sm); border: 1px solid var(--border); overflow-x: auto; }
+                .markdown-body pre code { background: none; border: none; padding: 0; font-size: 13px; }
+                .markdown-body table { border-collapse: collapse; margin: 0 0 12px; width: 100%; }
+                .markdown-body th, .markdown-body td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; }
+                .markdown-body th { background: var(--bg); font-weight: 600; }
+                .markdown-body hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+                .markdown-body a { color: var(--blue, #2563eb); text-decoration: none; }
+                .markdown-body a:hover { text-decoration: underline; }
+                .markdown-body img { max-width: 100%; border-radius: var(--radius-sm); }
+                .markdown-body input[type="checkbox"] { margin-right: 6px; }
+              `}</style>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{textContent}</ReactMarkdown>
+            </div>
+          </div>
+        );
+      }
+
       return (
         <div style={{ flex: 1, overflow: "auto", padding: 20 }}>
           <pre
@@ -375,7 +423,47 @@ function DocumentsPage() {
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [search, setSearch] = useState("");
   const [viewingFile, setViewingFile] = useState<WorkspaceFile | null>(null);
+  const filteredFiles = files.filter((f) => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return f.name.toLowerCase().includes(q) || f.path.toLowerCase().includes(q);
+  });
+
+  // Group files by directory
+  const grouped = new Map<string, WorkspaceFile[]>();
+  for (const file of filteredFiles) {
+    const dir = file.path.includes("/")
+      ? file.path.substring(0, file.path.lastIndexOf("/"))
+      : "";
+    if (!grouped.has(dir)) grouped.set(dir, []);
+    grouped.get(dir)!.push(file);
+  }
+
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [batchDeleting, setBatchDeleting] = useState(false);
+
+  // Clear selection when switching employees
+  useEffect(() => {
+    setSelected(new Set());
+  }, [selectedId]);
+
+  const toggleSelect = (filePath: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(filePath)) next.delete(filePath);
+      else next.add(filePath);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selected.size === filteredFiles.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(filteredFiles.map((f) => f.path)));
+    }
+  };
 
   const handleDelete = async (file: WorkspaceFile) => {
     if (!selectedId || !confirm(`Delete "${file.name}"? This cannot be undone.`)) return;
@@ -383,12 +471,49 @@ function DocumentsPage() {
     try {
       await api.deleteDocument(selectedId, file.path);
       setFiles((prev) => prev.filter((f) => f.path !== file.path));
+      setSelected((prev) => { const next = new Set(prev); next.delete(file.path); return next; });
       if (viewingFile?.path === file.path) setViewingFile(null);
     } catch {
       alert("Failed to delete file");
     } finally {
       setDeleting(null);
     }
+  };
+
+  const handleDeleteFolder = async (dir: string, dirFiles: WorkspaceFile[]) => {
+    if (!selectedId || !confirm(`Delete folder "${dir}" and all ${dirFiles.length} file(s) inside? This cannot be undone.`)) return;
+    setDeleting(dir);
+    try {
+      await api.deleteFolder(selectedId, dir);
+      const pathsInDir = new Set(dirFiles.map((f) => f.path));
+      setFiles((prev) => prev.filter((f) => !pathsInDir.has(f.path)));
+      setSelected((prev) => { const next = new Set(prev); pathsInDir.forEach((p) => next.delete(p)); return next; });
+      if (viewingFile && pathsInDir.has(viewingFile.path)) setViewingFile(null);
+    } catch {
+      alert("Failed to delete folder");
+    } finally {
+      setDeleting(null);
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    if (!selectedId || selected.size === 0) return;
+    if (!confirm(`Delete ${selected.size} selected file(s)? This cannot be undone.`)) return;
+    setBatchDeleting(true);
+    const toDelete = Array.from(selected);
+    const failed: string[] = [];
+    for (const filePath of toDelete) {
+      try {
+        await api.deleteDocument(selectedId, filePath);
+      } catch {
+        failed.push(filePath);
+      }
+    }
+    setFiles((prev) => prev.filter((f) => failed.includes(f.path) || !selected.has(f.path)));
+    if (viewingFile && selected.has(viewingFile.path) && !failed.includes(viewingFile.path)) setViewingFile(null);
+    setSelected(new Set(failed));
+    setBatchDeleting(false);
+    if (failed.length > 0) alert(`Failed to delete ${failed.length} file(s).`);
   };
 
   // Load employees
@@ -427,22 +552,6 @@ function DocumentsPage() {
   }, [selectedId]);
 
   const selectedEmployee = employees.find((e) => e.id === selectedId);
-
-  const filteredFiles = files.filter((f) => {
-    if (!search) return true;
-    const q = search.toLowerCase();
-    return f.name.toLowerCase().includes(q) || f.path.toLowerCase().includes(q);
-  });
-
-  // Group files by directory
-  const grouped = new Map<string, WorkspaceFile[]>();
-  for (const file of filteredFiles) {
-    const dir = file.path.includes("/")
-      ? file.path.substring(0, file.path.lastIndexOf("/"))
-      : "";
-    if (!grouped.has(dir)) grouped.set(dir, []);
-    grouped.get(dir)!.push(file);
-  }
 
   const fileUrl = (file: WorkspaceFile) => {
     // workspace-main/ and skills/ paths are already relative to config base — no extra prefix needed
@@ -659,6 +768,52 @@ function DocumentsPage() {
                 />
               </div>
 
+              {/* Batch actions bar */}
+              {!loadingFiles && filteredFiles.length > 0 && (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    marginBottom: 12,
+                    fontSize: 12,
+                    color: "var(--text-secondary)",
+                  }}
+                >
+                  <button
+                    onClick={toggleSelectAll}
+                    title={selected.size === filteredFiles.length ? "Deselect all" : "Select all"}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 4,
+                      background: "none", border: "none", cursor: "pointer",
+                      color: "var(--text-secondary)", fontSize: 12, padding: "2px 0",
+                    }}
+                  >
+                    {selected.size === filteredFiles.length && filteredFiles.length > 0
+                      ? <CheckSquare size={14} />
+                      : <Square size={14} />}
+                    {selected.size > 0 ? `${selected.size} selected` : "Select all"}
+                  </button>
+                  {selected.size > 0 && (
+                    <button
+                      onClick={handleBatchDelete}
+                      disabled={batchDeleting}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 4,
+                        background: "none", border: "1px solid var(--red, #dc2626)", borderRadius: "var(--radius-sm)",
+                        cursor: "pointer", color: "var(--red, #dc2626)", fontSize: 12, padding: "3px 10px",
+                        opacity: batchDeleting ? 0.5 : 1,
+                      }}
+                    >
+                      {batchDeleting
+                        ? <Loader2 size={12} style={{ animation: "spin 0.8s linear infinite" }} />
+                        : <Trash2 size={12} />}
+                      Delete selected
+                    </button>
+                  )}
+                </div>
+              )}
+
               {/* Files */}
               {loadingFiles ? (
                 <div style={{ display: "flex", justifyContent: "center", padding: 40 }}>
@@ -698,6 +853,20 @@ function DocumentsPage() {
                           }}
                         >
                           <FolderOpen size={12} /> {dir}
+                          <button
+                            onClick={() => handleDeleteFolder(dir, dirFiles)}
+                            disabled={deleting === dir}
+                            title={`Delete folder "${dir}"`}
+                            style={{
+                              marginLeft: "auto", background: "none", border: "none",
+                              cursor: "pointer", padding: 2, color: "var(--text-tertiary)",
+                              opacity: deleting === dir ? 0.5 : 1, display: "flex", alignItems: "center",
+                            }}
+                            onMouseEnter={(e) => { e.currentTarget.style.color = "var(--red, #dc2626)"; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-tertiary)"; }}
+                          >
+                            {deleting === dir ? <Loader2 size={12} style={{ animation: "spin 0.8s linear infinite" }} /> : <Trash2 size={12} />}
+                          </button>
                         </div>
                       )}
                       <div className="card" style={{ overflow: "hidden" }}>
@@ -726,6 +895,12 @@ function DocumentsPage() {
                                 (e.currentTarget.style.background = "")
                               }
                             >
+                              <button
+                                onClick={(e) => { e.stopPropagation(); toggleSelect(file.path); }}
+                                style={{ background: "none", border: "none", cursor: "pointer", padding: 0, flexShrink: 0, color: selected.has(file.path) ? "var(--blue, #2563eb)" : "var(--text-tertiary)", display: "flex" }}
+                              >
+                                {selected.has(file.path) ? <CheckSquare size={14} /> : <Square size={14} />}
+                              </button>
                               <a
                                 href={fileUrl(file)}
                                 onClick={(e) => handleFileClick(e, file)}
