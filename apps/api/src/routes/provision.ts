@@ -642,6 +642,15 @@ export async function provisionRoutes(fastify: FastifyInstance) {
         }
         writeFileSync(`${configDir}/cred.js`, genCred(), { mode: 0o755 });
 
+        // Seed memory.md if it doesn't exist yet — Edit tool needs the file to exist
+        const seedMemory = `# Memory\n\n_No notes yet. Update this file as you learn and complete tasks._\n`;
+        if (!existsSync(`${configDir}/workspace/memory.md`)) {
+          writeFileSync(`${configDir}/workspace/memory.md`, seedMemory);
+        }
+        if (!existsSync(`${configDir}/workspace-main/memory.md`)) {
+          writeFileSync(`${configDir}/workspace-main/memory.md`, seedMemory);
+        }
+
         // Write updated skills to both skills/ and workspace-main/skills/
         const skillDir = `${configDir}/skills`;
         const wmSkillDir = `${configDir}/workspace-main/skills`;
@@ -805,6 +814,15 @@ export async function provisionRoutes(fastify: FastifyInstance) {
           writeFileSync(`${configDir}/workspace-main/${name}`, content);
         }
         writeFileSync(`${configDir}/cred.js`, genCred(), { mode: 0o755 });
+
+        // Seed memory.md if it doesn't exist yet — Edit tool needs the file to exist
+        const seedMem = `# Memory\n\n_No notes yet. Update this file as you learn and complete tasks._\n`;
+        if (!existsSync(`${configDir}/workspace/memory.md`)) {
+          writeFileSync(`${configDir}/workspace/memory.md`, seedMem);
+        }
+        if (!existsSync(`${configDir}/workspace-main/memory.md`)) {
+          writeFileSync(`${configDir}/workspace-main/memory.md`, seedMem);
+        }
 
         // Write updated skills to both skills/ and workspace-main/skills/
         const skillDir = `${configDir}/skills`;
