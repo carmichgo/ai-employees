@@ -300,6 +300,13 @@ class ApiClient {
     );
   }
 
+  async rebootEmployee(id: string) {
+    return this.request<{ success: boolean; message: string }>(
+      `/api/employees/${id}/reboot`,
+      { method: "POST" },
+    );
+  }
+
   async getTemplates() {
     return this.request<{ templates: any[]; categories: string[] }>(
       "/api/employees/templates",

@@ -354,4 +354,46 @@ export async function fileRoutes(fastify: FastifyInstance) {
       return { message: "File deleted" };
     },
   );
+
+  // POST /internal/employees/:id/public-url — generate a temporary public URL for a workspace file
+  fastify.post<{ Params: { id: string }; Body: { filePath: string; expiresIn?: number } }>(
+    "/internal/employees/:id/public-url",
+    async (request, reply) => {
+      const { id } = request.params;
+      const { filePath, expiresIn } = request.body || {};
+
+      if (!filePath) {
+        return reply.status(400).send({ error: "filePath required" });
+      }
+
+      const employee = await db.query.employees.findFirst({
+        where: eq(employees.id, id),
+      });
+      if (!employee) return reply.status(404).send({ error: "Employee not found" });
+
+      const platformUrl = process.env.PLATFORM_URL || "https://ai-employees-ten.vercel.app";
+      const interserviceSecret = process.env.INTERSERVICE_SECRET || "";
+
+      try {
+        const res = await fetch(`${platformUrl}/api/employees/${id}/public-url`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-interservice-secret": interserviceSecret,
+          },
+          body: JSON.stringify({ filePath, expiresIn: expiresIn || 86400 }),
+          signal: AbortSignal.timeout(15000),
+        });
+
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({ error: "Failed" }));
+          return reply.status(res.status).send(body);
+        }
+
+        return await res.json();
+      } catch (err: any) {
+        return reply.status(502).send({ error: `Failed to generate URL: ${err.message}` });
+      }
+    },
+  );
 }

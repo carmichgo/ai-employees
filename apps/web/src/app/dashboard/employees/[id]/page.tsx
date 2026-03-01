@@ -8,7 +8,7 @@ import {
   MessageCircle, Save, X, Eye, EyeOff, ChevronDown, Upload, FileText, Zap,
   Webhook, Timer, Plus, ToggleLeft, ToggleRight, Copy, Check, KeyRound, Globe, Edit3,
   MessageSquare, Send, Smartphone, Gamepad2, Shield, MonitorSmartphone, Hash, Radio, Phone, Headphones,
-  Monitor, Sparkles,
+  Monitor, Sparkles, RotateCw,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -307,6 +307,21 @@ export default function EmployeeDetailPage() {
       router.push("/dashboard/employees");
     } catch (err: any) {
       alert(`Failed to terminate: ${err.message}`);
+      setActionLoading(false);
+    }
+  };
+  const handleReboot = async () => {
+    if (!confirm(`Reboot ${employee.name}'s server? This power-cycles the entire droplet and takes 1-2 minutes.`)) return;
+    setActionLoading(true);
+    try {
+      const res = await api.rebootEmployee(employeeId);
+      alert(res.message);
+      // Refresh employee data
+      const empRes = await api.getEmployee(employeeId);
+      setEmployee(empRes.employee);
+    } catch (err: any) {
+      alert(`Reboot failed: ${err.message}`);
+    } finally {
       setActionLoading(false);
     }
   };
@@ -722,6 +737,9 @@ export default function EmployeeDetailPage() {
           )}
           {employee.status === "paused" && (
             <button className="btn-primary btn-sm" onClick={handleResume} disabled={actionLoading} style={{ gap: 6 }}><Play size={14} /> Resume</button>
+          )}
+          {employee.status !== "terminated" && employee.dropletId && (
+            <button className="btn-secondary btn-sm" onClick={handleReboot} disabled={actionLoading} style={{ gap: 6 }}><RotateCw size={14} /> Reboot</button>
           )}
           {employee.status !== "terminated" && (
             <button className="btn-danger btn-sm" onClick={handleTerminate} disabled={actionLoading} style={{ gap: 6 }}><Trash2 size={14} /> Terminate</button>

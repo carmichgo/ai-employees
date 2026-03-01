@@ -20,6 +20,7 @@ import {
   MoreHorizontal,
   Pencil,
   Database,
+  Download,
 } from "lucide-react";
 
 // ── Types ────────────────────────────────────────────
@@ -596,6 +597,34 @@ export default function TablesPage() {
   const selectedBase = bases.find((b) => b.id === selectedBaseId);
   const selectedTable = tables.find((t) => t.id === selectedTableId);
 
+  const handleExportCsv = () => {
+    if (!selectedTable || columns.length === 0) return;
+    const sortedCols = [...columns].sort((a, b) => a.position - b.position);
+    const escape = (v: any): string => {
+      if (v === null || v === undefined) return "";
+      const s = String(v);
+      if (s.includes(",") || s.includes('"') || s.includes("\n")) return `"${s.replace(/"/g, '""')}"`;
+      return s;
+    };
+    const header = sortedCols.map((c) => escape(c.name)).join(",");
+    const dataRows = filteredRows.map((row) =>
+      sortedCols.map((col) => {
+        const val = row.cells[col.id];
+        if (col.type === "boolean") return val ? "true" : "false";
+        if (col.type === "date" && val) return new Date(val).toISOString().split("T")[0];
+        return escape(val);
+      }).join(",")
+    );
+    const csv = [header, ...dataRows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${selectedTable.name}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   // ── Loading state ─────────────────────────────────
   if (basesLoading) {
     return (
@@ -944,21 +973,35 @@ export default function TablesPage() {
 
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {selectedTableId && (
-            <div style={{ position: "relative" }}>
-              <Search
-                size={14}
-                style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: "var(--text-tertiary)" }}
-              />
-              <input
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search rows..."
+            <>
+              <div style={{ position: "relative" }}>
+                <Search
+                  size={14}
+                  style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: "var(--text-tertiary)" }}
+                />
+                <input
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search rows..."
+                  style={{
+                    padding: "6px 10px 6px 28px", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)",
+                    fontSize: 12, outline: "none", width: 180, background: "var(--bg)", color: "var(--text)",
+                  }}
+                />
+              </div>
+              <button
+                onClick={handleExportCsv}
+                disabled={columns.length === 0}
+                title="Export table as CSV"
                 style={{
-                  padding: "6px 10px 6px 28px", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)",
-                  fontSize: 12, outline: "none", width: 180, background: "var(--bg)", color: "var(--text)",
+                  display: "flex", alignItems: "center", gap: 4,
+                  padding: "6px 10px", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)",
+                  fontSize: 12, background: "var(--bg)", color: "var(--text)", cursor: "pointer",
                 }}
-              />
-            </div>
+              >
+                <Download size={12} /> Export CSV
+              </button>
+            </>
           )}
         </div>
       </div>
