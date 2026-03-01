@@ -65,10 +65,11 @@ export async function POST(
 
   const { id } = await params;
   const body = await request.json();
-  const { slug, source, content } = body as {
+  const { slug, source, content, files } = body as {
     slug: string;
     source?: string;
     content?: string; // raw SKILL.md content for custom/uploaded skills
+    files?: Array<{ name: string; content: string }>; // additional files for the skill folder
   };
 
   if (!slug) {
@@ -125,13 +126,13 @@ export async function POST(
     })
     .returning();
 
-  // If custom content was provided, write SKILL.md to the container via the backend
+  // If custom content was provided, write SKILL.md + additional files to the container
   if (content) {
     const backendConfig = await getEmployeeBackend(id);
     if (backendConfig) {
       try {
         const backend = createBackendClient(backendConfig);
-        await backend.installSkill(id, slug, content);
+        await backend.installSkill(id, slug, content, files);
       } catch (err: any) {
         console.error(`Failed to write skill to container: ${err.message}`);
         // Skill is saved in DB — will be written on next config regeneration

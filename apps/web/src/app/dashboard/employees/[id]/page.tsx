@@ -206,6 +206,7 @@ export default function EmployeeDetailPage() {
   const [installMode, setInstallMode] = useState<"slug" | "upload">("slug");
   const [newSkillSlug, setNewSkillSlug] = useState("");
   const [newSkillContent, setNewSkillContent] = useState("");
+  const [skillExtraFiles, setSkillExtraFiles] = useState<Array<{ name: string; content: string }>>([]);
   const [skillSaving, setSkillSaving] = useState(false);
   const [skillNotice, setSkillNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
@@ -560,15 +561,19 @@ export default function EmployeeDetailPage() {
     setSkillSaving(true);
     setSkillNotice(null);
     try {
-      const data: { slug: string; source?: string; content?: string } = { slug: newSkillSlug.trim().toLowerCase() };
+      const data: { slug: string; source?: string; content?: string; files?: Array<{ name: string; content: string }> } = { slug: newSkillSlug.trim().toLowerCase() };
       if (installMode === "upload" && newSkillContent.trim()) {
         data.content = newSkillContent.trim();
         data.source = "custom";
+        if (skillExtraFiles.length > 0) {
+          data.files = skillExtraFiles;
+        }
       }
       const res = await api.installSkill(employeeId, data);
       setSkillsList((prev) => [...prev, res.skill]);
       setNewSkillSlug("");
       setNewSkillContent("");
+      setSkillExtraFiles([]);
       setShowInstallSkill(false);
       setSkillNotice({ type: "success", message: res.message });
     } catch (err: any) {
@@ -599,17 +604,39 @@ export default function EmployeeDetailPage() {
   };
 
   const handleSkillFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const content = ev.target?.result as string;
-      setNewSkillContent(content);
-      // Auto-derive slug from filename: "my-skill.md" → "my-skill"
-      const slug = file.name.replace(/\.md$/i, "").replace(/^SKILL$/i, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-      if (slug && !newSkillSlug) setNewSkillSlug(slug);
-    };
-    reader.readAsText(file);
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+    const allFiles = Array.from(fileList);
+    // Find the SKILL.md (or first .md file) for the main content
+    const mdFile = allFiles.find((f) => f.name.toLowerCase() === "skill.md") || allFiles.find((f) => f.name.toLowerCase().endsWith(".md"));
+    const extraFiles = allFiles.filter((f) => f !== mdFile);
+
+    // Read all files
+    let pendingReads = allFiles.length;
+    const readResults = new Map<string, string>();
+    for (const file of allFiles) {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        readResults.set(file.name, ev.target?.result as string);
+        pendingReads--;
+        if (pendingReads === 0) {
+          // All files read — update state
+          if (mdFile) {
+            setNewSkillContent(readResults.get(mdFile.name) || "");
+            // Auto-derive slug from the first .md filename
+            const slug = mdFile.name.replace(/\.md$/i, "").replace(/^SKILL$/i, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+            if (slug && !newSkillSlug) setNewSkillSlug(slug);
+          }
+          const extras: Array<{ name: string; content: string }> = [];
+          for (const f of extraFiles) {
+            const content = readResults.get(f.name);
+            if (content) extras.push({ name: f.name, content });
+          }
+          setSkillExtraFiles(extras);
+        }
+      };
+      reader.readAsText(file);
+    }
   };
 
   const copyRelayValue = (key: string, value: string) => {
@@ -1181,7 +1208,7 @@ export default function EmployeeDetailPage() {
               <>
                 <div>
                   <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>
-                    Upload a SKILL.md file or paste content
+                    Upload skill files (SKILL.md + optional scripts/templates)
                   </label>
                   <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
                     <label style={{
@@ -1189,10 +1216,11 @@ export default function EmployeeDetailPage() {
                       background: "#ffffff", border: "1px solid var(--border)", cursor: "pointer",
                       display: "flex", alignItems: "center", gap: 6, color: "var(--text-secondary)",
                     }}>
-                      <Upload size={12} /> Choose File
+                      <Upload size={12} /> Choose Files
                       <input
                         type="file"
-                        accept=".md,.txt"
+                        accept=".md,.txt,.py,.sh,.js,.ts,.json,.yaml,.yml,.html,.css,.sql,.csv"
+                        multiple
                         onChange={handleSkillFileUpload}
                         style={{ display: "none" }}
                       />
@@ -1206,6 +1234,24 @@ export default function EmployeeDetailPage() {
                     rows={8}
                     style={{ width: "100%", fontSize: 12, resize: "vertical", fontFamily: "monospace", lineHeight: 1.5 }}
                   />
+                  {skillExtraFiles.length > 0 && (
+                    <div style={{ marginTop: 8 }}>
+                      <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>Additional files:</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                        {skillExtraFiles.map((f) => (
+                          <span key={f.name} style={{
+                            fontSize: 11, fontFamily: "monospace", background: "#ffffff", padding: "2px 8px",
+                            borderRadius: "var(--radius-sm)", border: "1px solid var(--border)", display: "inline-flex", alignItems: "center", gap: 4,
+                          }}>
+                            {f.name}
+                            <button onClick={() => setSkillExtraFiles((prev) => prev.filter((p) => p.name !== f.name))} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, color: "var(--text-tertiary)", lineHeight: 1 }}>
+                              <X size={10} />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </>
             )}
@@ -1221,7 +1267,7 @@ export default function EmployeeDetailPage() {
               </button>
               <button
                 className="btn-secondary btn-sm"
-                onClick={() => { setShowInstallSkill(false); setNewSkillSlug(""); setNewSkillContent(""); setSkillNotice(null); }}
+                onClick={() => { setShowInstallSkill(false); setNewSkillSlug(""); setNewSkillContent(""); setSkillExtraFiles([]); setSkillNotice(null); }}
                 style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
               >
                 <X size={12} /> Cancel

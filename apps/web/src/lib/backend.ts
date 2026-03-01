@@ -202,10 +202,10 @@ export function createBackendClient(config: BackendConfig) {
       return res.json();
     },
 
-    async installSkill(employeeId: string, slug: string, content: string) {
+    async installSkill(employeeId: string, slug: string, content: string, files?: Array<{ name: string; content: string }>) {
       const res = await backendFetch(config, `/internal/employees/${employeeId}/skills/install`, {
         method: "POST",
-        body: JSON.stringify({ slug, content }),
+        body: JSON.stringify({ slug, content, files }),
       });
       return res.json();
     },

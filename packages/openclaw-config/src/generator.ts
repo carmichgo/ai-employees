@@ -1130,7 +1130,9 @@ export function generateAgentsMd(employee: EmployeeInput): string {
   parts.push("EOF");
   parts.push("```");
   parts.push("");
-  parts.push("Your manager can browse and download all files in `/home/node/.openclaw/workspace/` from the dashboard. When you reference a file in a task comment or message, make sure it's saved there — not just in your chat response. Files only exist if they're on disk.");
+  parts.push("Your manager can browse and download all files in `/home/node/.openclaw/workspace/` and `/home/node/.openclaw/workspace-main/` from the dashboard. When you reference a file in a task comment or message, make sure it's saved there — not just in your chat response. Files only exist if they're on disk.");
+  parts.push("");
+  parts.push("**Sending images and files in chat:** When you create an image, PDF, spreadsheet, or any file — include the full workspace path in your response (e.g. `/home/node/.openclaw/workspace-main/logo-draft.png`). The system automatically detects these paths and renders images inline or provides download links. **Always do this** when sharing visual work — your manager wants to SEE the result, not just a file path.");
   parts.push("");
 
   // Skill building — build before you execute

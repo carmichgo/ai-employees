@@ -231,10 +231,9 @@ export async function fileRoutes(fastify: FastifyInstance) {
       });
       if (!employee) return reply.status(404).send({ error: "Employee not found" });
 
-      const workspaceDir = path.join(CONFIG_BASE, id, "workspace");
-      if (!existsSync(workspaceDir)) {
-        return { files: [] };
-      }
+      const configBase = path.join(CONFIG_BASE, id);
+      const workspaceDir = path.join(configBase, "workspace");
+      const workspaceMainDir = path.join(configBase, "workspace-main");
 
       const files: Array<{
         name: string;
@@ -275,14 +274,19 @@ export async function fileRoutes(fastify: FastifyInstance) {
         } catch { /* skip unreadable directories */ }
       };
 
-      walk(workspaceDir, workspaceDir);
+      // Walk workspace/ (uploads, config files)
+      if (existsSync(workspaceDir)) {
+        walk(workspaceDir, workspaceDir);
+      }
+
+      // Walk workspace-main/ (employee-created files at runtime)
+      if (existsSync(workspaceMainDir)) {
+        walk(workspaceMainDir, configBase);
+      }
 
       // Also include skills files (installed SKILL.md files)
-      const skillsDir = path.join(CONFIG_BASE, id, "skills");
+      const skillsDir = path.join(configBase, "skills");
       if (existsSync(skillsDir)) {
-        // Walk skills dir but make paths relative to the config base (not workspace)
-        // so they resolve correctly via the workspace download endpoint
-        const configBase = path.join(CONFIG_BASE, id);
         walk(skillsDir, configBase);
       }
 

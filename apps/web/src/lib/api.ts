@@ -497,7 +497,7 @@ class ApiClient {
     }>(`/api/employees/${employeeId}/skills`);
   }
 
-  async installSkill(employeeId: string, data: { slug: string; source?: string; content?: string }) {
+  async installSkill(employeeId: string, data: { slug: string; source?: string; content?: string; files?: Array<{ name: string; content: string }> }) {
     return this.request<{ message: string; skill: any }>(
       `/api/employees/${employeeId}/skills`,
       { method: "POST", body: JSON.stringify(data) },

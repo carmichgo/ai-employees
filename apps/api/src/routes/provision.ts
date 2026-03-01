@@ -4,6 +4,7 @@
  */
 import type { FastifyInstance } from "fastify";
 import crypto from "node:crypto";
+import path from "node:path";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { eq, and, or, inArray } from "drizzle-orm";
@@ -431,10 +432,10 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // POST /internal/employees/:id/skills/install — write a custom SKILL.md to the employee's container
+  // POST /internal/employees/:id/skills/install — write skill files to the employee's container
   fastify.post<{ Params: { id: string } }>("/internal/employees/:id/skills/install", async (request, reply) => {
     const { id } = request.params;
-    const { slug, content } = request.body as { slug: string; content: string };
+    const { slug, content, files } = request.body as { slug: string; content: string; files?: Array<{ name: string; content: string }> };
 
     if (!slug || !content) {
       return reply.status(400).send({ error: "slug and content are required" });
@@ -453,11 +454,24 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     try {
       mkdirSync(skillDir, { recursive: true });
       writeFileSync(`${skillDir}/SKILL.md`, content);
+      // Write additional files (scripts, templates, etc.)
+      if (files?.length) {
+        for (const f of files) {
+          const safeName = path.basename(f.name);
+          writeFileSync(`${skillDir}/${safeName}`, f.content);
+        }
+      }
       // Also write to workspace-main/skills/ so OpenClaw can find and edit the skill
       if (existsSync(`${configDir}/workspace-main`)) {
         const wmSkillDir = `${configDir}/workspace-main/skills/${slug}`;
         mkdirSync(wmSkillDir, { recursive: true });
         writeFileSync(`${wmSkillDir}/SKILL.md`, content);
+        if (files?.length) {
+          for (const f of files) {
+            const safeName = path.basename(f.name);
+            writeFileSync(`${wmSkillDir}/${safeName}`, f.content);
+          }
+        }
       }
       execSync(`chown -R 1000:1000 ${configDir}/skills ${configDir}/workspace-main/skills 2>/dev/null; true`, { timeout: 5000 });
       return { success: true, message: `Skill "${slug}" installed` };
