@@ -190,6 +190,16 @@ export default function EmployeeDetailPage() {
   const [credSaving, setCredSaving] = useState(false);
   const [credNotice, setCredNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
+  // API Keys state
+  const [showNewApiKey, setShowNewApiKey] = useState(false);
+  const [editingApiKeyId, setEditingApiKeyId] = useState<string | null>(null);
+  const [apiKeyLabel, setApiKeyLabel] = useState("");
+  const [apiKeyValue, setApiKeyValue] = useState("");
+  const [apiKeyNotes, setApiKeyNotes] = useState("");
+  const [showApiKeyValue, setShowApiKeyValue] = useState(false);
+  const [apiKeySaving, setApiKeySaving] = useState(false);
+  const [apiKeyNotice, setApiKeyNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
   // Skills state
   const [skillsList, setSkillsList] = useState<Array<{ id: string; skillSlug: string; source: string; enabled: boolean; config: Record<string, unknown>; createdAt: string }>>([]);
   const [showInstallSkill, setShowInstallSkill] = useState(false);
@@ -491,6 +501,51 @@ export default function EmployeeDetailPage() {
       setCredNotice({ type: "success", message: "Credential removed" });
     } catch (err: any) {
       setCredNotice({ type: "error", message: err.message });
+    }
+  };
+
+  // ── API Key handlers ──
+  const resetApiKeyForm = () => {
+    setApiKeyLabel(""); setApiKeyValue(""); setApiKeyNotes("");
+    setShowApiKeyValue(false); setEditingApiKeyId(null); setShowNewApiKey(false);
+  };
+  const handleSaveApiKey = async () => {
+    setApiKeySaving(true);
+    setApiKeyNotice(null);
+    try {
+      const data: { id?: string; type: "api_key"; label: string; apiKey?: string; notes?: string } = { type: "api_key", label: apiKeyLabel };
+      if (apiKeyValue) data.apiKey = apiKeyValue;
+      if (apiKeyNotes) data.notes = apiKeyNotes;
+      if (editingApiKeyId) data.id = editingApiKeyId;
+      const res = await api.saveCredential(employeeId, data);
+      if (editingApiKeyId) {
+        setCredentialsList((prev) => prev.map((c) => (c.id === editingApiKeyId ? res.credential : c)));
+      } else {
+        setCredentialsList((prev) => [...prev, res.credential]);
+      }
+      resetApiKeyForm();
+      setApiKeyNotice({ type: "success", message: editingApiKeyId ? "API key updated" : "API key added" });
+    } catch (err: any) {
+      setApiKeyNotice({ type: "error", message: err.message });
+    } finally {
+      setApiKeySaving(false);
+    }
+  };
+  const handleEditApiKey = (cred: any) => {
+    setEditingApiKeyId(cred.id);
+    setApiKeyLabel(cred.label);
+    setApiKeyValue("");
+    setApiKeyNotes(cred.notes || "");
+    setShowNewApiKey(true);
+  };
+  const handleDeleteApiKey = async (credId: string) => {
+    if (!confirm("Remove this API key? The employee will lose access.")) return;
+    try {
+      await api.deleteCredential(employeeId, credId);
+      setCredentialsList((prev) => prev.filter((c) => c.id !== credId));
+      setApiKeyNotice({ type: "success", message: "API key removed" });
+    } catch (err: any) {
+      setApiKeyNotice({ type: "error", message: err.message });
     }
   };
 
@@ -1406,7 +1461,7 @@ export default function EmployeeDetailPage() {
             <KeyRound size={14} style={{ color: "var(--text-tertiary)" }} />
             <p className="label" style={{ margin: 0 }}>Logins &amp; Passwords</p>
             <span style={{ fontSize: 11, color: "var(--text-tertiary)", background: "var(--bg-secondary)", padding: "2px 6px", borderRadius: "var(--radius-sm)" }}>
-              {credentialsList.length}
+              {credentialsList.filter((c) => c.type !== "api_key").length}
             </span>
           </div>
           {!showNewCred && (
@@ -1487,13 +1542,13 @@ export default function EmployeeDetailPage() {
         )}
 
         {/* Credentials list */}
-        {credentialsList.length === 0 && !showNewCred ? (
+        {credentialsList.filter((c) => c.type !== "api_key").length === 0 && !showNewCred ? (
           <div style={{ fontSize: 13, color: "var(--text-tertiary)", lineHeight: 1.6 }}>
             No logins stored. Add usernames and passwords here so {employee.name} can log into websites and services on your behalf.
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {credentialsList.map((cred) => (
+            {credentialsList.filter((c) => c.type !== "api_key").map((cred) => (
               <div key={cred.id} style={{
                 padding: "10px 12px", background: "#ffffff", borderRadius: "var(--radius-md)",
                 border: "1px solid var(--border)",
@@ -1534,6 +1589,129 @@ export default function EmployeeDetailPage() {
 
         <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 10 }}>
           Credentials are securely stored and available to the employee for logging into websites and services.
+        </div>
+      </div>
+
+      {/* ════════════════════════════════════════════════════════════ */}
+      {/* API KEYS */}
+      {/* ════════════════════════════════════════════════════════════ */}
+      <div className="card" style={{ padding: 20, marginBottom: 16, background: "#ffffff", border: "1px solid var(--border)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Zap size={14} style={{ color: "var(--text-tertiary)" }} />
+            <p className="label" style={{ margin: 0 }}>API Keys</p>
+            <span style={{ fontSize: 11, color: "var(--text-tertiary)", background: "var(--bg-secondary)", padding: "2px 6px", borderRadius: "var(--radius-sm)" }}>
+              {credentialsList.filter((c) => c.type === "api_key").length}
+            </span>
+          </div>
+          {!showNewApiKey && (
+            <button
+              className="btn-secondary btn-sm"
+              onClick={() => { resetApiKeyForm(); setShowNewApiKey(true); }}
+              style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
+            >
+              <Plus size={12} /> Add API Key
+            </button>
+          )}
+        </div>
+
+        {apiKeyNotice && (
+          <div style={{
+            padding: "8px 12px", borderRadius: "var(--radius-sm)", marginBottom: 12, fontSize: 12,
+            background: apiKeyNotice.type === "success" ? "rgba(22, 163, 74, 0.06)" : "rgba(220, 38, 38, 0.06)",
+            color: apiKeyNotice.type === "success" ? "var(--green)" : "var(--red)",
+          }}>
+            {apiKeyNotice.message}
+          </div>
+        )}
+
+        {/* Add / edit API key form */}
+        {showNewApiKey && (
+          <div style={{ background: "var(--bg-secondary)", borderRadius: "var(--radius-md)", padding: 16, marginBottom: 16, display: "flex", flexDirection: "column", gap: 12, border: "1px solid var(--border)" }}>
+            <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 2, color: "var(--text)" }}>
+              {editingApiKeyId ? "Edit API Key" : "New API Key"}
+            </div>
+            <div>
+              <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Service Name</label>
+              <input type="text" placeholder="e.g., OpenAI, Stripe, GitHub, Twilio" value={apiKeyLabel} onChange={(e) => setApiKeyLabel(e.target.value)} className="input" style={{ width: "100%", fontSize: 13 }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>API Key</label>
+              <div style={{ position: "relative" }}>
+                <input
+                  type={showApiKeyValue ? "text" : "password"}
+                  placeholder={editingApiKeyId ? "Leave blank to keep current" : "sk-... or paste your API key"}
+                  value={apiKeyValue}
+                  onChange={(e) => setApiKeyValue(e.target.value)}
+                  className="input"
+                  style={{ width: "100%", fontSize: 13, paddingRight: 36, fontFamily: "monospace" }}
+                />
+                <button type="button" onClick={() => setShowApiKeyValue(!showApiKeyValue)} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", padding: 4 }}>
+                  {showApiKeyValue ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+            </div>
+            <div>
+              <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Notes (optional)</label>
+              <input type="text" placeholder="e.g., rate limit tier, expiration date" value={apiKeyNotes} onChange={(e) => setApiKeyNotes(e.target.value)} className="input" style={{ width: "100%", fontSize: 13 }} />
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                className="btn-primary btn-sm"
+                onClick={handleSaveApiKey}
+                disabled={apiKeySaving || !apiKeyLabel || (!apiKeyValue && !editingApiKeyId)}
+                style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
+              >
+                <Save size={12} /> {apiKeySaving ? "Saving..." : "Save"}
+              </button>
+              <button className="btn-secondary btn-sm" onClick={resetApiKeyForm} style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
+                <X size={12} /> Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* API Keys list */}
+        {credentialsList.filter((c) => c.type === "api_key").length === 0 && !showNewApiKey ? (
+          <div style={{ fontSize: 13, color: "var(--text-tertiary)", lineHeight: 1.6 }}>
+            No API keys stored. Add API keys for external services (OpenAI, Stripe, etc.) so {employee.name} can use them.
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {credentialsList.filter((c) => c.type === "api_key").map((cred) => (
+              <div key={cred.id} style={{
+                padding: "10px 12px", background: "#ffffff", borderRadius: "var(--radius-md)",
+                border: "1px solid var(--border)",
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <Zap size={13} style={{ color: "var(--blue)" }} />
+                    <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text)" }}>{cred.label}</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <button onClick={() => handleEditApiKey(cred)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", padding: 2 }} title="Edit">
+                      <Edit3 size={13} />
+                    </button>
+                    <button onClick={() => handleDeleteApiKey(cred.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", padding: 2 }} title="Delete">
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </div>
+                <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 6, display: "flex", flexWrap: "wrap", gap: "4px 16px" }}>
+                  <span><span style={{ color: "var(--text-tertiary)" }}>Key:</span> <code style={{ fontSize: 11, background: "var(--bg-secondary)", padding: "1px 4px", borderRadius: 3 }}>{cred.hasApiKey ? "••••••••••••" : "Not set"}</code></span>
+                </div>
+                {cred.notes && (
+                  <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 4, fontStyle: "italic" }}>
+                    {cred.notes}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 10 }}>
+          API keys are securely stored alongside credentials and synced to the employee&apos;s environment.
         </div>
       </div>
 

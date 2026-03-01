@@ -21,11 +21,14 @@ async function authenticate(request: NextRequest) {
 
 type Credential = {
   id: string;
+  type?: "login" | "api_key";
   label: string;
   username: string;
   password: string;
   url?: string;
   notes?: string;
+  // API key fields
+  apiKey?: string;
 };
 
 // GET — list all credentials with passwords masked
@@ -57,11 +60,13 @@ export async function GET(
   return NextResponse.json({
     credentials: creds.map((c) => ({
       id: c.id,
+      type: c.type || "login",
       label: c.label,
       username: c.username,
       hasPassword: !!c.password,
       url: c.url || "",
       notes: c.notes || "",
+      hasApiKey: !!c.apiKey,
     })),
   });
 }
@@ -77,11 +82,22 @@ export async function PUT(
   const { id } = await params;
   const body = await request.json();
 
-  if (!body.label || !body.username) {
-    return NextResponse.json(
-      { error: "Required: label, username" },
-      { status: 400 },
-    );
+  const isApiKey = body.type === "api_key";
+
+  if (isApiKey) {
+    if (!body.label) {
+      return NextResponse.json(
+        { error: "Required: label" },
+        { status: 400 },
+      );
+    }
+  } else {
+    if (!body.label || !body.username) {
+      return NextResponse.json(
+        { error: "Required: label, username" },
+        { status: 400 },
+      );
+    }
   }
 
   const [employee] = await db
@@ -106,30 +122,60 @@ export async function PUT(
     if (idx === -1) {
       return NextResponse.json({ error: "Credential not found" }, { status: 404 });
     }
-    creds[idx] = {
-      ...creds[idx],
-      label: body.label,
-      username: body.username,
-      password: body.password || creds[idx].password, // keep old if blank
-      url: body.url ?? creds[idx].url,
-      notes: body.notes ?? creds[idx].notes,
-    };
+    if (isApiKey) {
+      creds[idx] = {
+        ...creds[idx],
+        type: "api_key",
+        label: body.label,
+        apiKey: body.apiKey || creds[idx].apiKey, // keep old if blank
+        notes: body.notes ?? creds[idx].notes,
+      };
+    } else {
+      creds[idx] = {
+        ...creds[idx],
+        type: "login",
+        label: body.label,
+        username: body.username,
+        password: body.password || creds[idx].password, // keep old if blank
+        url: body.url ?? creds[idx].url,
+        notes: body.notes ?? creds[idx].notes,
+      };
+    }
   } else {
     // Add new
-    if (!body.password) {
-      return NextResponse.json(
-        { error: "Password is required for new credentials" },
-        { status: 400 },
-      );
+    if (isApiKey) {
+      if (!body.apiKey) {
+        return NextResponse.json(
+          { error: "API key value is required" },
+          { status: 400 },
+        );
+      }
+      creds.push({
+        id: randomUUID(),
+        type: "api_key",
+        label: body.label,
+        username: "",
+        password: "",
+        apiKey: body.apiKey,
+        notes: body.notes || "",
+      });
+    } else {
+      if (!body.password) {
+        return NextResponse.json(
+          { error: "Password is required for new credentials" },
+          { status: 400 },
+        );
+      }
+      creds.push({
+        id: randomUUID(),
+        type: "login",
+        label: body.label,
+        username: body.username,
+        password: body.password,
+        url: body.url || "",
+        notes: body.notes || "",
+      });
     }
-    creds.push({
-      id: randomUUID(),
-      label: body.label,
-      username: body.username,
-      password: body.password,
-      url: body.url || "",
-      notes: body.notes || "",
-    });
   }
 
   await db
@@ -147,9 +193,11 @@ export async function PUT(
       await backend.syncCredentials(
         id,
         creds.map((c) => ({
+          type: c.type || "login",
           label: c.label,
           username: c.username,
           password: c.password,
+          apiKey: c.apiKey,
           url: c.url,
           notes: c.notes,
         })),
@@ -173,11 +221,13 @@ export async function PUT(
     message: body.id ? "Credential updated" : "Credential added",
     credential: {
       id: target.id,
+      type: target.type || "login",
       label: target.label,
       username: target.username,
       hasPassword: !!target.password,
       url: target.url || "",
       notes: target.notes || "",
+      hasApiKey: !!target.apiKey,
     },
     syncStatus,
     syncError,
@@ -233,9 +283,11 @@ export async function DELETE(
       await backend.syncCredentials(
         id,
         filtered.map((c) => ({
+          type: c.type || "login",
           label: c.label,
           username: c.username,
           password: c.password,
+          apiKey: c.apiKey,
           url: c.url,
           notes: c.notes,
         })),

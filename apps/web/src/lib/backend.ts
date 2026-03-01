@@ -187,9 +187,11 @@ export function createBackendClient(config: BackendConfig) {
     },
 
     async syncCredentials(employeeId: string, credentials: Array<{
+      type?: string;
       label: string;
       username: string;
       password: string;
+      apiKey?: string;
       url?: string;
       notes?: string;
     }>) {

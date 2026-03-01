@@ -199,18 +199,20 @@ class ApiClient {
     return this.request<{
       credentials: Array<{
         id: string;
+        type: "login" | "api_key";
         label: string;
         username: string;
         hasPassword: boolean;
         url: string;
         notes: string;
+        hasApiKey: boolean;
       }>;
     }>(`/api/employees/${employeeId}/credentials`);
   }
 
   async saveCredential(
     employeeId: string,
-    data: { id?: string; label: string; username: string; password?: string; url?: string; notes?: string },
+    data: { id?: string; type?: "login" | "api_key"; label: string; username?: string; password?: string; apiKey?: string; url?: string; notes?: string },
   ) {
     return this.request<{ message: string; credential: any }>(
       `/api/employees/${employeeId}/credentials`,
