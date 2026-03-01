@@ -561,6 +561,31 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Admin action: reboot-droplet — power-cycle a droplet via DigitalOcean API
+    if (action === "reboot-droplet") {
+      const empId = request.nextUrl.searchParams.get("employeeId");
+      if (!empId) {
+        return NextResponse.json({ error: "employeeId required" }, { status: 400 });
+      }
+      const [emp] = await sql`SELECT id, name, droplet_id FROM employees WHERE id = ${empId}`;
+      if (!emp || !emp.droplet_id) {
+        results.push(`reboot-droplet: employee not found or no droplet`);
+      } else {
+        try {
+          const { powerCycleEmployeeDroplet } = await import("@/lib/digitalocean");
+          const success = await powerCycleEmployeeDroplet(empId);
+          if (success) {
+            await sql`UPDATE employees SET droplet_status = 'unhealthy', status = 'provisioning', container_id = NULL, container_host = NULL, error_message = NULL WHERE id = ${empId}`;
+            results.push(`reboot-droplet: power-cycled ${emp.name}'s droplet (${emp.droplet_id})`);
+          } else {
+            results.push(`reboot-droplet: FAILED to power-cycle ${emp.name}`);
+          }
+        } catch (err: any) {
+          results.push(`reboot-droplet: FAILED — ${err.message}`);
+        }
+      }
+    }
+
     // Always include employee diagnostics
     const empRows = await sql`
       SELECT id, name, status, droplet_id, droplet_ip, droplet_status,
