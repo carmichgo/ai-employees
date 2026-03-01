@@ -917,7 +917,7 @@ export default function TablesPage() {
   // BASE DETAIL VIEW (table tabs + spreadsheet)
   // ═══════════════════════════════════════════════════
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 48px)" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 48px)", overflow: "hidden" }}>
       {/* Base header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 0, flexShrink: 0, paddingBottom: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -1006,7 +1006,7 @@ export default function TablesPage() {
         </div>
       </div>
 
-      {/* Table tabs bar */}
+      {/* Table tabs bar — horizontally scrollable within viewport */}
       <div
         style={{
           display: "flex",
@@ -1015,7 +1015,10 @@ export default function TablesPage() {
           borderBottom: "1px solid var(--border)",
           marginBottom: 0,
           flexShrink: 0,
-          overflow: "auto",
+          overflowX: "auto",
+          overflowY: "hidden",
+          maxWidth: "100%",
+          scrollbarWidth: "thin",
         }}
       >
         {tables.map((t) => {
@@ -1139,7 +1142,7 @@ export default function TablesPage() {
           <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
         </div>
       ) : (
-        <div style={{ flex: 1, overflow: "auto", border: "1px solid var(--border)", borderTop: "none", background: "var(--bg)" }}>
+        <div style={{ flex: 1, overflow: "auto", border: "1px solid var(--border)", borderTop: "none", background: "var(--bg)", minWidth: 0, minHeight: 0 }}>
           <table
             style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: columns.length * 180 + 80 }}
           >
