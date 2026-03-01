@@ -1355,15 +1355,6 @@ Before you finish this heartbeat cycle, **update /home/node/.openclaw/workspace/
 `;
 }
 
-/** Generate an email address for the employee */
-export function generateEmployeeEmail(
-  employeeName: string,
-  companySlug: string,
-): string {
-  const nameSlug = slugify(employeeName);
-  return `${nameSlug}@${companySlug}.ai-employees.com`;
-}
-
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------

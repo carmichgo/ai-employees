@@ -11,7 +11,7 @@ import {
   generateUserMd,
   generateToolsMd,
   generateAgentsMd,
-  generateEmployeeEmail,
+
   generateCredentialManagerScript,
   generateCaptchaSolvingSkill,
   generateAccountCreationSkill,
@@ -92,8 +92,8 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
       .set({ status: "provisioning", updatedAt: new Date() })
       .where(eq(employees.id, employeeId));
 
-    // Generate employee email
-    const emailAddress = generateEmployeeEmail(employee.name, company.slug);
+    // Use the email address configured by the manager (if any) — no fake email generation
+    const emailAddress = employee.emailAddress || null;
 
     // Ensure Docker network exists
     await ensureNetwork(OPENCLAW_NETWORK);
@@ -244,7 +244,7 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
         ...(TWILIO_AUTH_TOKEN ? [`TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}`] : []),
         `ENCRYPTION_KEY=${deriveEmployeeEncryptionKey(employeeId)}`,
         `EMPLOYEE_ID=${employeeId}`,
-        `EMPLOYEE_EMAIL=${emailAddress}`,
+        ...(emailAddress ? [`EMPLOYEE_EMAIL=${emailAddress}`] : []),
         `EMPLOYEE_NAME=${employee.name}`,
         `EMPLOYEE_JOB_TITLE=${employee.jobTitle}`,
         `COMPANY_ID=${data.companyId}`,
@@ -297,14 +297,13 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     const info = await container.inspect();
     let containerIp = info.NetworkSettings.Networks?.[OPENCLAW_NETWORK]?.IPAddress || null;
 
-    // Update DB with container details + email (still provisioning until gateway ready)
+    // Update DB with container details (still provisioning until gateway ready)
     await db
       .update(employees)
       .set({
         containerId: info.Id,
         containerHost: containerIp,
         containerPort: 18789,
-        emailAddress,
         updatedAt: new Date(),
       })
       .where(eq(employees.id, employeeId));
@@ -388,7 +387,7 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
       .where(eq(employees.id, employeeId));
 
     console.log(
-      `[provision] Employee ${employee.name} (${employeeId}) is now active at ${containerIp}:18789 — email: ${emailAddress}`,
+      `[provision] Employee ${employee.name} (${employeeId}) is now active at ${containerIp}:18789${emailAddress ? ` — email: ${emailAddress}` : ""}`,
     );
 
     // Create Slack channel for the employee if Slack is in their channels

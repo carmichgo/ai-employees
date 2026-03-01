@@ -6,7 +6,7 @@ export {
   generateToolsMd,
   generateAgentsMd,
   generateHeartbeatMd,
-  generateEmployeeEmail,
+
   regenerateChannelConfig,
 } from "./generator.js";
 export type { EmployeeInput, ChannelInput, OpenClawConfig } from "./generator.js";
