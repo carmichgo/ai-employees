@@ -45,6 +45,10 @@ ufw default allow outgoing
 ufw allow ssh
 ufw allow 80/tcp    # HTTP (Traefik)
 ufw allow 443/tcp   # HTTPS (Traefik)
+ufw allow out 25/tcp   # SMTP (outbound)
+ufw allow out 465/tcp  # SMTPS (outbound)
+ufw allow out 587/tcp  # SMTP submission (outbound)
+ufw allow out 993/tcp  # IMAPS (outbound)
 ufw --force enable
 
 # Create app directory

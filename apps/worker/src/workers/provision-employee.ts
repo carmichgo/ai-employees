@@ -13,6 +13,7 @@ import {
   generateAgentsMd,
 
   generateCredentialManagerScript,
+  generateSendEmailScript,
   generateCaptchaSolvingSkill,
   generateAccountCreationSkill,
   generateTaskLoggingSkill,
@@ -38,6 +39,7 @@ const BRAVE_API_KEY = process.env.BRAVE_API_KEY || "";
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID || "";
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || "";
+const INTERSERVICE_SECRET = process.env.INTERSERVICE_SECRET || "";
 const API_DOMAIN = process.env.API_DOMAIN || "";
 
 /** Derive a per-employee encryption key from the system key + employee ID */
@@ -200,6 +202,9 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     // Write credential manager CLI script
     writeFileSync(`${configDir}/cred.js`, generateCredentialManagerScript(), { mode: 0o755 });
 
+    // Write send-email CLI script (sends via Resend API, bypasses blocked SMTP ports)
+    writeFileSync(`${configDir}/send-email.js`, generateSendEmailScript(), { mode: 0o755 });
+
     // Write skill files
     writeFileSync(`${configDir}/skills/captcha-solving/SKILL.md`, generateCaptchaSolvingSkill());
     writeFileSync(`${configDir}/skills/account-creation/SKILL.md`, generateAccountCreationSkill());
@@ -248,8 +253,9 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
         `EMPLOYEE_NAME=${employee.name}`,
         `EMPLOYEE_JOB_TITLE=${employee.jobTitle}`,
         `COMPANY_ID=${data.companyId}`,
-        // Internal API URL — used by task-management, restart-gateway, team-communication skills
+        // Internal API URL — used by task-management, restart-gateway, team-communication, send-email skills
         `BLITZ_API_URL=http://host.docker.internal:${process.env.API_PORT || "3001"}`,
+        `INTERSERVICE_SECRET=${INTERSERVICE_SECRET}`,
         // Email IMAP/SMTP credentials (if configured by company owner)
         ...buildEmailEnvVars(employee.provisionedAccounts as Record<string, unknown>),
       ],
@@ -941,6 +947,30 @@ CREDEOF
         npm install -g docx 2>/dev/null || true
       '`,
       timeout: 180_000,
+    },
+    {
+      name: "gogcli (Google Workspace CLI)",
+      cmd: `docker exec -u root ${containerName} bash -c '
+        GOG_VERSION=$(curl -fsSL https://api.github.com/repos/steipete/gogcli/releases/latest 2>/dev/null | grep -o "\"tag_name\":\"[^\"]*\"" | head -1 | cut -d"\"" -f4 | sed "s/^v//") &&
+        if [ -n "$GOG_VERSION" ]; then
+          curl -fsSL "https://github.com/steipete/gogcli/releases/download/v$GOG_VERSION/gogcli_\${GOG_VERSION}_linux_amd64.tar.gz" -o /tmp/gogcli.tar.gz &&
+          tar xzf /tmp/gogcli.tar.gz -C /usr/local/bin &&
+          rm -f /tmp/gogcli.tar.gz &&
+          chmod +x /usr/local/bin/gog
+        fi
+      '`,
+      timeout: 60_000,
+    },
+    {
+      name: "send-email CLI wrapper",
+      cmd: `docker exec -u root ${containerName} bash -c '
+        cat > /usr/local/bin/send-email << "SENDEMAILEOF"
+#!/bin/bash
+exec node /home/node/.openclaw/send-email.js "$@"
+SENDEMAILEOF
+        chmod +x /usr/local/bin/send-email
+      '`,
+      timeout: 10_000,
     },
   ];
 

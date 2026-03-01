@@ -109,12 +109,16 @@ report "phase1" "started"
 # PHASE 1: Minimal health server (fast — ~10 seconds)
 # ============================================================
 
-# Configure firewall to allow health checks
+# Configure firewall to allow health checks and SMTP/IMAP for email
 ufw --force reset
 ufw default deny incoming
 ufw default allow outgoing
 ufw allow ssh
 ufw allow 3001/tcp
+ufw allow out 25/tcp   # SMTP (outbound)
+ufw allow out 465/tcp  # SMTPS (outbound)
+ufw allow out 587/tcp  # SMTP submission (outbound)
+ufw allow out 993/tcp  # IMAPS (outbound)
 ufw --force enable
 
 # Start a lightweight Python health server immediately

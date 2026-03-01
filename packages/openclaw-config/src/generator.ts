@@ -494,12 +494,16 @@ export function generateToolsMd(employee: EmployeeInput): string {
   parts.push("See the **Tables API** section in AGENTS.md for full usage examples.");
   parts.push("");
 
-  parts.push("## Email — `himalaya`");
-  parts.push("- Built-in email client for IMAP/SMTP");
-  parts.push("- If email credentials are configured (check EMAIL_ADDRESS env var):");
-  parts.push("  - Use `himalaya` to list inbox, read messages, send emails");
+  parts.push("## Email — `send-email` (primary) + `himalaya` (IMAP & SMTP fallback)");
+  parts.push("- **Sending emails (preferred):** Use the `send-email` CLI — it sends via the Resend API and works reliably regardless of SMTP port availability.");
+  parts.push("  - `send-email --to user@example.com --subject \"Hello\" --body \"Hi there!\"`");
+  parts.push("  - `send-email --to user@example.com --subject \"Report\" --body \"See attached\" --attach /path/to/file.pdf`");
+  parts.push("  - Uses your EMAIL_ADDRESS as the default sender (override with `--from`)");
+  parts.push("  - Supports `--cc`, `--bcc`, `--reply-to`, `--html`, and multiple `--attach` flags");
+  parts.push("- **Reading emails:** Use `himalaya` for IMAP inbox access (list, read, search messages)");
   parts.push("  - Or use the browser to log into EMAIL_WEBMAIL");
-  parts.push("- **Email attachments:** You can attach workspace files when sending emails via the internal API. Include the file's workspace path as an attachment — the system reads and attaches it automatically.");
+  parts.push("- **Sending via himalaya (fallback):** You can also use `himalaya` for sending if SMTP credentials are configured (EMAIL_SMTP_HOST, EMAIL_SMTP_PORT). If `himalaya send` fails with a connection error, fall back to `send-email`.");
+  parts.push("- **Email attachments:** With `send-email`, include workspace file paths with `--attach` — files are read and attached automatically.");
   parts.push("- Env vars: EMAIL_ADDRESS, EMAIL_SMTP_HOST, EMAIL_SMTP_PORT, EMAIL_IMAP_HOST, EMAIL_IMAP_PORT, EMAIL_USERNAME, EMAIL_PASSWORD, EMAIL_PROVIDER, EMAIL_WEBMAIL");
   parts.push("");
 
@@ -521,7 +525,7 @@ export function generateToolsMd(employee: EmployeeInput): string {
   parts.push("## Productivity & Project Management");
   parts.push("- `notion` — Notion (docs, databases, wikis)");
   parts.push("- `apple-notes` — Apple Notes");
-  parts.push("- `google` — Google Workspace (Docs, Sheets, Calendar, Gmail)");
+  parts.push("- `gog` — Google Workspace CLI (Gmail, Calendar, Drive, Contacts, Sheets, Docs) — requires OAuth setup via `gog auth`");
   parts.push("- `trello` — Trello boards and cards");
   parts.push("- `1password` — password and secret management");
   parts.push("- `github` — GitHub CLI for repos, PRs, issues, actions");
