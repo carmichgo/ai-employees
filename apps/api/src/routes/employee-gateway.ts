@@ -8,7 +8,7 @@
 import type { FastifyInstance } from "fastify";
 import { execSync } from "node:child_process";
 import { eq, and, ne, desc, sql } from "drizzle-orm";
-import { db, employees, tasks, taskComments, chatMessages, users, companies, spreadsheetTables, spreadsheetColumns, spreadsheetRows } from "@ai-employees/db";
+import { db, employees, tasks, taskComments, chatMessages, users, companies, spreadsheetBases, spreadsheetTables, spreadsheetColumns, spreadsheetRows } from "@ai-employees/db";
 
 /** Authenticate an employee by their gateway token. Returns the employee or sends an error. */
 async function authenticateEmployee(request: { headers: { authorization?: string } }, reply: { status: (code: number) => { send: (body: unknown) => unknown } }) {
@@ -398,6 +398,82 @@ export async function employeeGatewayRoutes(fastify: FastifyInstance) {
     return { comments };
   });
 
+  // ─── Spreadsheet Bases ─────────────────────────────────────────────
+
+  // GET /employee/bases — list all bases for this company
+  fastify.get("/employee/bases", async (request, reply) => {
+    const auth = await authenticateEmployee(request, reply);
+    if ("error" in auth) return auth.error;
+    const { employee } = auth;
+
+    const bases = await db
+      .select()
+      .from(spreadsheetBases)
+      .where(eq(spreadsheetBases.companyId, employee.companyId))
+      .orderBy(desc(spreadsheetBases.createdAt));
+
+    return { bases };
+  });
+
+  // POST /employee/bases — create a new base
+  fastify.post("/employee/bases", async (request, reply) => {
+    const auth = await authenticateEmployee(request, reply);
+    if ("error" in auth) return auth.error;
+    const { employee } = auth;
+
+    const body = request.body as { name: string; description?: string; color?: string; icon?: string };
+    if (!body.name) {
+      return reply.status(400).send({ error: "name is required" });
+    }
+
+    const [base] = await db
+      .insert(spreadsheetBases)
+      .values({
+        companyId: employee.companyId,
+        name: body.name,
+        description: body.description || null,
+        color: body.color || "#3b82f6",
+        icon: body.icon || "📊",
+      })
+      .returning();
+
+    return { base };
+  });
+
+  // GET /employee/bases/:baseId — get a base with its tables
+  fastify.get<{ Params: { baseId: string } }>("/employee/bases/:baseId", async (request, reply) => {
+    const auth = await authenticateEmployee(request, reply);
+    if ("error" in auth) return auth.error;
+    const { employee } = auth;
+
+    const { baseId } = request.params;
+
+    const [base] = await db
+      .select()
+      .from(spreadsheetBases)
+      .where(and(eq(spreadsheetBases.id, baseId), eq(spreadsheetBases.companyId, employee.companyId)))
+      .limit(1);
+
+    if (!base) {
+      return reply.status(404).send({ error: "Base not found" });
+    }
+
+    const tables = await db
+      .select({
+        id: spreadsheetTables.id,
+        name: spreadsheetTables.name,
+        description: spreadsheetTables.description,
+        baseId: spreadsheetTables.baseId,
+        createdAt: spreadsheetTables.createdAt,
+        updatedAt: spreadsheetTables.updatedAt,
+      })
+      .from(spreadsheetTables)
+      .where(eq(spreadsheetTables.baseId, baseId))
+      .orderBy(desc(spreadsheetTables.createdAt));
+
+    return { base, tables };
+  });
+
   // ─── Spreadsheet Tables ────────────────────────────────────────────
 
   // GET /employee/tables — list all tables for this company
@@ -463,6 +539,7 @@ export async function employeeGatewayRoutes(fastify: FastifyInstance) {
     const body = request.body as {
       name: string;
       description?: string;
+      baseId?: string;
       columns?: Array<{ name: string; type?: string; options?: Record<string, unknown> }>;
     };
 
@@ -476,6 +553,7 @@ export async function employeeGatewayRoutes(fastify: FastifyInstance) {
         companyId: employee.companyId,
         name: body.name,
         description: body.description || null,
+        baseId: body.baseId || null,
       })
       .returning();
 

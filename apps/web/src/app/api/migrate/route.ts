@@ -131,7 +131,34 @@ export async function POST(request: NextRequest) {
       )
     `;
     await sql`ALTER TABLE spreadsheet_tables ADD COLUMN IF NOT EXISTS base_id UUID REFERENCES spreadsheet_bases(id) ON DELETE CASCADE`;
-    results.push("0011: spreadsheet_bases table + base_id column — OK");
+    // Auto-assign orphaned tables (base_id IS NULL) to a default "Uncategorized" base per company
+    const orphanedCompanies = await sql`
+      SELECT DISTINCT company_id FROM spreadsheet_tables WHERE base_id IS NULL
+    `;
+    for (const row of orphanedCompanies) {
+      // Create or find an "Uncategorized" base for this company
+      const [existing] = await sql`
+        SELECT id FROM spreadsheet_bases
+        WHERE company_id = ${row.company_id} AND name = 'Uncategorized'
+        LIMIT 1
+      `;
+      let baseId: string;
+      if (existing) {
+        baseId = existing.id;
+      } else {
+        const [created] = await sql`
+          INSERT INTO spreadsheet_bases (company_id, name, description, color, icon)
+          VALUES (${row.company_id}, 'Uncategorized', 'Tables created before bases were introduced', '#6b7280', '📁')
+          RETURNING id
+        `;
+        baseId = created.id;
+      }
+      await sql`
+        UPDATE spreadsheet_tables SET base_id = ${baseId}
+        WHERE company_id = ${row.company_id} AND base_id IS NULL
+      `;
+    }
+    results.push("0011: spreadsheet_bases table + base_id column + orphan migration — OK");
 
     // Admin actions
     const action = request.nextUrl.searchParams.get("action");
