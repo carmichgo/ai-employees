@@ -130,6 +130,9 @@ export function generateOpenClawConfig(
   const config: OpenClawConfig = {
     gateway: {
       auth: { token: gatewayToken },
+      controlUi: {
+        dangerouslyAllowHostHeaderOriginFallback: true,
+      },
       http: {
         endpoints: {
           chatCompletions: { enabled: true },
