@@ -398,11 +398,13 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
   } catch (error) {
     console.error(`[provision] Failed to provision employee ${employeeId}:`, error);
 
+    // Store full error including container diagnostics (truncate to 4000 chars for DB)
+    const fullError = error instanceof Error ? error.message : String(error);
     await db
       .update(employees)
       .set({
         status: "error",
-        errorMessage: error instanceof Error ? error.message : String(error),
+        errorMessage: fullError.slice(0, 4000),
         updatedAt: new Date(),
       })
       .where(eq(employees.id, employeeId));
@@ -596,14 +598,15 @@ async function waitForGateway(
     }
   }
 
-  /** Dump recent container logs for diagnostics */
-  function dumpContainerLogs(label: string, lines = 30): void {
-    if (!containerName) return;
+  /** Dump recent container logs for diagnostics and return them */
+  function dumpContainerLogs(label: string, lines = 30): string {
+    if (!containerName) return "";
     try {
       const logs = execSync(`docker logs --tail ${lines} ${containerName} 2>&1`, { timeout: 10_000, stdio: "pipe" })
         .toString().trim();
       if (logs) console.log(`[provision] ${label}:\n${logs}`);
-    } catch { /* ignore log fetch errors */ }
+      return logs;
+    } catch { /* ignore log fetch errors */ return ""; }
   }
 
   /** Check if the gateway process is actually listening inside the container */
@@ -752,15 +755,26 @@ async function waitForGateway(
     await new Promise((r) => setTimeout(r, interval));
   }
 
-  // Final diagnostic dump on timeout
+  // Final diagnostic dump on timeout — capture logs for error message
+  let containerLogs = "";
+  let finalDiag = "";
   if (containerName) {
-    dumpContainerLogs("Container logs at timeout", 80);
+    containerLogs = dumpContainerLogs("Container logs at timeout", 80);
     const restartCount = getRestartCount();
     const listening = isGatewayListening();
+    // Get container state
+    let containerState = "unknown";
+    try {
+      containerState = execSync(
+        `docker inspect --format='status={{.State.Status}} exitCode={{.State.ExitCode}} oomKilled={{.State.OOMKilled}} restartCount={{.RestartCount}}' ${containerName}`,
+        { timeout: 5000, stdio: "pipe" },
+      ).toString().trim().replace(/^'|'$/g, "");
+    } catch { /* ignore */ }
+    finalDiag = `\n\n--- Container Diagnostics ---\n${containerState}\nlisteningOnPort${port}=${listening}\nrestartCount=${restartCount}\n\n--- Last ${Math.min(containerLogs.split("\n").length, 40)} lines of container logs ---\n${containerLogs.split("\n").slice(-40).join("\n")}`;
     console.log(`[provision] Final state: restartCount=${restartCount} listeningOn${port}=${listening}`);
   }
 
-  throw new Error(`Gateway at ${currentHost}:${port} did not respond within ${timeoutMs}ms (${attempts} attempts, last error: ${lastError})`);
+  throw new Error(`Gateway at ${currentHost}:${port} did not respond within ${timeoutMs}ms (${attempts} attempts, last error: ${lastError})${finalDiag}`);
 }
 
 /** Scale Node.js heap to the tier — leave room for Chromium + OS overhead */
