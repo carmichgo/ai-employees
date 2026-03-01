@@ -752,7 +752,7 @@ export function generateAgentsMd(employee: EmployeeInput): string {
   parts.push("  -H \"Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN\" | jq '.comments[]'");
   parts.push("```");
   parts.push("");
-  parts.push("**IMPORTANT — When you receive credentials, instructions, or key info from your manager (via comments, chat, or Slack), IMMEDIATELY save it to ~/workspace/memory.md.** Your conversation context resets between sessions. If you don't write it to memory, you WILL forget it and ask again — which wastes your manager's time.");
+  parts.push("**IMPORTANT — When you receive credentials, instructions, or key info from your manager (via comments, chat, or Slack), IMMEDIATELY save it to /home/node/.openclaw/workspace/memory.md.** Your conversation context resets between sessions. If you don't write it to memory, you WILL forget it and ask again — which wastes your manager's time.");
   parts.push("");
   parts.push("**Priority:** `low` | `medium` | `high` | `urgent`");
   parts.push("**Status:** `pending` | `in_progress` | `completed` | `blocked`");
@@ -928,7 +928,7 @@ export function generateAgentsMd(employee: EmployeeInput): string {
   // Memory management
   parts.push("## Memory (memory.md) — YOUR PERSISTENT BRAIN");
   parts.push("");
-  parts.push("You have a persistent memory file at `~/workspace/memory.md` that carries over between sessions. **This is your brain.** Every time a new conversation starts, your memory.md is loaded automatically so you pick up right where you left off.");
+  parts.push("You have a persistent memory file at `/home/node/.openclaw/workspace/memory.md` that carries over between sessions. **This is your brain.** Every time a new conversation starts, your memory.md is loaded automatically so you pick up right where you left off.");
   parts.push("");
   parts.push("**You MUST keep memory.md up to date.** Write to it whenever you learn something important, make a decision, start or finish a project, or want to remember context for next time. If it's not in memory.md, you will forget it.");
   parts.push("");
@@ -973,7 +973,7 @@ export function generateAgentsMd(employee: EmployeeInput): string {
   parts.push("**To update your memory:**");
   parts.push("```bash");
   parts.push("# Read current memory");
-  parts.push("cat ~/workspace/memory.md");
+  parts.push("cat /home/node/.openclaw/workspace/memory.md");
   parts.push("");
   parts.push("# Write updated memory (use write_file or exec to update)");
   parts.push("```");
@@ -1091,13 +1091,13 @@ export function generateAgentsMd(employee: EmployeeInput): string {
   parts.push("When you create reports, documents, spreadsheets, or any deliverable, **save them to your workspace** so your manager can access them from the dashboard:");
   parts.push("```bash");
   parts.push("# Save a document to your workspace (manager can see it in the Documents page)");
-  parts.push("cat > ~/workspace/report-name.md << 'EOF'");
+  parts.push("cat > /home/node/.openclaw/workspace/report-name.md << 'EOF'");
   parts.push("# Report Title");
   parts.push("Your report content here...");
   parts.push("EOF");
   parts.push("```");
   parts.push("");
-  parts.push("Your manager can browse and download all files in `~/workspace/` from the dashboard. When you reference a file in a task comment or message, make sure it's saved there — not just in your chat response. Files only exist if they're on disk.");
+  parts.push("Your manager can browse and download all files in `/home/node/.openclaw/workspace/` from the dashboard. When you reference a file in a task comment or message, make sure it's saved there — not just in your chat response. Files only exist if they're on disk.");
   parts.push("");
 
   // Skill building — build before you execute
@@ -1126,7 +1126,7 @@ export function generateAgentsMd(employee: EmployeeInput): string {
   parts.push("");
   parts.push("**2. COMMUNICATE WITH YOUR MANAGER** — Never stay silently stuck. When you hit a blocker, need credentials, have a question, or complete a major deliverable, use the `/employee/notify-manager` API to message your manager. They cannot help you if they don't know you need help. When you mark a task `blocked`, you MUST also notify your manager with what you need.");
   parts.push("");
-  parts.push("**3. MEMORY** — Keep `~/workspace/memory.md` up to date. Write to it after completing tasks, learning new information, making decisions, or setting up accounts. If it's not in memory.md, you WILL forget it next session. This is your brain — maintain it.");
+  parts.push("**3. MEMORY** — Keep `/home/node/.openclaw/workspace/memory.md` up to date. Write to it after completing tasks, learning new information, making decisions, or setting up accounts. If it's not in memory.md, you WILL forget it next session. This is your brain — maintain it.");
   parts.push("");
   parts.push("**4. BUILD SKILLS** — Before doing something complex for the first time, build a reusable skill (`~/.openclaw/skills/<name>/SKILL.md`). Research first, write the skill, then execute. After execution, update the skill with lessons learned. Your skills are your institutional knowledge — they make you better over time.");
   parts.push("");
@@ -1342,7 +1342,7 @@ Do not stop after one small step. Complete the task fully, or make substantial p
 
 ## 4. Save critical context to memory
 
-Before you finish this heartbeat cycle, **update ~/workspace/memory.md** with anything important you learned, decided, or received (credentials, instructions, progress). Your conversation history may be lost between heartbeats — memory.md is the only thing that persists reliably.
+Before you finish this heartbeat cycle, **update /home/node/.openclaw/workspace/memory.md** with anything important you learned, decided, or received (credentials, instructions, progress). Your conversation history may be lost between heartbeats — memory.md is the only thing that persists reliably.
 
 ## Rules
 
@@ -1351,7 +1351,7 @@ Before you finish this heartbeat cycle, **update ~/workspace/memory.md** with an
 - ALWAYS update task status as you work. Add progress comments only when there is genuine new progress — do NOT add a comment just because a heartbeat fired if nothing has changed
 - If a task requires waiting (e.g. for a human response), mark it blocked with a comment explaining what you need, then notify your manager via \`/employee/notify-manager\` so they know you're waiting on them
 - If you discover new work while working, create a task for it
-- ALWAYS save important context (credentials, decisions, progress) to ~/workspace/memory.md
+- ALWAYS save important context (credentials, decisions, progress) to /home/node/.openclaw/workspace/memory.md
 `;
 }
 

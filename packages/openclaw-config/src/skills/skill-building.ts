@@ -39,7 +39,7 @@ Build a new skill when ALL of these are true:
 
 Before starting any non-trivial task, do a quick mental check:
 - "Do I have a skill for this?" → Check \`ls ~/.openclaw/skills/\`
-- "Have I done this before?" → Check \`~/workspace/memory.md\`
+- "Have I done this before?" → Check \`/home/node/.openclaw/workspace/memory.md\`
 - If NO to both → **build a skill first**
 
 ### Step 2: Research
