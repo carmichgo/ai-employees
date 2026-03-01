@@ -55,14 +55,15 @@ export async function POST(
     return NextResponse.json({ error: "Failed to power-cycle droplet" }, { status: 502 });
   }
 
-  // Mark as unhealthy during reboot - will recover via health poll
+  // Only mark droplet as unhealthy — do NOT clear container fields or change
+  // employee status. After a power-cycle the Docker containers and systemd
+  // services restart automatically, so the existing container (with all its
+  // workspace data) comes back. The health checker will flip dropletStatus
+  // back to "active" once port 3001 responds.
   await db
     .update(employees)
     .set({
       dropletStatus: "unhealthy",
-      status: "provisioning",
-      containerId: null,
-      containerHost: null,
       errorMessage: null,
       updatedAt: new Date(),
     } as any)

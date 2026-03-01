@@ -575,7 +575,7 @@ export async function POST(request: NextRequest) {
           const { powerCycleEmployeeDroplet } = await import("@/lib/digitalocean");
           const success = await powerCycleEmployeeDroplet(empId);
           if (success) {
-            await sql`UPDATE employees SET droplet_status = 'unhealthy', status = 'provisioning', container_id = NULL, container_host = NULL, error_message = NULL WHERE id = ${empId}`;
+            await sql`UPDATE employees SET droplet_status = 'unhealthy', error_message = NULL WHERE id = ${empId}`;
             results.push(`reboot-droplet: power-cycled ${emp.name}'s droplet (${emp.droplet_id})`);
           } else {
             results.push(`reboot-droplet: FAILED to power-cycle ${emp.name}`);
