@@ -314,4 +314,42 @@ export async function fileRoutes(fastify: FastifyInstance) {
       return { message: "File deleted" };
     },
   );
+
+  // DELETE /internal/employees/:id/workspace/* — delete any workspace file
+  fastify.delete<{ Params: { id: string; "*": string } }>(
+    "/internal/employees/:id/workspace/*",
+    async (request, reply) => {
+      const { id } = request.params;
+      const filePath = request.params["*"];
+
+      if (!filePath) {
+        return reply.status(400).send({ error: "File path required" });
+      }
+
+      // Prevent path traversal
+      const normalized = path.normalize(filePath).replace(/^(\.\.(\/|\\|$))+/, "");
+      if (normalized.includes("..")) {
+        return reply.status(400).send({ error: "Invalid path" });
+      }
+
+      const baseDir = path.join(CONFIG_BASE, id);
+      const fullPath = path.join(baseDir, normalized);
+
+      if (!fullPath.startsWith(baseDir)) {
+        return reply.status(400).send({ error: "Invalid path" });
+      }
+
+      if (!existsSync(fullPath)) {
+        return reply.status(404).send({ error: "File not found" });
+      }
+
+      const stat = statSync(fullPath);
+      if (!stat.isFile()) {
+        return reply.status(400).send({ error: "Not a file" });
+      }
+
+      unlinkSync(fullPath);
+      return { message: "File deleted" };
+    },
+  );
 }

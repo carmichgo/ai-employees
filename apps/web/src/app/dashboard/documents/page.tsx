@@ -17,6 +17,7 @@ import {
   X,
   Eye,
   ExternalLink,
+  Trash2,
 } from "lucide-react";
 
 type WorkspaceFile = {
@@ -374,6 +375,21 @@ function DocumentsPage() {
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [search, setSearch] = useState("");
   const [viewingFile, setViewingFile] = useState<WorkspaceFile | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+
+  const handleDelete = async (file: WorkspaceFile) => {
+    if (!selectedId || !confirm(`Delete "${file.name}"? This cannot be undone.`)) return;
+    setDeleting(file.path);
+    try {
+      await api.deleteDocument(selectedId, file.path);
+      setFiles((prev) => prev.filter((f) => f.path !== file.path));
+      if (viewingFile?.path === file.path) setViewingFile(null);
+    } catch {
+      alert("Failed to delete file");
+    } finally {
+      setDeleting(null);
+    }
+  };
 
   // Load employees
   useEffect(() => {
@@ -689,23 +705,19 @@ function DocumentsPage() {
                           const Icon = getFileIcon(file.type);
                           const previewable = canPreview(file.type);
                           return (
-                            <a
+                            <div
                               key={file.path}
-                              href={fileUrl(file)}
-                              onClick={(e) => handleFileClick(e, file)}
                               style={{
                                 display: "flex",
                                 alignItems: "center",
                                 gap: 12,
                                 padding: "10px 16px",
-                                textDecoration: "none",
                                 color: "var(--text)",
                                 borderBottom:
                                   i < dirFiles.length - 1
                                     ? "1px solid var(--border)"
                                     : "none",
                                 transition: "background 0.1s",
-                                cursor: "pointer",
                               }}
                               onMouseEnter={(e) =>
                                 (e.currentTarget.style.background = "var(--bg-secondary)")
@@ -714,54 +726,75 @@ function DocumentsPage() {
                                 (e.currentTarget.style.background = "")
                               }
                             >
-                              <Icon
-                                size={16}
-                                style={{ color: "var(--text-tertiary)", flexShrink: 0 }}
-                              />
-                              <div style={{ flex: 1, minWidth: 0 }}>
+                              <a
+                                href={fileUrl(file)}
+                                onClick={(e) => handleFileClick(e, file)}
+                                style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0, textDecoration: "none", color: "inherit", cursor: "pointer" }}
+                              >
+                                <Icon
+                                  size={16}
+                                  style={{ color: "var(--text-tertiary)", flexShrink: 0 }}
+                                />
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div
+                                    style={{
+                                      fontSize: 13,
+                                      fontWeight: 500,
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
+                                      whiteSpace: "nowrap",
+                                    }}
+                                  >
+                                    {file.name}
+                                  </div>
+                                </div>
                                 <div
                                   style={{
-                                    fontSize: 13,
-                                    fontWeight: 500,
-                                    overflow: "hidden",
-                                    textOverflow: "ellipsis",
+                                    fontSize: 12,
+                                    color: "var(--text-tertiary)",
                                     whiteSpace: "nowrap",
                                   }}
                                 >
-                                  {file.name}
+                                  {formatSize(file.size)}
                                 </div>
-                              </div>
-                              <div
+                                <div
+                                  style={{
+                                    fontSize: 12,
+                                    color: "var(--text-tertiary)",
+                                    whiteSpace: "nowrap",
+                                    minWidth: 60,
+                                  }}
+                                >
+                                  {formatDate(file.modifiedAt)}
+                                </div>
+                                {previewable ? (
+                                  <Eye
+                                    size={14}
+                                    style={{ color: "var(--blue)", flexShrink: 0 }}
+                                  />
+                                ) : (
+                                  <Download
+                                    size={14}
+                                    style={{ color: "var(--text-tertiary)", flexShrink: 0 }}
+                                  />
+                                )}
+                              </a>
+                              <button
+                                onClick={() => handleDelete(file)}
+                                disabled={deleting === file.path}
+                                title="Delete file"
                                 style={{
-                                  fontSize: 12,
+                                  background: "none", border: "none", cursor: "pointer", padding: 4,
                                   color: "var(--text-tertiary)",
-                                  whiteSpace: "nowrap",
+                                  opacity: deleting === file.path ? 0.5 : 1,
+                                  flexShrink: 0,
                                 }}
+                                onMouseEnter={(e) => { e.currentTarget.style.color = "var(--red, #dc2626)"; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-tertiary)"; }}
                               >
-                                {formatSize(file.size)}
-                              </div>
-                              <div
-                                style={{
-                                  fontSize: 12,
-                                  color: "var(--text-tertiary)",
-                                  whiteSpace: "nowrap",
-                                  minWidth: 60,
-                                }}
-                              >
-                                {formatDate(file.modifiedAt)}
-                              </div>
-                              {previewable ? (
-                                <Eye
-                                  size={14}
-                                  style={{ color: "var(--blue)", flexShrink: 0 }}
-                                />
-                              ) : (
-                                <Download
-                                  size={14}
-                                  style={{ color: "var(--text-tertiary)", flexShrink: 0 }}
-                                />
-                              )}
-                            </a>
+                                {deleting === file.path ? <Loader2 size={14} style={{ animation: "spin 0.8s linear infinite" }} /> : <Trash2 size={14} />}
+                              </button>
+                            </div>
                           );
                         })}
                       </div>

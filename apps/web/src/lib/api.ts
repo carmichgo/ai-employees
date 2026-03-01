@@ -439,6 +439,16 @@ class ApiClient {
     }>(`/api/employees/${employeeId}/documents`);
   }
 
+  async deleteDocument(employeeId: string, filePath: string) {
+    // filePath is the workspace-relative path (e.g. "workspace-main/file.png" or needs "workspace/" prefix)
+    const needsPrefix = !filePath.startsWith("skills/") && !filePath.startsWith("workspace-main/");
+    const prefix = needsPrefix ? "workspace/" : "";
+    return this.request<{ message: string }>(
+      `/api/employees/${employeeId}/workspace/${prefix}${filePath}`,
+      { method: "DELETE" },
+    );
+  }
+
   // Employee triggers
   async listTriggers(employeeId: string) {
     return this.request<{
