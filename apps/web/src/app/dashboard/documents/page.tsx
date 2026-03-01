@@ -428,8 +428,12 @@ function DocumentsPage() {
     grouped.get(dir)!.push(file);
   }
 
-  const fileUrl = (file: WorkspaceFile) =>
-    `/api/employees/${selectedId}/workspace/workspace/${file.path}`;
+  const fileUrl = (file: WorkspaceFile) => {
+    // workspace-main/ and skills/ paths are already relative to config base — no extra prefix needed
+    const needsPrefix = !file.path.startsWith("skills/") && !file.path.startsWith("workspace-main/");
+    const prefix = needsPrefix ? "workspace/" : "";
+    return `/api/employees/${selectedId}/workspace/${prefix}${file.path}`;
+  };
 
   const handleFileClick = (e: React.MouseEvent, file: WorkspaceFile) => {
     e.preventDefault();
