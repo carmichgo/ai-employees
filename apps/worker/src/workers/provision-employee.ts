@@ -367,10 +367,10 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     }
 
     // Wait for the OpenClaw gateway to be ready before marking active.
-    // 240s timeout accounts for heavy containers after CLI tool installs
+    // 300s timeout accounts for heavy containers after CLI tool installs
     // (Chromium, LibreOffice, pandoc add significant startup weight).
     if (containerIp) {
-      const result = await waitForGateway(containerIp, 18789, 240_000, employee.containerName!);
+      const result = await waitForGateway(containerIp, 18789, 300_000, employee.containerName!);
       // Update DB if the IP changed during gateway polling (e.g. after container restart)
       if (result.host !== containerIp) {
         containerIp = result.host;
@@ -550,7 +550,8 @@ export async function cleanupOrphanedContainers(): Promise<void> {
 
 /** Poll the gateway until it responds or timeout is reached. Throws on timeout.
  *  Also checks Docker container health periodically to fail fast if the container is dead.
- *  Re-inspects the container IP every 30s and after restarts to handle IP changes. */
+ *  Re-inspects the container IP every 30s and after restarts to handle IP changes.
+ *  Monitors container restart count to detect crash loops and dumps logs periodically. */
 async function waitForGateway(
   host: string,
   port: number,
@@ -563,6 +564,8 @@ async function waitForGateway(
   let lastError = "";
   let consecutiveFetchFails = 0;
   let currentHost = host;
+  let lastLogDumpAt = 0;
+  let proactiveRestartDone = false;
 
   /** Re-inspect the container to get the current network IP */
   function refreshContainerIp(): string | null {
@@ -579,11 +582,50 @@ async function waitForGateway(
     }
   }
 
+  /** Get the container's restart count to detect crash loops */
+  function getRestartCount(): number {
+    if (!containerName) return 0;
+    try {
+      const output = execSync(
+        `docker inspect --format='{{.RestartCount}}' ${containerName}`,
+        { timeout: 5000, stdio: "pipe" },
+      ).toString().trim().replace(/^'|'$/g, "");
+      return parseInt(output) || 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  /** Dump recent container logs for diagnostics */
+  function dumpContainerLogs(label: string, lines = 30): void {
+    if (!containerName) return;
+    try {
+      const logs = execSync(`docker logs --tail ${lines} ${containerName} 2>&1`, { timeout: 10_000, stdio: "pipe" })
+        .toString().trim();
+      if (logs) console.log(`[provision] ${label}:\n${logs}`);
+    } catch { /* ignore log fetch errors */ }
+  }
+
+  /** Check if the gateway process is actually listening inside the container */
+  function isGatewayListening(): boolean {
+    if (!containerName) return false;
+    try {
+      // Check if any process is listening on the gateway port
+      const output = execSync(
+        `docker exec ${containerName} sh -c 'ss -tlnp 2>/dev/null | grep :${port} || netstat -tlnp 2>/dev/null | grep :${port} || true'`,
+        { timeout: 5000, stdio: "pipe" },
+      ).toString().trim();
+      return output.length > 0;
+    } catch {
+      return false;
+    }
+  }
+
   while (Date.now() - start < timeoutMs) {
     attempts++;
     try {
       const res = await fetch(`http://${currentHost}:${port}/v1/models`, {
-        signal: AbortSignal.timeout(3000),
+        signal: AbortSignal.timeout(5000),
       });
       if (res.ok) {
         console.log(`[provision] Gateway ready at ${currentHost}:${port} (${Date.now() - start}ms, ${attempts} attempts)`);
@@ -609,10 +651,27 @@ async function waitForGateway(
         const parts = statusOutput.split(" ");
         const [status, exitCode, oomKilled] = parts;
         const startedAt = parts.slice(3).join(" ");
+        const restartCount = getRestartCount();
+        const listening = status === "running" ? isGatewayListening() : false;
+        const elapsedSec = Math.round((Date.now() - start) / 1000);
         console.log(
-          `[provision] Container ${containerName} state: status=${status} exitCode=${exitCode} oomKilled=${oomKilled} startedAt=${startedAt} ` +
-          `(${Math.round((Date.now() - start) / 1000)}s elapsed, polling ${currentHost}:${port}, last error: ${lastError})`,
+          `[provision] Container ${containerName} state: status=${status} exitCode=${exitCode} oomKilled=${oomKilled} restartCount=${restartCount} ` +
+          `listeningOn${port}=${listening} startedAt=${startedAt} ` +
+          `(${elapsedSec}s elapsed, polling ${currentHost}:${port}, consecutiveFails=${consecutiveFetchFails}, last error: ${lastError})`,
         );
+
+        // Dump container logs periodically (every 60s) for diagnostics
+        const now = Date.now();
+        if (now - lastLogDumpAt >= 60_000) {
+          lastLogDumpAt = now;
+          dumpContainerLogs(`Container logs at ${elapsedSec}s`);
+        }
+
+        // Detect crash loops: if restart count is high, the gateway is repeatedly crashing
+        if (restartCount >= 3) {
+          console.log(`[provision] WARNING: Container has restarted ${restartCount} times — gateway may be crash-looping`);
+          dumpContainerLogs("Container logs (crash loop detected)", 50);
+        }
 
         if (status === "running") {
           // Container is running but gateway not responding — refresh IP in case it changed
@@ -622,14 +681,35 @@ async function waitForGateway(
             currentHost = newIp;
             consecutiveFetchFails = 0;
           }
+
+          // If gateway has been refusing connections for 120s+ and hasn't been
+          // proactively restarted yet, force a restart to clear stuck state
+          if (!proactiveRestartDone && elapsedSec >= 120 && consecutiveFetchFails >= 20 && !listening) {
+            console.log(`[provision] Gateway not listening after ${elapsedSec}s — proactively restarting container...`);
+            dumpContainerLogs("Container logs before proactive restart", 50);
+            try {
+              execSync(`docker restart -t 15 ${containerName}`, { timeout: 30_000 });
+              console.log(`[provision] Proactive restart complete, waiting 15s for gateway to initialize...`);
+              await new Promise((r) => setTimeout(r, 15_000));
+              consecutiveFetchFails = 0;
+              proactiveRestartDone = true;
+              const newIpAfterRestart = refreshContainerIp();
+              if (newIpAfterRestart) {
+                if (newIpAfterRestart !== currentHost) {
+                  console.log(`[provision] Container IP after proactive restart: ${currentHost} → ${newIpAfterRestart}`);
+                }
+                currentHost = newIpAfterRestart;
+              }
+            } catch (restartErr) {
+              const msg = restartErr instanceof Error ? restartErr.message : String(restartErr);
+              console.log(`[provision] Proactive restart failed: ${msg.slice(0, 200)}`);
+              proactiveRestartDone = true; // Don't retry
+            }
+          }
         } else if (status === "exited" || status === "dead") {
           // Container is dead — log diagnostics and try to restart
           console.log(`[provision] Container is ${status} (exit=${exitCode}, oom=${oomKilled}). Attempting restart...`);
-          try {
-            const logs = execSync(`docker logs --tail 50 ${containerName}`, { timeout: 10_000, stdio: "pipe" })
-              .toString().trim();
-            if (logs) console.log(`[provision] Container logs before restart:\n${logs}`);
-          } catch { /* ignore log fetch errors */ }
+          dumpContainerLogs("Container logs before restart", 50);
 
           try {
             execSync(`docker start ${containerName}`, { timeout: 30_000 });
@@ -674,11 +754,10 @@ async function waitForGateway(
 
   // Final diagnostic dump on timeout
   if (containerName) {
-    try {
-      const logs = execSync(`docker logs --tail 50 ${containerName}`, { timeout: 10_000, stdio: "pipe" })
-        .toString().trim();
-      if (logs) console.log(`[provision] Container logs at timeout:\n${logs}`);
-    } catch { /* ignore */ }
+    dumpContainerLogs("Container logs at timeout", 80);
+    const restartCount = getRestartCount();
+    const listening = isGatewayListening();
+    console.log(`[provision] Final state: restartCount=${restartCount} listeningOn${port}=${listening}`);
   }
 
   throw new Error(`Gateway at ${currentHost}:${port} did not respond within ${timeoutMs}ms (${attempts} attempts, last error: ${lastError})`);
