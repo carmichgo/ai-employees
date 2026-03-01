@@ -298,6 +298,12 @@ export function generateOpenClawConfig(
           cacheTtlMinutes: 15,
         },
       },
+      // Filesystem — allow tools (read/write/edit) to access the full .openclaw
+      // directory, not just workspace-main. Skills, memory.md, credentials, and
+      // other config files live outside the session workspace root.
+      fs: {
+        workspaceOnly: false,
+      },
     },
 
     // Only include channels/bindings if there are real integrations

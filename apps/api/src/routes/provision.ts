@@ -5,7 +5,7 @@
 import type { FastifyInstance } from "fastify";
 import crypto from "node:crypto";
 import path from "node:path";
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, symlinkSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { eq, and, or, inArray } from "drizzle-orm";
 import { db, employees, companies, users, chatMessages } from "@ai-employees/db";
@@ -692,6 +692,17 @@ export async function provisionRoutes(fastify: FastifyInstance) {
         writeFileSync(`${configDir}/generate-image.sh`, genImage(), { mode: 0o755 });
         writeFileSync(`${configDir}/generate-video.sh`, genVideo(), { mode: 0o755 });
 
+        // Create symlinks inside workspace-main so edit/write tools can reach skills etc.
+        try {
+          symlinkSync("../skills", `${configDir}/workspace-main/skills`);
+        } catch { /* already exists */ }
+        try {
+          symlinkSync("../workspace", `${configDir}/workspace-main/workspace-ref`);
+        } catch { /* already exists */ }
+        try {
+          symlinkSync("../credentials", `${configDir}/workspace-main/credentials`);
+        } catch { /* already exists */ }
+
         // Fix permissions
         execSync(`chown -R 1000:1000 ${configDir}`, { timeout: 5000 });
 
@@ -862,6 +873,11 @@ export async function provisionRoutes(fastify: FastifyInstance) {
 
         writeFileSync(`${configDir}/generate-image.sh`, genImage(), { mode: 0o755 });
         writeFileSync(`${configDir}/generate-video.sh`, genVideo(), { mode: 0o755 });
+
+        // Create symlinks inside workspace-main so edit/write tools can reach skills etc.
+        try { symlinkSync("../skills", `${configDir}/workspace-main/skills`); } catch { /* exists */ }
+        try { symlinkSync("../workspace", `${configDir}/workspace-main/workspace-ref`); } catch { /* exists */ }
+        try { symlinkSync("../credentials", `${configDir}/workspace-main/credentials`); } catch { /* exists */ }
 
         execSync(`chown -R 1000:1000 ${configDir}`, { timeout: 5000 });
 

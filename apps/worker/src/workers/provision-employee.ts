@@ -309,6 +309,24 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
       console.log(`[provision] Could not copy bundled skills (non-critical, may not exist in image)`);
     }
 
+    // Create symlinks inside workspace-main pointing to sibling directories.
+    // This ensures edit/write tools can reach skills, workspace, and media
+    // even if workspaceOnly:false has a regression in the current OpenClaw version.
+    try {
+      execSync(
+        `docker exec ${employee.containerName} bash -c '` +
+        `cd /home/node/.openclaw/workspace-main && ` +
+        `ln -sfn ../skills skills 2>/dev/null; ` +
+        `ln -sfn ../workspace workspace-ref 2>/dev/null; ` +
+        `ln -sfn ../credentials credentials 2>/dev/null; ` +
+        `chown -h node:node skills workspace-ref credentials 2>/dev/null'`,
+        { timeout: 10000 },
+      );
+      console.log(`[provision] Created workspace-main symlinks for ${employee.name}`);
+    } catch {
+      console.log(`[provision] Could not create workspace-main symlinks (non-critical)`);
+    }
+
     // Get container info for host/port
     const info = await container.inspect();
     let containerIp = info.NetworkSettings.Networks?.[OPENCLAW_NETWORK]?.IPAddress || null;
