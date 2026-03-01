@@ -110,8 +110,12 @@ export default function DocumentsPage() {
     grouped.get(dir)!.push(file);
   }
 
-  const downloadUrl = (file: WorkspaceFile) =>
-    `/api/employees/${employeeId}/workspace/workspace/${file.path}`;
+  const downloadUrl = (file: WorkspaceFile) => {
+    // Skills files are returned with paths relative to config base (e.g. "skills/foo/SKILL.md")
+    // Workspace files need the "workspace/" prefix added
+    const prefix = file.path.startsWith("skills/") ? "" : "workspace/";
+    return `/api/employees/${employeeId}/workspace/${prefix}${file.path}`;
+  };
 
   if (loading) {
     return (

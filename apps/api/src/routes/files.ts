@@ -277,6 +277,15 @@ export async function fileRoutes(fastify: FastifyInstance) {
 
       walk(workspaceDir, workspaceDir);
 
+      // Also include skills files (installed SKILL.md files)
+      const skillsDir = path.join(CONFIG_BASE, id, "skills");
+      if (existsSync(skillsDir)) {
+        // Walk skills dir but make paths relative to the config base (not workspace)
+        // so they resolve correctly via the workspace download endpoint
+        const configBase = path.join(CONFIG_BASE, id);
+        walk(skillsDir, configBase);
+      }
+
       // Sort by most recently modified first
       files.sort((a, b) => new Date(b.modifiedAt).getTime() - new Date(a.modifiedAt).getTime());
 
