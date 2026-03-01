@@ -370,7 +370,16 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     // 240s timeout accounts for heavy containers after CLI tool installs
     // (Chromium, LibreOffice, pandoc add significant startup weight).
     if (containerIp) {
-      await waitForGateway(containerIp, 18789, 240_000, employee.containerName!);
+      const result = await waitForGateway(containerIp, 18789, 240_000, employee.containerName!);
+      // Update DB if the IP changed during gateway polling (e.g. after container restart)
+      if (result.host !== containerIp) {
+        containerIp = result.host;
+        await db
+          .update(employees)
+          .set({ containerHost: containerIp, updatedAt: new Date() })
+          .where(eq(employees.id, employeeId));
+        console.log(`[provision] Updated container IP after gateway ready: ${containerIp}`);
+      }
     }
 
     await db
@@ -429,7 +438,10 @@ export async function startEmployee(employeeId: string): Promise<void> {
   if (ip) {
     await db.update(employees).set({ containerHost: ip, updatedAt: new Date() }).where(eq(employees.id, employeeId));
     try {
-      await waitForGateway(ip, 18789, 30_000);
+      const result = await waitForGateway(ip, 18789, 30_000, employee.containerName || undefined);
+      if (result.host !== ip) {
+        await db.update(employees).set({ containerHost: result.host, updatedAt: new Date() }).where(eq(employees.id, employeeId));
+      }
     } catch {
       console.log(`[start] Gateway not ready for ${employeeId} after restart, marking active anyway (container is running)`);
     }
@@ -537,56 +549,84 @@ export async function cleanupOrphanedContainers(): Promise<void> {
 }
 
 /** Poll the gateway until it responds or timeout is reached. Throws on timeout.
- *  Also checks Docker container health periodically to fail fast if the container is dead. */
+ *  Also checks Docker container health periodically to fail fast if the container is dead.
+ *  Re-inspects the container IP every 30s and after restarts to handle IP changes. */
 async function waitForGateway(
   host: string,
   port: number,
   timeoutMs: number,
   containerName?: string,
-): Promise<void> {
+): Promise<{ host: string }> {
   const start = Date.now();
   const interval = 2000;
   let attempts = 0;
   let lastError = "";
   let consecutiveFetchFails = 0;
+  let currentHost = host;
+
+  /** Re-inspect the container to get the current network IP */
+  function refreshContainerIp(): string | null {
+    if (!containerName) return null;
+    try {
+      const network = process.env.OPENCLAW_NETWORK || OPENCLAW_NETWORK;
+      const ipOutput = execSync(
+        `docker inspect --format='{{.NetworkSettings.Networks.${network}.IPAddress}}' ${containerName}`,
+        { timeout: 5000, stdio: "pipe" },
+      ).toString().trim().replace(/^'|'$/g, "");
+      return ipOutput || null;
+    } catch {
+      return null;
+    }
+  }
 
   while (Date.now() - start < timeoutMs) {
     attempts++;
     try {
-      const res = await fetch(`http://${host}:${port}/v1/models`, {
+      const res = await fetch(`http://${currentHost}:${port}/v1/models`, {
         signal: AbortSignal.timeout(3000),
       });
       if (res.ok) {
-        console.log(`[provision] Gateway ready at ${host}:${port} (${Date.now() - start}ms, ${attempts} attempts)`);
-        return;
+        console.log(`[provision] Gateway ready at ${currentHost}:${port} (${Date.now() - start}ms, ${attempts} attempts)`);
+        return { host: currentHost };
       }
       lastError = `HTTP ${res.status}`;
       consecutiveFetchFails = 0;
     } catch (err) {
-      lastError = err instanceof Error ? err.message : String(err);
+      const errMsg = err instanceof Error ? err.message : String(err);
+      const cause = err instanceof Error && (err as any).cause?.message ? ` (cause: ${(err as any).cause.message})` : "";
+      lastError = `${errMsg}${cause}`;
       consecutiveFetchFails++;
     }
 
     // Every 30s (15 attempts), or after 10 consecutive fetch failures,
-    // check if the container is actually running.
+    // check if the container is actually running and refresh IP.
     if (containerName && (attempts % 15 === 0 || consecutiveFetchFails === 10)) {
       try {
         const statusOutput = execSync(
-          `docker inspect --format='{{.State.Status}} {{.State.ExitCode}} {{.State.OOMKilled}}' ${containerName}`,
+          `docker inspect --format='{{.State.Status}} {{.State.ExitCode}} {{.State.OOMKilled}} {{.State.StartedAt}}' ${containerName}`,
           { timeout: 5000, stdio: "pipe" },
         ).toString().trim();
-        const [status, exitCode, oomKilled] = statusOutput.split(" ");
+        const parts = statusOutput.split(" ");
+        const [status, exitCode, oomKilled] = parts;
+        const startedAt = parts.slice(3).join(" ");
         console.log(
-          `[provision] Container ${containerName} state: status=${status} exitCode=${exitCode} oomKilled=${oomKilled} ` +
-          `(${Math.round((Date.now() - start) / 1000)}s elapsed, last error: ${lastError})`,
+          `[provision] Container ${containerName} state: status=${status} exitCode=${exitCode} oomKilled=${oomKilled} startedAt=${startedAt} ` +
+          `(${Math.round((Date.now() - start) / 1000)}s elapsed, polling ${currentHost}:${port}, last error: ${lastError})`,
         );
 
-        // If the container has exited or is dead, try to restart it once
-        if (status === "exited" || status === "dead") {
+        if (status === "running") {
+          // Container is running but gateway not responding — refresh IP in case it changed
+          const newIp = refreshContainerIp();
+          if (newIp && newIp !== currentHost) {
+            console.log(`[provision] Container IP changed: ${currentHost} → ${newIp}`);
+            currentHost = newIp;
+            consecutiveFetchFails = 0;
+          }
+        } else if (status === "exited" || status === "dead") {
+          // Container is dead — log diagnostics and try to restart
           console.log(`[provision] Container is ${status} (exit=${exitCode}, oom=${oomKilled}). Attempting restart...`);
           try {
-            // Log last 30 lines of container logs for diagnostics
-            const logs = execSync(`docker logs --tail 30 ${containerName}`, { timeout: 10_000, stdio: "pipe" })
+            const logs = execSync(`docker logs --tail 50 ${containerName}`, { timeout: 10_000, stdio: "pipe" })
               .toString().trim();
             if (logs) console.log(`[provision] Container logs before restart:\n${logs}`);
           } catch { /* ignore log fetch errors */ }
@@ -596,9 +636,29 @@ async function waitForGateway(
             console.log(`[provision] Container restarted, waiting 10s for it to initialize...`);
             await new Promise((r) => setTimeout(r, 10_000));
             consecutiveFetchFails = 0;
+
+            // Re-inspect to get the new IP after restart
+            const newIp = refreshContainerIp();
+            if (newIp) {
+              if (newIp !== currentHost) {
+                console.log(`[provision] Container IP after restart: ${currentHost} → ${newIp}`);
+              }
+              currentHost = newIp;
+            }
           } catch (restartErr) {
             const msg = restartErr instanceof Error ? restartErr.message : String(restartErr);
             console.log(`[provision] Failed to restart container: ${msg.slice(0, 200)}`);
+          }
+        } else if (status === "restarting") {
+          console.log(`[provision] Container is restarting (Docker restart policy), waiting for it to come back...`);
+          await new Promise((r) => setTimeout(r, 5000));
+          const newIp = refreshContainerIp();
+          if (newIp) {
+            if (newIp !== currentHost) {
+              console.log(`[provision] Container IP after Docker restart: ${currentHost} → ${newIp}`);
+            }
+            currentHost = newIp;
+            consecutiveFetchFails = 0;
           }
         }
       } catch {
@@ -606,12 +666,22 @@ async function waitForGateway(
         console.log(`[provision] Could not inspect container ${containerName} (${Math.round((Date.now() - start) / 1000)}s elapsed)`);
       }
     } else if (attempts % 15 === 0) {
-      console.log(`[provision] Still waiting for gateway at ${host}:${port} (${Math.round((Date.now() - start) / 1000)}s elapsed, last error: ${lastError})`);
+      console.log(`[provision] Still waiting for gateway at ${currentHost}:${port} (${Math.round((Date.now() - start) / 1000)}s elapsed, last error: ${lastError})`);
     }
 
     await new Promise((r) => setTimeout(r, interval));
   }
-  throw new Error(`Gateway at ${host}:${port} did not respond within ${timeoutMs}ms (${attempts} attempts, last error: ${lastError})`);
+
+  // Final diagnostic dump on timeout
+  if (containerName) {
+    try {
+      const logs = execSync(`docker logs --tail 50 ${containerName}`, { timeout: 10_000, stdio: "pipe" })
+        .toString().trim();
+      if (logs) console.log(`[provision] Container logs at timeout:\n${logs}`);
+    } catch { /* ignore */ }
+  }
+
+  throw new Error(`Gateway at ${currentHost}:${port} did not respond within ${timeoutMs}ms (${attempts} attempts, last error: ${lastError})`);
 }
 
 /** Scale Node.js heap to the tier — leave room for Chromium + OS overhead */
