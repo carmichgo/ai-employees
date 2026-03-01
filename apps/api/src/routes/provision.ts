@@ -4,7 +4,7 @@
  */
 import type { FastifyInstance } from "fastify";
 import crypto from "node:crypto";
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { eq, and, or, inArray } from "drizzle-orm";
 import { db, employees, companies, users, chatMessages } from "@ai-employees/db";
@@ -453,7 +453,13 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     try {
       mkdirSync(skillDir, { recursive: true });
       writeFileSync(`${skillDir}/SKILL.md`, content);
-      execSync(`chown -R 1000:1000 ${skillDir}`, { timeout: 5000 });
+      // Also write to workspace-main/skills/ so OpenClaw can find and edit the skill
+      if (existsSync(`${configDir}/workspace-main`)) {
+        const wmSkillDir = `${configDir}/workspace-main/skills/${slug}`;
+        mkdirSync(wmSkillDir, { recursive: true });
+        writeFileSync(`${wmSkillDir}/SKILL.md`, content);
+      }
+      execSync(`chown -R 1000:1000 ${configDir}/skills ${configDir}/workspace-main/skills 2>/dev/null; true`, { timeout: 5000 });
       return { success: true, message: `Skill "${slug}" installed` };
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -477,11 +483,17 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       return reply.status(404).send({ error: "Employee not found" });
     }
 
-    const skillDir = `/opt/ai-employees/openclaw-configs/${id}/skills/${slug}`;
+    const configDir = `/opt/ai-employees/openclaw-configs/${id}`;
+    const skillDir = `${configDir}/skills/${slug}`;
 
     try {
       if (existsSync(skillDir)) {
         execSync(`rm -rf ${JSON.stringify(skillDir)}`, { timeout: 5000 });
+      }
+      // Also remove from workspace-main/skills/
+      const wmSkillDir = `${configDir}/workspace-main/skills/${slug}`;
+      if (existsSync(wmSkillDir)) {
+        execSync(`rm -rf ${JSON.stringify(wmSkillDir)}`, { timeout: 5000 });
       }
       return { success: true, message: `Skill "${slug}" uninstalled` };
     } catch (err: unknown) {
@@ -618,19 +630,45 @@ export async function provisionRoutes(fastify: FastifyInstance) {
         }
         writeFileSync(`${configDir}/cred.js`, genCred(), { mode: 0o755 });
 
-        // Write updated skills
+        // Write updated skills to both skills/ and workspace-main/skills/
         const skillDir = `${configDir}/skills`;
-        writeFileSync(`${skillDir}/captcha-solving/SKILL.md`, genCaptcha());
-        writeFileSync(`${skillDir}/account-creation/SKILL.md`, genAccount());
-        writeFileSync(`${skillDir}/task-logging/SKILL.md`, genTaskLog());
-        writeFileSync(`${skillDir}/media-generation/SKILL.md`, genMedia());
-        writeFileSync(`${skillDir}/restart-gateway/SKILL.md`, genRestart());
-        writeFileSync(`${skillDir}/team-communication/SKILL.md`, genTeamComm());
-        writeFileSync(`${skillDir}/task-management/SKILL.md`, genTaskMgmt());
-        mkdirSync(`${skillDir}/docx`, { recursive: true });
-        writeFileSync(`${skillDir}/docx/SKILL.md`, genDocx());
-        mkdirSync(`${skillDir}/skill-building`, { recursive: true });
-        writeFileSync(`${skillDir}/skill-building/SKILL.md`, genSkillBuilding());
+        const wmSkillDir = `${configDir}/workspace-main/skills`;
+        const hasWm = existsSync(`${configDir}/workspace-main`);
+        const writeSkill = (name: string, content: string) => {
+          mkdirSync(`${skillDir}/${name}`, { recursive: true });
+          writeFileSync(`${skillDir}/${name}/SKILL.md`, content);
+          if (hasWm) {
+            mkdirSync(`${wmSkillDir}/${name}`, { recursive: true });
+            writeFileSync(`${wmSkillDir}/${name}/SKILL.md`, content);
+          }
+        };
+        writeSkill("captcha-solving", genCaptcha());
+        writeSkill("account-creation", genAccount());
+        writeSkill("task-logging", genTaskLog());
+        writeSkill("media-generation", genMedia());
+        writeSkill("restart-gateway", genRestart());
+        writeSkill("team-communication", genTeamComm());
+        writeSkill("task-management", genTaskMgmt());
+        writeSkill("docx", genDocx());
+        writeSkill("skill-building", genSkillBuilding());
+
+        // Also sync any custom (non-built-in) skills from skills/ to workspace-main/skills/
+        if (hasWm) {
+          const builtIn = new Set(["captcha-solving","account-creation","task-logging","media-generation","restart-gateway","team-communication","task-management","docx","skill-building"]);
+          try {
+            const entries = readdirSync(skillDir, { withFileTypes: true });
+            for (const e of entries) {
+              if (e.isDirectory() && !builtIn.has(e.name)) {
+                const src = `${skillDir}/${e.name}/SKILL.md`;
+                if (existsSync(src)) {
+                  mkdirSync(`${wmSkillDir}/${e.name}`, { recursive: true });
+                  writeFileSync(`${wmSkillDir}/${e.name}/SKILL.md`, readFileSync(src, "utf-8"));
+                }
+              }
+            }
+          } catch {}
+        }
+
         writeFileSync(`${configDir}/generate-image.sh`, genImage(), { mode: 0o755 });
         writeFileSync(`${configDir}/generate-video.sh`, genVideo(), { mode: 0o755 });
 
@@ -758,18 +796,45 @@ export async function provisionRoutes(fastify: FastifyInstance) {
         }
         writeFileSync(`${configDir}/cred.js`, genCred(), { mode: 0o755 });
 
+        // Write updated skills to both skills/ and workspace-main/skills/
         const skillDir = `${configDir}/skills`;
-        writeFileSync(`${skillDir}/captcha-solving/SKILL.md`, genCaptcha());
-        writeFileSync(`${skillDir}/account-creation/SKILL.md`, genAccount());
-        writeFileSync(`${skillDir}/task-logging/SKILL.md`, genTaskLog());
-        writeFileSync(`${skillDir}/media-generation/SKILL.md`, genMedia());
-        writeFileSync(`${skillDir}/restart-gateway/SKILL.md`, genRestart());
-        writeFileSync(`${skillDir}/team-communication/SKILL.md`, genTeamComm());
-        writeFileSync(`${skillDir}/task-management/SKILL.md`, genTaskMgmt());
-        mkdirSync(`${skillDir}/docx`, { recursive: true });
-        writeFileSync(`${skillDir}/docx/SKILL.md`, genDocx());
-        mkdirSync(`${skillDir}/skill-building`, { recursive: true });
-        writeFileSync(`${skillDir}/skill-building/SKILL.md`, genSkillBuilding());
+        const wmSkillDir2 = `${configDir}/workspace-main/skills`;
+        const hasWm2 = existsSync(`${configDir}/workspace-main`);
+        const writeSkill2 = (name: string, content: string) => {
+          mkdirSync(`${skillDir}/${name}`, { recursive: true });
+          writeFileSync(`${skillDir}/${name}/SKILL.md`, content);
+          if (hasWm2) {
+            mkdirSync(`${wmSkillDir2}/${name}`, { recursive: true });
+            writeFileSync(`${wmSkillDir2}/${name}/SKILL.md`, content);
+          }
+        };
+        writeSkill2("captcha-solving", genCaptcha());
+        writeSkill2("account-creation", genAccount());
+        writeSkill2("task-logging", genTaskLog());
+        writeSkill2("media-generation", genMedia());
+        writeSkill2("restart-gateway", genRestart());
+        writeSkill2("team-communication", genTeamComm());
+        writeSkill2("task-management", genTaskMgmt());
+        writeSkill2("docx", genDocx());
+        writeSkill2("skill-building", genSkillBuilding());
+
+        // Sync custom skills to workspace-main/skills/
+        if (hasWm2) {
+          const builtIn2 = new Set(["captcha-solving","account-creation","task-logging","media-generation","restart-gateway","team-communication","task-management","docx","skill-building"]);
+          try {
+            const entries2 = readdirSync(skillDir, { withFileTypes: true });
+            for (const e of entries2) {
+              if (e.isDirectory() && !builtIn2.has(e.name)) {
+                const src = `${skillDir}/${e.name}/SKILL.md`;
+                if (existsSync(src)) {
+                  mkdirSync(`${wmSkillDir2}/${e.name}`, { recursive: true });
+                  writeFileSync(`${wmSkillDir2}/${e.name}/SKILL.md`, readFileSync(src, "utf-8"));
+                }
+              }
+            }
+          } catch {}
+        }
+
         writeFileSync(`${configDir}/generate-image.sh`, genImage(), { mode: 0o755 });
         writeFileSync(`${configDir}/generate-video.sh`, genVideo(), { mode: 0o755 });
 
