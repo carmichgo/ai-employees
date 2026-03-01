@@ -462,15 +462,14 @@ export async function provisionRoutes(fastify: FastifyInstance) {
         }
       }
       // Also write to workspace-main/skills/ so OpenClaw can find and edit the skill
-      if (existsSync(`${configDir}/workspace-main`)) {
-        const wmSkillDir = `${configDir}/workspace-main/skills/${slug}`;
-        mkdirSync(wmSkillDir, { recursive: true });
-        writeFileSync(`${wmSkillDir}/SKILL.md`, content);
-        if (files?.length) {
-          for (const f of files) {
-            const safeName = path.basename(f.name);
-            writeFileSync(`${wmSkillDir}/${safeName}`, f.content);
-          }
+      mkdirSync(`${configDir}/workspace-main/skills`, { recursive: true });
+      const wmSkillDir = `${configDir}/workspace-main/skills/${slug}`;
+      mkdirSync(wmSkillDir, { recursive: true });
+      writeFileSync(`${wmSkillDir}/SKILL.md`, content);
+      if (files?.length) {
+        for (const f of files) {
+          const safeName = path.basename(f.name);
+          writeFileSync(`${wmSkillDir}/${safeName}`, f.content);
         }
       }
       execSync(`chown -R 1000:1000 ${configDir}/skills ${configDir}/workspace-main/skills 2>/dev/null; true`, { timeout: 5000 });
@@ -635,23 +634,21 @@ export async function provisionRoutes(fastify: FastifyInstance) {
         writeFileSync(`${configDir}/openclaw.json`, JSON.stringify(config, null, 2));
         // Write all OpenClaw workspace files
         const workspaceFiles = { "IDENTITY.md": identityMd, "SOUL.md": soulMd, "USER.md": userMd, "TOOLS.md": toolsMd, "AGENTS.md": agentsMd, "HEARTBEAT.md": heartbeatMd };
+        mkdirSync(`${configDir}/workspace-main`, { recursive: true });
         for (const [name, content] of Object.entries(workspaceFiles)) {
           writeFileSync(`${configDir}/${name}`, content);
           writeFileSync(`${configDir}/workspace/${name}`, content);
-          if (existsSync(`${configDir}/workspace-main`)) {
-            writeFileSync(`${configDir}/workspace-main/${name}`, content);
-          }
+          writeFileSync(`${configDir}/workspace-main/${name}`, content);
         }
         writeFileSync(`${configDir}/cred.js`, genCred(), { mode: 0o755 });
 
         // Write updated skills to both skills/ and workspace-main/skills/
         const skillDir = `${configDir}/skills`;
         const wmSkillDir = `${configDir}/workspace-main/skills`;
-        const hasWm = existsSync(`${configDir}/workspace-main`);
         const writeSkill = (name: string, content: string) => {
           mkdirSync(`${skillDir}/${name}`, { recursive: true });
           writeFileSync(`${skillDir}/${name}/SKILL.md`, content);
-          if (hasWm) {
+          {
             mkdirSync(`${wmSkillDir}/${name}`, { recursive: true });
             writeFileSync(`${wmSkillDir}/${name}/SKILL.md`, content);
           }
@@ -667,7 +664,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
         writeSkill("skill-building", genSkillBuilding());
 
         // Also sync any custom (non-built-in) skills from skills/ to workspace-main/skills/
-        if (hasWm) {
+        {
           const builtIn = new Set(["captcha-solving","account-creation","task-logging","media-generation","restart-gateway","team-communication","task-management","docx","skill-building"]);
           try {
             const entries = readdirSync(skillDir, { withFileTypes: true });
@@ -801,26 +798,22 @@ export async function provisionRoutes(fastify: FastifyInstance) {
         writeFileSync(`${configDir}/openclaw.json`, JSON.stringify(config, null, 2));
         // Write all OpenClaw workspace files
         const workspaceFiles = { "IDENTITY.md": identityMd, "SOUL.md": soulMd, "USER.md": userMd, "TOOLS.md": toolsMd, "AGENTS.md": agentsMd, "HEARTBEAT.md": heartbeatMd };
+        mkdirSync(`${configDir}/workspace-main`, { recursive: true });
         for (const [name, content] of Object.entries(workspaceFiles)) {
           writeFileSync(`${configDir}/${name}`, content);
           writeFileSync(`${configDir}/workspace/${name}`, content);
-          if (existsSync(`${configDir}/workspace-main`)) {
-            writeFileSync(`${configDir}/workspace-main/${name}`, content);
-          }
+          writeFileSync(`${configDir}/workspace-main/${name}`, content);
         }
         writeFileSync(`${configDir}/cred.js`, genCred(), { mode: 0o755 });
 
         // Write updated skills to both skills/ and workspace-main/skills/
         const skillDir = `${configDir}/skills`;
         const wmSkillDir2 = `${configDir}/workspace-main/skills`;
-        const hasWm2 = existsSync(`${configDir}/workspace-main`);
         const writeSkill2 = (name: string, content: string) => {
           mkdirSync(`${skillDir}/${name}`, { recursive: true });
           writeFileSync(`${skillDir}/${name}/SKILL.md`, content);
-          if (hasWm2) {
-            mkdirSync(`${wmSkillDir2}/${name}`, { recursive: true });
-            writeFileSync(`${wmSkillDir2}/${name}/SKILL.md`, content);
-          }
+          mkdirSync(`${wmSkillDir2}/${name}`, { recursive: true });
+          writeFileSync(`${wmSkillDir2}/${name}/SKILL.md`, content);
         };
         writeSkill2("captcha-solving", genCaptcha());
         writeSkill2("account-creation", genAccount());
@@ -833,7 +826,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
         writeSkill2("skill-building", genSkillBuilding());
 
         // Sync custom skills to workspace-main/skills/
-        if (hasWm2) {
+        {
           const builtIn2 = new Set(["captcha-solving","account-creation","task-logging","media-generation","restart-gateway","team-communication","task-management","docx","skill-building"]);
           try {
             const entries2 = readdirSync(skillDir, { withFileTypes: true });
@@ -946,15 +939,22 @@ export async function provisionRoutes(fastify: FastifyInstance) {
 
           let systemContent = parts.join("\n\n---\n\n");
 
-          // Append memory.md if it exists — persistent context the employee maintains
-          const memoryPath = `${configDir}/workspace/memory.md`;
-          try {
-            const memoryMd = readFileSync(memoryPath, "utf-8");
-            if (memoryMd.trim()) {
-              systemContent += "\n\n---\n\n# Your Memory (from memory.md)\n\nThe following is your persistent memory — context you wrote down to carry over between sessions:\n\n" + memoryMd;
+          // Append memory.md if it exists — persistent context the employee maintains.
+          // Check workspace-main first (OpenClaw's runtime session workspace), then workspace/.
+          const memoryPaths = [
+            `${configDir}/workspace-main/memory.md`,
+            `${configDir}/workspace/memory.md`,
+          ];
+          for (const memoryPath of memoryPaths) {
+            try {
+              const memoryMd = readFileSync(memoryPath, "utf-8");
+              if (memoryMd.trim()) {
+                systemContent += "\n\n---\n\n# Your Memory (from memory.md)\n\nThe following is your persistent memory — context you wrote down to carry over between sessions:\n\n" + memoryMd;
+                break;
+              }
+            } catch {
+              // memory.md doesn't exist at this path — try next
             }
-          } catch {
-            // memory.md doesn't exist yet — that's fine, employee will create it
           }
 
           if (systemContent.trim()) {

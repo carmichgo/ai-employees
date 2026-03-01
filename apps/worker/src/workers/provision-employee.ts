@@ -159,6 +159,7 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     const configDir = `/opt/ai-employees/openclaw-configs/${employeeId}`;
     mkdirSync(`${configDir}/workspace`, { recursive: true });
     mkdirSync(`${configDir}/workspace/uploads`, { recursive: true });
+    mkdirSync(`${configDir}/workspace-main`, { recursive: true });
     mkdirSync(`${configDir}/credentials`, { recursive: true, mode: 0o700 });
     mkdirSync(`${configDir}/skills/captcha-solving`, { recursive: true });
     mkdirSync(`${configDir}/skills/account-creation`, { recursive: true });
@@ -189,14 +190,23 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     writeFileSync(`${configDir}/workspace/AGENTS.md`, agentsMd);
     writeFileSync(`${configDir}/workspace/HEARTBEAT.md`, heartbeatMd);
 
-    // OpenClaw creates workspace-main at runtime — write there too if it exists
-    if (existsSync(`${configDir}/workspace-main`)) {
-      writeFileSync(`${configDir}/workspace-main/IDENTITY.md`, identityMd);
-      writeFileSync(`${configDir}/workspace-main/SOUL.md`, soulMd);
-      writeFileSync(`${configDir}/workspace-main/USER.md`, userMd);
-      writeFileSync(`${configDir}/workspace-main/TOOLS.md`, toolsMd);
-      writeFileSync(`${configDir}/workspace-main/AGENTS.md`, agentsMd);
-      writeFileSync(`${configDir}/workspace-main/HEARTBEAT.md`, heartbeatMd);
+    // Write to workspace-main/ (OpenClaw's runtime session workspace)
+    writeFileSync(`${configDir}/workspace-main/IDENTITY.md`, identityMd);
+    writeFileSync(`${configDir}/workspace-main/SOUL.md`, soulMd);
+    writeFileSync(`${configDir}/workspace-main/USER.md`, userMd);
+    writeFileSync(`${configDir}/workspace-main/TOOLS.md`, toolsMd);
+    writeFileSync(`${configDir}/workspace-main/AGENTS.md`, agentsMd);
+    writeFileSync(`${configDir}/workspace-main/HEARTBEAT.md`, heartbeatMd);
+
+    // Seed memory.md in both workspaces so the edit tool works from the start.
+    // OpenClaw's edit tool requires the file to exist — without this, the first
+    // edit attempt fails with "Edit failed" because there's nothing to find/replace.
+    const seedMemory = `# Memory\n\n_No notes yet. Update this file as you learn and complete tasks._\n`;
+    if (!existsSync(`${configDir}/workspace/memory.md`)) {
+      writeFileSync(`${configDir}/workspace/memory.md`, seedMemory);
+    }
+    if (!existsSync(`${configDir}/workspace-main/memory.md`)) {
+      writeFileSync(`${configDir}/workspace-main/memory.md`, seedMemory);
     }
 
     // Write credential manager CLI script

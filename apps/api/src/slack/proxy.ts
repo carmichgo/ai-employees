@@ -508,19 +508,26 @@ export class SlackProxy {
     // Fetch recent conversation history from Slack so the employee has context
     const history = await this.fetchChannelHistory(channelId, message.ts);
 
-    // Inject memory.md as system context if it exists — persistent memory the employee maintains
+    // Inject memory.md as system context if it exists — persistent memory the employee maintains.
+    // Check workspace-main first (OpenClaw's runtime session workspace), then workspace/.
     const systemMessages: Array<{ role: "system"; content: string }> = [];
-    const memoryPath = `/opt/ai-employees/openclaw-configs/${employee.id}/workspace/memory.md`;
-    try {
-      const memoryMd = readFileSync(memoryPath, "utf-8");
-      if (memoryMd.trim()) {
-        systemMessages.push({
-          role: "system",
-          content: "# Your Memory (from memory.md)\n\nThe following is your persistent memory — context you wrote down to carry over between sessions:\n\n" + memoryMd,
-        });
+    const memoryPaths = [
+      `/opt/ai-employees/openclaw-configs/${employee.id}/workspace-main/memory.md`,
+      `/opt/ai-employees/openclaw-configs/${employee.id}/workspace/memory.md`,
+    ];
+    for (const memoryPath of memoryPaths) {
+      try {
+        const memoryMd = readFileSync(memoryPath, "utf-8");
+        if (memoryMd.trim()) {
+          systemMessages.push({
+            role: "system",
+            content: "# Your Memory (from memory.md)\n\nThe following is your persistent memory — context you wrote down to carry over between sessions:\n\n" + memoryMd,
+          });
+          break;
+        }
+      } catch {
+        // memory.md doesn't exist at this path — try next
       }
-    } catch {
-      // memory.md doesn't exist yet — that's fine
     }
 
     // Build messages array: memory context + history + current message (with authority tag)
