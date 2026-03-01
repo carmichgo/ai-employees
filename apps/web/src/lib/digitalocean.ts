@@ -883,6 +883,76 @@ export async function destroyCompanyDroplet(companyId: string): Promise<void> {
     .where(eq(companies.id, companyId));
 }
 
+/** Power-cycle (reboot) an employee's droplet via DO API */
+export async function powerCycleEmployeeDroplet(employeeId: string): Promise<boolean> {
+  const [employee] = await db
+    .select()
+    .from(employees)
+    .where(eq(employees.id, employeeId))
+    .limit(1);
+
+  if (!employee?.dropletId) return false;
+
+  try {
+    await doFetch(`/droplets/${employee.dropletId}/actions`, {
+      method: "POST",
+      body: JSON.stringify({ type: "power_cycle" }),
+    });
+    console.log(`[droplet] Power-cycled droplet ${employee.dropletId} for employee ${employee.name}`);
+    return true;
+  } catch (err: any) {
+    console.error(`[droplet] Failed to power-cycle droplet ${employee.dropletId}:`, err.message);
+    return false;
+  }
+}
+
+/** Check if a droplet exists and is running via DO API (without DB updates) */
+export async function getDropletInfo(dropletId: string): Promise<{
+  exists: boolean;
+  status: string | null;
+  ip: string | null;
+}> {
+  try {
+    const res = await doFetch(`/droplets/${dropletId}`);
+    const data = await res.json();
+    const droplet = data.droplet;
+    const publicNet = droplet.networks?.v4?.find((n: { type: string }) => n.type === "public");
+    return {
+      exists: true,
+      status: droplet.status,
+      ip: publicNet?.ip_address || null,
+    };
+  } catch {
+    return { exists: false, status: null, ip: null };
+  }
+}
+
+/** Check if a droplet's API health endpoint is responding */
+export async function checkDropletHealth(ip: string): Promise<{ ok: boolean; phase: string | null }> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+
+    const res = await fetch(`http://${ip}:3001/health`, {
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+    if (!res.ok) return { ok: false, phase: null };
+
+    const body = await res.json().catch(() => ({}));
+    const phase = body.phase || (body.timestamp ? "ready" : "unknown");
+
+    if (typeof phase === "string" && phase.startsWith("PHASE2_FAILED")) {
+      return { ok: false, phase };
+    }
+
+    return { ok: true, phase };
+  } catch {
+    return { ok: false, phase: null };
+  }
+}
+
 /** Get available DO regions */
 export async function getRegions(): Promise<Array<{ slug: string; name: string }>> {
   const res = await doFetch("/regions");

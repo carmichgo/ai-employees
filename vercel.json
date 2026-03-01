@@ -2,5 +2,11 @@
   "buildCommand": "pnpm --filter @ai-employees/web build",
   "outputDirectory": "apps/web/.next",
   "installCommand": "pnpm install",
-  "framework": "nextjs"
+  "framework": "nextjs",
+  "crons": [
+    {
+      "path": "/api/cron/droplet-health",
+      "schedule": "*/5 * * * *"
+    }
+  ]
 }
