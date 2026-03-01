@@ -424,6 +424,7 @@ export async function POST(request: NextRequest) {
               "Content-Type": "application/json",
               "x-interservice-secret": emp.interservice_secret,
             },
+            body: JSON.stringify({}),
             signal: AbortSignal.timeout(60000),
           });
           const data = await res.text().catch(() => "no body");
