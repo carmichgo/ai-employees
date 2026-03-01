@@ -18,7 +18,7 @@ import {
   Inbox,
   CreditCard,
   FolderOpen,
-  Table2,
+  Database,
 } from "lucide-react";
 
 const NAV_SECTIONS = [
@@ -30,7 +30,7 @@ const NAV_SECTIONS = [
       { href: "/dashboard/inbox", label: "Inbox", icon: Inbox },
       { href: "/dashboard/tasks", label: "Tasks", icon: ListTodo },
       { href: "/dashboard/documents", label: "Documents", icon: FolderOpen },
-      { href: "/dashboard/tables", label: "Tables", icon: Table2 },
+      { href: "/dashboard/tables", label: "Bases", icon: Database },
     ],
   },
   {

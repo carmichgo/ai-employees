@@ -18,6 +18,7 @@ export async function GET(request: NextRequest) {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const tableId = request.nextUrl.searchParams.get("tableId");
+  const baseId = request.nextUrl.searchParams.get("baseId");
 
   try {
     if (tableId) {
@@ -45,11 +46,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ table, columns, rows });
     }
 
-    // List all tables
+    // List tables — optionally filtered by baseId
+    const conditions = [eq(spreadsheetTables.companyId, session.companyId)];
+    if (baseId) {
+      conditions.push(eq(spreadsheetTables.baseId, baseId));
+    }
+
     const tables = await db
       .select()
       .from(spreadsheetTables)
-      .where(eq(spreadsheetTables.companyId, session.companyId))
+      .where(and(...conditions))
       .orderBy(desc(spreadsheetTables.updatedAt));
 
     return NextResponse.json({ tables });
@@ -73,7 +79,7 @@ export async function POST(request: NextRequest) {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await request.json();
-  const { name, description } = body;
+  const { name, description, baseId } = body;
 
   if (!name) return NextResponse.json({ error: "name is required" }, { status: 400 });
 
@@ -82,6 +88,7 @@ export async function POST(request: NextRequest) {
       .insert(spreadsheetTables)
       .values({
         companyId: session.companyId,
+        baseId: baseId || null,
         name,
         description: description || null,
       })

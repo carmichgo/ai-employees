@@ -19,12 +19,24 @@ import {
   ArrowLeft,
   MoreHorizontal,
   Pencil,
+  Database,
 } from "lucide-react";
 
 // ── Types ────────────────────────────────────────────
 
+interface BaseMeta {
+  id: string;
+  name: string;
+  description: string | null;
+  color: string;
+  icon: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 interface TableMeta {
   id: string;
+  baseId: string | null;
   name: string;
   description: string | null;
   createdAt: string;
@@ -55,6 +67,11 @@ const COLUMN_TYPES = [
   { value: "select", label: "Select", icon: List },
   { value: "url", label: "URL", icon: Link2 },
   { value: "email", label: "Email", icon: AtSign },
+];
+
+const BASE_COLORS = [
+  "#3b82f6", "#8b5cf6", "#ec4899", "#ef4444",
+  "#f97316", "#eab308", "#22c55e", "#06b6d4",
 ];
 
 function getTypeIcon(type: string) {
@@ -257,57 +274,91 @@ function CellDisplay({ value, column }: { value: any; column: Column }) {
 // ── Main Page ────────────────────────────────────────
 
 export default function TablesPage() {
-  const [tables, setTables] = useState<TableMeta[]>([]);
+  // Navigation: null = bases list, string = inside a base
+  const [selectedBaseId, setSelectedBaseId] = useState<string | null>(null);
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
+
+  // Bases
+  const [bases, setBases] = useState<BaseMeta[]>([]);
+  const [basesLoading, setBasesLoading] = useState(true);
+  const [basesError, setBasesError] = useState<string | null>(null);
+
+  // Tables inside a base
+  const [tables, setTables] = useState<TableMeta[]>([]);
   const [columns, setColumns] = useState<Column[]>([]);
   const [rows, setRows] = useState<Row[]>([]);
-  const [loading, setLoading] = useState(true);
   const [tableLoading, setTableLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [error, setError] = useState<string | null>(null);
 
-  // Modals
+  // Create base modal
+  const [showCreateBase, setShowCreateBase] = useState(false);
+  const [newBaseName, setNewBaseName] = useState("");
+  const [newBaseDesc, setNewBaseDesc] = useState("");
+  const [newBaseColor, setNewBaseColor] = useState("#3b82f6");
+  const [newBaseIcon, setNewBaseIcon] = useState("📊");
+  const [creatingBase, setCreatingBase] = useState(false);
+  const [createBaseError, setCreateBaseError] = useState<string | null>(null);
+
+  // Create table modal
   const [showCreateTable, setShowCreateTable] = useState(false);
   const [newTableName, setNewTableName] = useState("");
   const [newTableDesc, setNewTableDesc] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+
+  // Column / row editing
   const [showAddCol, setShowAddCol] = useState(false);
   const [newColName, setNewColName] = useState("");
   const [newColType, setNewColType] = useState("text");
   const [newColChoices, setNewColChoices] = useState("");
   const [editingCell, setEditingCell] = useState<{ rowId: string; colId: string } | null>(null);
-
-  // Column rename
   const [renamingCol, setRenamingCol] = useState<string | null>(null);
   const [renameColValue, setRenameColValue] = useState("");
-
-  // Column header menu
   const [colMenuOpen, setColMenuOpen] = useState<string | null>(null);
-
-  // Add column popover ref
   const addColBtnRef = useRef<HTMLTableCellElement>(null);
   const addColPopoverRef = useRef<HTMLDivElement>(null);
+
+  // Base rename
+  const [editingBaseName, setEditingBaseName] = useState(false);
+  const [editBaseNameVal, setEditBaseNameVal] = useState("");
 
   // Table rename
   const [editingTableName, setEditingTableName] = useState(false);
   const [editTableNameVal, setEditTableNameVal] = useState("");
 
-  // ── Load tables list ──────────────────────────────
-  const loadTables = useCallback(async () => {
+  // ── Load bases list ──────────────────────────────
+  const loadBases = useCallback(async () => {
     try {
-      setError(null);
-      const res = await api.listTables();
-      setTables(res.tables);
+      setBasesError(null);
+      const res = await api.listBases();
+      setBases(res.bases);
     } catch (err: any) {
-      console.error("Failed to load tables:", err);
-      setError(err?.message || "Failed to load tables");
+      console.error("Failed to load bases:", err);
+      setBasesError(err?.message || "Failed to load bases");
     } finally {
-      setLoading(false);
+      setBasesLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    loadTables();
-  }, [loadTables]);
+    loadBases();
+  }, [loadBases]);
+
+  // ── Load tables for a base ─────────────────────
+  const loadBase = useCallback(async (baseId: string) => {
+    try {
+      const res = await api.getBase(baseId);
+      setTables(res.tables);
+    } catch (err) {
+      console.error("Failed to load base:", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (selectedBaseId) {
+      loadBase(selectedBaseId);
+    }
+  }, [selectedBaseId, loadBase]);
 
   // ── Load single table data ────────────────────────
   const loadTable = useCallback(async (tableId: string) => {
@@ -327,16 +378,76 @@ export default function TablesPage() {
     if (selectedTableId) loadTable(selectedTableId);
   }, [selectedTableId, loadTable]);
 
-  // ── Create table ──────────────────────────────────
-  const [createError, setCreateError] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
+  // ── Create base ──────────────────────────────────
+  const handleCreateBase = async () => {
+    if (!newBaseName.trim()) return;
+    setCreatingBase(true);
+    setCreateBaseError(null);
+    try {
+      const res = await api.createBase({
+        name: newBaseName.trim(),
+        description: newBaseDesc.trim() || undefined,
+        color: newBaseColor,
+        icon: newBaseIcon,
+      });
+      setBases((prev) => [res.base, ...prev]);
+      setNewBaseName("");
+      setNewBaseDesc("");
+      setNewBaseColor("#3b82f6");
+      setNewBaseIcon("📊");
+      setShowCreateBase(false);
+      // Open the new base
+      setSelectedBaseId(res.base.id);
+      setTables([]);
+    } catch (err: any) {
+      console.error("Failed to create base:", err);
+      setCreateBaseError(err?.message || "Failed to create base");
+    } finally {
+      setCreatingBase(false);
+    }
+  };
 
+  // ── Delete base ──────────────────────────────────
+  const handleDeleteBase = async (id: string) => {
+    if (!confirm("Delete this base and ALL its tables? This cannot be undone.")) return;
+    try {
+      await api.deleteBase(id);
+      setBases((prev) => prev.filter((b) => b.id !== id));
+      if (selectedBaseId === id) {
+        setSelectedBaseId(null);
+        setSelectedTableId(null);
+        setTables([]);
+        setColumns([]);
+        setRows([]);
+      }
+    } catch (err) {
+      console.error("Failed to delete base:", err);
+    }
+  };
+
+  // ── Rename base ──────────────────────────────────
+  const handleRenameBase = async () => {
+    if (!selectedBaseId || !editBaseNameVal.trim()) return;
+    try {
+      const res = await api.updateBase(selectedBaseId, { name: editBaseNameVal.trim() });
+      setBases((prev) => prev.map((b) => (b.id === selectedBaseId ? { ...b, name: res.base.name } : b)));
+      setEditingBaseName(false);
+    } catch (err) {
+      console.error("Failed to rename base:", err);
+    }
+  };
+
+  // ── Create table ──────────────────────────────────
   const handleCreateTable = async () => {
-    if (!newTableName.trim()) return;
+    if (!newTableName.trim() || !selectedBaseId) return;
     setCreating(true);
     setCreateError(null);
     try {
-      const res = await api.createTable({ name: newTableName.trim(), description: newTableDesc.trim() || undefined });
+      const res = await api.createTable({
+        name: newTableName.trim(),
+        description: newTableDesc.trim() || undefined,
+        baseId: selectedBaseId,
+      });
       setTables((prev) => [res.table, ...prev]);
       setSelectedTableId(res.table.id);
       setColumns(res.columns);
@@ -346,7 +457,7 @@ export default function TablesPage() {
       setShowCreateTable(false);
     } catch (err: any) {
       console.error("Failed to create table:", err);
-      setCreateError(err?.message || "Failed to create table. Please try again.");
+      setCreateError(err?.message || "Failed to create table");
     } finally {
       setCreating(false);
     }
@@ -408,7 +519,6 @@ export default function TablesPage() {
     try {
       await api.deleteColumn(colId);
       setColumns((prev) => prev.filter((c) => c.id !== colId));
-      // Clean cell data
       setRows((prev) =>
         prev.map((r) => {
           const cells = { ...r.cells };
@@ -470,7 +580,6 @@ export default function TablesPage() {
       await api.updateRow(rowId, newCells);
     } catch (err) {
       console.error("Failed to save cell:", err);
-      // Revert
       setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, cells: row.cells } : r)));
     }
   };
@@ -484,10 +593,11 @@ export default function TablesPage() {
       )
     : rows;
 
+  const selectedBase = bases.find((b) => b.id === selectedBaseId);
   const selectedTable = tables.find((t) => t.id === selectedTableId);
 
   // ── Loading state ─────────────────────────────────
-  if (loading) {
+  if (basesLoading) {
     return (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "60vh" }}>
         <div
@@ -505,19 +615,21 @@ export default function TablesPage() {
     );
   }
 
-  // ── Table list view (no table selected) ───────────
-  if (!selectedTableId) {
+  // ═══════════════════════════════════════════════════
+  // BASES LIST VIEW (top level)
+  // ═══════════════════════════════════════════════════
+  if (!selectedBaseId) {
     return (
       <div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
           <div>
-            <h1 style={{ fontSize: 22, fontWeight: 600, color: "var(--text)", margin: 0 }}>Tables</h1>
+            <h1 style={{ fontSize: 22, fontWeight: 600, color: "var(--text)", margin: 0 }}>Bases</h1>
             <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "4px 0 0" }}>
-              Create spreadsheet-style tables as a shared database for your team
+              Organize your data into bases. Each base contains multiple tables, like sheets in a spreadsheet.
             </p>
           </div>
           <button
-            onClick={() => setShowCreateTable(true)}
+            onClick={() => setShowCreateBase(true)}
             style={{
               display: "flex",
               alignItems: "center",
@@ -533,11 +645,11 @@ export default function TablesPage() {
             }}
           >
             <Plus size={15} />
-            New Table
+            New Base
           </button>
         </div>
 
-        {error && (
+        {basesError && (
           <div
             style={{
               padding: "10px 14px",
@@ -553,9 +665,9 @@ export default function TablesPage() {
               gap: 8,
             }}
           >
-            <span>{error}</span>
+            <span>{basesError}</span>
             <button
-              onClick={() => { setError(null); loadTables(); }}
+              onClick={() => { setBasesError(null); loadBases(); }}
               style={{
                 background: "none",
                 border: "1px solid var(--red-border, #fecaca)",
@@ -572,21 +684,15 @@ export default function TablesPage() {
           </div>
         )}
 
-        {tables.length === 0 && !error ? (
-          <div
-            style={{
-              textAlign: "center",
-              padding: "80px 20px",
-              color: "var(--text-secondary)",
-            }}
-          >
-            <Table2 size={48} strokeWidth={1} style={{ marginBottom: 16, color: "var(--text-tertiary)" }} />
-            <h3 style={{ fontSize: 16, fontWeight: 500, margin: "0 0 8px" }}>No tables yet</h3>
+        {bases.length === 0 && !basesError ? (
+          <div style={{ textAlign: "center", padding: "80px 20px", color: "var(--text-secondary)" }}>
+            <Database size={48} strokeWidth={1} style={{ marginBottom: 16, color: "var(--text-tertiary)" }} />
+            <h3 style={{ fontSize: 16, fontWeight: 500, margin: "0 0 8px" }}>No bases yet</h3>
             <p style={{ fontSize: 13, margin: "0 0 20px" }}>
-              Create your first table to start storing structured data
+              Create your first base to start organizing data into tables
             </p>
             <button
-              onClick={() => setShowCreateTable(true)}
+              onClick={() => setShowCreateBase(true)}
               style={{
                 padding: "8px 16px",
                 background: "var(--text)",
@@ -598,28 +704,29 @@ export default function TablesPage() {
                 cursor: "pointer",
               }}
             >
-              Create Table
+              Create Base
             </button>
           </div>
         ) : (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-              gap: 12,
-            }}
-          >
-            {tables.map((t) => (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
+            {bases.map((b) => (
               <div
-                key={t.id}
-                onClick={() => setSelectedTableId(t.id)}
+                key={b.id}
+                onClick={() => {
+                  setSelectedBaseId(b.id);
+                  setSelectedTableId(null);
+                  setColumns([]);
+                  setRows([]);
+                  setSearchQuery("");
+                }}
                 style={{
-                  padding: 16,
+                  padding: 0,
                   border: "1px solid var(--border)",
                   borderRadius: "var(--radius-md)",
                   cursor: "pointer",
                   background: "var(--bg)",
                   transition: "all 0.1s ease",
+                  overflow: "hidden",
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.borderColor = "var(--text-tertiary)";
@@ -630,159 +737,144 @@ export default function TablesPage() {
                   e.currentTarget.style.boxShadow = "none";
                 }}
               >
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <Table2 size={16} style={{ color: "var(--blue)" }} />
-                    <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text)" }}>{t.name}</span>
+                {/* Color header bar */}
+                <div style={{ height: 6, background: b.color || "#3b82f6" }} />
+                <div style={{ padding: 16 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 20 }}>{b.icon || "📊"}</span>
+                      <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text)" }}>{b.name}</span>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteBase(b.id);
+                      }}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        padding: 4,
+                        color: "var(--text-tertiary)",
+                        borderRadius: "var(--radius-sm)",
+                      }}
+                    >
+                      <Trash2 size={14} />
+                    </button>
                   </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteTable(t.id);
-                    }}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      padding: 4,
-                      color: "var(--text-tertiary)",
-                      borderRadius: "var(--radius-sm)",
-                    }}
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-                {t.description && (
-                  <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "8px 0 0", lineHeight: 1.4 }}>
-                    {t.description}
-                  </p>
-                )}
-                <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 12 }}>
-                  Updated {new Date(t.updatedAt).toLocaleDateString()}
+                  {b.description && (
+                    <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "8px 0 0", lineHeight: 1.4 }}>
+                      {b.description}
+                    </p>
+                  )}
+                  <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 12 }}>
+                    Updated {new Date(b.updatedAt).toLocaleDateString()}
+                  </div>
                 </div>
               </div>
             ))}
           </div>
         )}
 
-        {/* Create Table Modal */}
-        {showCreateTable && (
+        {/* Create Base Modal */}
+        {showCreateBase && (
           <div
-            style={{
-              position: "fixed",
-              inset: 0,
-              background: "rgba(0,0,0,0.4)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              zIndex: 100,
-            }}
-            onClick={() => setShowCreateTable(false)}
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}
+            onClick={() => setShowCreateBase(false)}
           >
             <div
               onClick={(e) => e.stopPropagation()}
-              style={{
-                background: "var(--bg)",
-                borderRadius: "var(--radius-lg)",
-                padding: 24,
-                width: 400,
-                boxShadow: "var(--shadow-lg, 0 10px 40px rgba(0,0,0,0.15))",
-              }}
+              style={{ background: "var(--bg)", borderRadius: "var(--radius-lg)", padding: 24, width: 420, boxShadow: "var(--shadow-lg, 0 10px 40px rgba(0,0,0,0.15))" }}
             >
               <h3 style={{ fontSize: 16, fontWeight: 600, margin: "0 0 16px", color: "var(--text)" }}>
-                Create New Table
+                Create New Base
               </h3>
               <div style={{ marginBottom: 12 }}>
                 <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>
-                  Table Name
+                  Base Name
                 </label>
                 <input
                   autoFocus
-                  value={newTableName}
-                  onChange={(e) => setNewTableName(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleCreateTable()}
-                  placeholder="e.g. Leads, Inventory, Content Calendar..."
+                  value={newBaseName}
+                  onChange={(e) => setNewBaseName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleCreateBase()}
+                  placeholder="e.g. Marketing, Sales Pipeline, Product..."
                   style={{
-                    width: "100%",
-                    padding: "8px 10px",
-                    border: "1px solid var(--border)",
-                    borderRadius: "var(--radius-sm)",
-                    fontSize: 13,
-                    outline: "none",
-                    background: "var(--bg)",
-                    color: "var(--text)",
-                    boxSizing: "border-box",
+                    width: "100%", padding: "8px 10px", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)",
+                    fontSize: 13, outline: "none", background: "var(--bg)", color: "var(--text)", boxSizing: "border-box",
                   }}
                 />
               </div>
-              <div style={{ marginBottom: 16 }}>
+              <div style={{ marginBottom: 12 }}>
                 <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>
                   Description (optional)
                 </label>
                 <input
-                  value={newTableDesc}
-                  onChange={(e) => setNewTableDesc(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleCreateTable()}
-                  placeholder="What is this table for?"
+                  value={newBaseDesc}
+                  onChange={(e) => setNewBaseDesc(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleCreateBase()}
+                  placeholder="What is this base for?"
                   style={{
-                    width: "100%",
-                    padding: "8px 10px",
-                    border: "1px solid var(--border)",
-                    borderRadius: "var(--radius-sm)",
-                    fontSize: 13,
-                    outline: "none",
-                    background: "var(--bg)",
-                    color: "var(--text)",
-                    boxSizing: "border-box",
+                    width: "100%", padding: "8px 10px", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)",
+                    fontSize: 13, outline: "none", background: "var(--bg)", color: "var(--text)", boxSizing: "border-box",
                   }}
                 />
               </div>
-              {createError && (
-                <div
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>
+                  Icon
+                </label>
+                <input
+                  value={newBaseIcon}
+                  onChange={(e) => setNewBaseIcon(e.target.value)}
                   style={{
-                    padding: "8px 12px",
-                    marginBottom: 12,
-                    background: "var(--red-bg, #fef2f2)",
-                    border: "1px solid var(--red-border, #fecaca)",
-                    borderRadius: "var(--radius-sm)",
-                    color: "var(--red, #dc2626)",
-                    fontSize: 12,
+                    width: 60, padding: "6px 8px", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)",
+                    fontSize: 18, outline: "none", background: "var(--bg)", textAlign: "center", boxSizing: "border-box",
                   }}
-                >
-                  {createError}
+                />
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)", display: "block", marginBottom: 6 }}>
+                  Color
+                </label>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {BASE_COLORS.map((c) => (
+                    <button
+                      key={c}
+                      onClick={() => setNewBaseColor(c)}
+                      style={{
+                        width: 28, height: 28, borderRadius: "50%", background: c, border: newBaseColor === c ? "3px solid var(--text)" : "2px solid transparent",
+                        cursor: "pointer", padding: 0, outline: "none",
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+              {createBaseError && (
+                <div style={{ padding: "8px 12px", marginBottom: 12, background: "var(--red-bg, #fef2f2)", border: "1px solid var(--red-border, #fecaca)", borderRadius: "var(--radius-sm)", color: "var(--red, #dc2626)", fontSize: 12 }}>
+                  {createBaseError}
                 </div>
               )}
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                 <button
-                  onClick={() => { setShowCreateTable(false); setCreateError(null); }}
-                  style={{
-                    padding: "8px 14px",
-                    background: "none",
-                    border: "1px solid var(--border)",
-                    borderRadius: "var(--radius-sm)",
-                    fontSize: 13,
-                    cursor: "pointer",
-                    color: "var(--text-secondary)",
-                  }}
+                  onClick={() => { setShowCreateBase(false); setCreateBaseError(null); }}
+                  style={{ padding: "8px 14px", background: "none", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", fontSize: 13, cursor: "pointer", color: "var(--text-secondary)" }}
                 >
                   Cancel
                 </button>
                 <button
-                  onClick={handleCreateTable}
-                  disabled={!newTableName.trim() || creating}
+                  onClick={handleCreateBase}
+                  disabled={!newBaseName.trim() || creatingBase}
                   style={{
                     padding: "8px 14px",
-                    background: newTableName.trim() && !creating ? "var(--text)" : "var(--bg-secondary)",
-                    color: newTableName.trim() && !creating ? "var(--bg)" : "var(--text-tertiary)",
-                    border: "none",
-                    borderRadius: "var(--radius-sm)",
-                    fontSize: 13,
-                    fontWeight: 500,
-                    cursor: newTableName.trim() && !creating ? "pointer" : "default",
-                    opacity: creating ? 0.7 : 1,
+                    background: newBaseName.trim() && !creatingBase ? "var(--text)" : "var(--bg-secondary)",
+                    color: newBaseName.trim() && !creatingBase ? "var(--bg)" : "var(--text-tertiary)",
+                    border: "none", borderRadius: "var(--radius-sm)", fontSize: 13, fontWeight: 500,
+                    cursor: newBaseName.trim() && !creatingBase ? "pointer" : "default",
+                    opacity: creatingBase ? 0.7 : 1,
                   }}
                 >
-                  {creating ? "Creating..." : "Create Table"}
+                  {creatingBase ? "Creating..." : "Create Base"}
                 </button>
               </div>
             </div>
@@ -792,170 +884,230 @@ export default function TablesPage() {
     );
   }
 
-  // ── Table detail view (spreadsheet) ───────────────
+  // ═══════════════════════════════════════════════════
+  // BASE DETAIL VIEW (table tabs + spreadsheet)
+  // ═══════════════════════════════════════════════════
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 48px)" }}>
-      {/* Header */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginBottom: 16,
-          flexShrink: 0,
-        }}
-      >
+      {/* Base header */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 0, flexShrink: 0, paddingBottom: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <button
             onClick={() => {
+              setSelectedBaseId(null);
               setSelectedTableId(null);
+              setTables([]);
               setColumns([]);
               setRows([]);
               setSearchQuery("");
-              loadTables();
+              loadBases();
             }}
             style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 4,
-              padding: "6px 10px",
-              background: "none",
-              border: "1px solid var(--border)",
-              borderRadius: "var(--radius-sm)",
-              fontSize: 12,
-              color: "var(--text-secondary)",
-              cursor: "pointer",
+              display: "flex", alignItems: "center", gap: 4, padding: "6px 10px", background: "none",
+              border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", fontSize: 12, color: "var(--text-secondary)", cursor: "pointer",
             }}
           >
             <ArrowLeft size={14} />
-            All Tables
+            All Bases
           </button>
 
-          {editingTableName ? (
+          <span style={{ fontSize: 20 }}>{selectedBase?.icon || "📊"}</span>
+
+          {editingBaseName ? (
             <input
               autoFocus
-              value={editTableNameVal}
-              onChange={(e) => setEditTableNameVal(e.target.value)}
-              onBlur={handleRenameTable}
+              value={editBaseNameVal}
+              onChange={(e) => setEditBaseNameVal(e.target.value)}
+              onBlur={handleRenameBase}
               onKeyDown={(e) => {
-                if (e.key === "Enter") handleRenameTable();
-                if (e.key === "Escape") setEditingTableName(false);
+                if (e.key === "Enter") handleRenameBase();
+                if (e.key === "Escape") setEditingBaseName(false);
               }}
               style={{
-                fontSize: 18,
-                fontWeight: 600,
-                border: "1px solid var(--blue)",
-                borderRadius: 4,
-                padding: "2px 8px",
-                outline: "none",
-                color: "var(--text)",
-                background: "var(--bg)",
+                fontSize: 18, fontWeight: 600, border: "1px solid var(--blue)", borderRadius: 4,
+                padding: "2px 8px", outline: "none", color: "var(--text)", background: "var(--bg)",
               }}
             />
           ) : (
             <h1
               onClick={() => {
-                setEditingTableName(true);
-                setEditTableNameVal(selectedTable?.name || "");
+                setEditingBaseName(true);
+                setEditBaseNameVal(selectedBase?.name || "");
               }}
-              style={{
-                fontSize: 18,
-                fontWeight: 600,
-                color: "var(--text)",
-                margin: 0,
-                cursor: "pointer",
-                padding: "2px 4px",
-                borderRadius: 4,
-              }}
+              style={{ fontSize: 18, fontWeight: 600, color: "var(--text)", margin: 0, cursor: "pointer", padding: "2px 4px", borderRadius: 4 }}
               title="Click to rename"
             >
-              {selectedTable?.name}
+              {selectedBase?.name}
             </h1>
           )}
-
-          <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
-            {rows.length} row{rows.length !== 1 ? "s" : ""}
-          </span>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {/* Search */}
-          <div style={{ position: "relative" }}>
-            <Search
-              size={14}
-              style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: "var(--text-tertiary)" }}
-            />
-            <input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search rows..."
-              style={{
-                padding: "6px 10px 6px 28px",
-                border: "1px solid var(--border)",
-                borderRadius: "var(--radius-sm)",
-                fontSize: 12,
-                outline: "none",
-                width: 180,
-                background: "var(--bg)",
-                color: "var(--text)",
-              }}
-            />
-          </div>
+          {selectedTableId && (
+            <div style={{ position: "relative" }}>
+              <Search
+                size={14}
+                style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: "var(--text-tertiary)" }}
+              />
+              <input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search rows..."
+                style={{
+                  padding: "6px 10px 6px 28px", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)",
+                  fontSize: 12, outline: "none", width: 180, background: "var(--bg)", color: "var(--text)",
+                }}
+              />
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Spreadsheet */}
-      {tableLoading ? (
+      {/* Table tabs bar */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 0,
+          borderBottom: "1px solid var(--border)",
+          marginBottom: 0,
+          flexShrink: 0,
+          overflow: "auto",
+        }}
+      >
+        {tables.map((t) => {
+          const isActive = selectedTableId === t.id;
+          return (
+            <div
+              key={t.id}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "8px 14px",
+                fontSize: 13,
+                fontWeight: isActive ? 500 : 400,
+                color: isActive ? "var(--text)" : "var(--text-secondary)",
+                background: isActive ? "var(--bg)" : "transparent",
+                borderBottom: isActive ? "2px solid var(--blue)" : "2px solid transparent",
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+                transition: "all 0.1s",
+              }}
+              onClick={() => {
+                setSelectedTableId(t.id);
+                setSearchQuery("");
+                setEditingTableName(false);
+              }}
+            >
+              <Table2 size={13} style={{ color: isActive ? "var(--blue)" : "var(--text-tertiary)" }} />
+              {editingTableName && isActive ? (
+                <input
+                  autoFocus
+                  value={editTableNameVal}
+                  onChange={(e) => setEditTableNameVal(e.target.value)}
+                  onBlur={handleRenameTable}
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleRenameTable();
+                    if (e.key === "Escape") setEditingTableName(false);
+                  }}
+                  style={{
+                    fontSize: 13, fontWeight: 500, border: "1px solid var(--blue)", borderRadius: 3,
+                    padding: "1px 6px", outline: "none", color: "var(--text)", background: "var(--bg)", width: 120,
+                  }}
+                />
+              ) : (
+                <span
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    setEditingTableName(true);
+                    setEditTableNameVal(t.name);
+                  }}
+                  title="Double-click to rename"
+                >
+                  {t.name}
+                </span>
+              )}
+              {isActive && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeleteTable(t.id);
+                  }}
+                  style={{ background: "none", border: "none", cursor: "pointer", padding: 2, color: "var(--text-tertiary)", display: "flex", alignItems: "center" }}
+                  title="Delete table"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+          );
+        })}
+
+        {/* Add table tab */}
+        <button
+          onClick={() => setShowCreateTable(true)}
+          style={{
+            display: "flex", alignItems: "center", gap: 4, padding: "8px 12px", background: "none", border: "none",
+            cursor: "pointer", fontSize: 12, color: "var(--text-tertiary)", whiteSpace: "nowrap",
+          }}
+          title="Add table"
+        >
+          <Plus size={14} />
+          Add Table
+        </button>
+      </div>
+
+      {/* Spreadsheet content area */}
+      {!selectedTableId ? (
+        /* No table selected — show prompt */
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", flex: 1, color: "var(--text-secondary)" }}>
+          <div style={{ textAlign: "center" }}>
+            <Table2 size={40} strokeWidth={1} style={{ marginBottom: 12, color: "var(--text-tertiary)" }} />
+            {tables.length === 0 ? (
+              <>
+                <p style={{ fontSize: 14, margin: "0 0 16px" }}>
+                  This base has no tables yet
+                </p>
+                <button
+                  onClick={() => setShowCreateTable(true)}
+                  style={{
+                    padding: "8px 16px", background: "var(--text)", color: "var(--bg)", border: "none",
+                    borderRadius: "var(--radius-md)", fontSize: 13, fontWeight: 500, cursor: "pointer",
+                  }}
+                >
+                  Create First Table
+                </button>
+              </>
+            ) : (
+              <p style={{ fontSize: 14, margin: 0 }}>Select a table above to view its data</p>
+            )}
+          </div>
+        </div>
+      ) : tableLoading ? (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", flex: 1 }}>
           <div
             style={{
-              width: 24,
-              height: 24,
-              border: "2px solid var(--border)",
-              borderTopColor: "var(--text)",
-              borderRadius: "50%",
-              animation: "spin 0.6s linear infinite",
+              width: 24, height: 24, border: "2px solid var(--border)", borderTopColor: "var(--text)",
+              borderRadius: "50%", animation: "spin 0.6s linear infinite",
             }}
           />
           <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
         </div>
       ) : (
-        <div
-          style={{
-            flex: 1,
-            overflow: "auto",
-            border: "1px solid var(--border)",
-            borderRadius: "var(--radius-md)",
-            background: "var(--bg)",
-          }}
-        >
+        <div style={{ flex: 1, overflow: "auto", border: "1px solid var(--border)", borderTop: "none", background: "var(--bg)" }}>
           <table
-            style={{
-              width: "100%",
-              borderCollapse: "collapse",
-              fontSize: 13,
-              minWidth: columns.length * 180 + 80,
-            }}
+            style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: columns.length * 180 + 80 }}
           >
-            {/* Column headers */}
             <thead>
               <tr style={{ position: "sticky", top: 0, zIndex: 10 }}>
-                {/* Row number column */}
                 <th
                   style={{
-                    width: 40,
-                    minWidth: 40,
-                    padding: "8px 4px",
-                    background: "var(--bg-secondary)",
-                    borderBottom: "1px solid var(--border)",
-                    borderRight: "1px solid var(--border)",
-                    fontSize: 11,
-                    fontWeight: 500,
-                    color: "var(--text-tertiary)",
-                    textAlign: "center",
-                    position: "sticky",
-                    left: 0,
-                    zIndex: 11,
+                    width: 40, minWidth: 40, padding: "8px 4px", background: "var(--bg-secondary)",
+                    borderBottom: "1px solid var(--border)", borderRight: "1px solid var(--border)",
+                    fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textAlign: "center",
+                    position: "sticky", left: 0, zIndex: 11,
                   }}
                 >
                   #
@@ -966,15 +1118,9 @@ export default function TablesPage() {
                     <th
                       key={col.id}
                       style={{
-                        padding: "0",
-                        background: "var(--bg-secondary)",
-                        borderBottom: "1px solid var(--border)",
-                        borderRight: "1px solid var(--border)",
-                        fontWeight: 500,
-                        color: "var(--text-secondary)",
-                        textAlign: "left",
-                        minWidth: 150,
-                        position: "relative",
+                        padding: "0", background: "var(--bg-secondary)",
+                        borderBottom: "1px solid var(--border)", borderRight: "1px solid var(--border)",
+                        fontWeight: 500, color: "var(--text-secondary)", textAlign: "left", minWidth: 150, position: "relative",
                       }}
                     >
                       {renamingCol === col.id ? (
@@ -988,27 +1134,12 @@ export default function TablesPage() {
                             if (e.key === "Escape") setRenamingCol(null);
                           }}
                           style={{
-                            width: "100%",
-                            padding: "8px 10px",
-                            border: "none",
-                            outline: "none",
-                            fontSize: 12,
-                            fontWeight: 500,
-                            background: "var(--bg)",
-                            color: "var(--text)",
-                            boxSizing: "border-box",
+                            width: "100%", padding: "8px 10px", border: "none", outline: "none",
+                            fontSize: 12, fontWeight: 500, background: "var(--bg)", color: "var(--text)", boxSizing: "border-box",
                           }}
                         />
                       ) : (
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                            padding: "8px 6px 8px 10px",
-                            cursor: "default",
-                          }}
-                        >
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 6px 8px 10px", cursor: "default" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 6, overflow: "hidden" }}>
                             <Icon size={13} style={{ color: "var(--text-tertiary)", flexShrink: 0 }} />
                             <span style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -1021,15 +1152,8 @@ export default function TablesPage() {
                               setColMenuOpen(colMenuOpen === col.id ? null : col.id);
                             }}
                             style={{
-                              background: "none",
-                              border: "none",
-                              cursor: "pointer",
-                              padding: 2,
-                              color: "var(--text-tertiary)",
-                              borderRadius: 3,
-                              display: "flex",
-                              alignItems: "center",
-                              flexShrink: 0,
+                              background: "none", border: "none", cursor: "pointer", padding: 2,
+                              color: "var(--text-tertiary)", borderRadius: 3, display: "flex", alignItems: "center", flexShrink: 0,
                             }}
                           >
                             <ChevronDown size={12} />
@@ -1037,20 +1161,12 @@ export default function TablesPage() {
                         </div>
                       )}
 
-                      {/* Column dropdown menu */}
                       {colMenuOpen === col.id && (
                         <div
                           style={{
-                            position: "absolute",
-                            top: "100%",
-                            right: 0,
-                            background: "var(--bg)",
-                            border: "1px solid var(--border)",
-                            borderRadius: "var(--radius-sm)",
-                            boxShadow: "var(--shadow-sm)",
-                            zIndex: 20,
-                            minWidth: 140,
-                            padding: 4,
+                            position: "absolute", top: "100%", right: 0, background: "var(--bg)",
+                            border: "1px solid var(--border)", borderRadius: "var(--radius-sm)",
+                            boxShadow: "var(--shadow-sm)", zIndex: 20, minWidth: 140, padding: 4,
                           }}
                         >
                           <button
@@ -1060,18 +1176,8 @@ export default function TablesPage() {
                               setColMenuOpen(null);
                             }}
                             style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 8,
-                              width: "100%",
-                              padding: "6px 8px",
-                              background: "none",
-                              border: "none",
-                              cursor: "pointer",
-                              fontSize: 12,
-                              color: "var(--text)",
-                              borderRadius: 3,
-                              textAlign: "left",
+                              display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "6px 8px",
+                              background: "none", border: "none", cursor: "pointer", fontSize: 12, color: "var(--text)", borderRadius: 3, textAlign: "left",
                             }}
                           >
                             <Pencil size={12} />
@@ -1083,18 +1189,8 @@ export default function TablesPage() {
                               setColMenuOpen(null);
                             }}
                             style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 8,
-                              width: "100%",
-                              padding: "6px 8px",
-                              background: "none",
-                              border: "none",
-                              cursor: "pointer",
-                              fontSize: 12,
-                              color: "var(--red)",
-                              borderRadius: 3,
-                              textAlign: "left",
+                              display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "6px 8px",
+                              background: "none", border: "none", cursor: "pointer", fontSize: 12, color: "var(--red)", borderRadius: 3, textAlign: "left",
                             }}
                           >
                             <Trash2 size={12} />
@@ -1105,33 +1201,19 @@ export default function TablesPage() {
                     </th>
                   );
                 })}
-
-                {/* Add column button */}
                 <th
                   ref={addColBtnRef}
                   style={{
-                    width: 40,
-                    minWidth: 40,
-                    padding: 0,
-                    background: "var(--bg-secondary)",
-                    borderBottom: "1px solid var(--border)",
-                    textAlign: "center",
-                    position: "relative",
+                    width: 40, minWidth: 40, padding: 0, background: "var(--bg-secondary)",
+                    borderBottom: "1px solid var(--border)", textAlign: "center", position: "relative",
                   }}
                 >
                   <button
                     onClick={() => setShowAddCol(true)}
                     title="Add column"
                     style={{
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      padding: "8px",
-                      color: "var(--text-tertiary)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      width: "100%",
+                      background: "none", border: "none", cursor: "pointer", padding: "8px",
+                      color: "var(--text-tertiary)", display: "flex", alignItems: "center", justifyContent: "center", width: "100%",
                     }}
                   >
                     <Plus size={14} />
@@ -1148,19 +1230,11 @@ export default function TablesPage() {
                   onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-secondary)")}
                   onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                 >
-                  {/* Row number */}
                   <td
                     style={{
-                      padding: "0 4px",
-                      borderBottom: "1px solid var(--border)",
-                      borderRight: "1px solid var(--border)",
-                      fontSize: 11,
-                      color: "var(--text-tertiary)",
-                      textAlign: "center",
-                      background: "var(--bg-secondary)",
-                      position: "sticky",
-                      left: 0,
-                      zIndex: 5,
+                      padding: "0 4px", borderBottom: "1px solid var(--border)", borderRight: "1px solid var(--border)",
+                      fontSize: 11, color: "var(--text-tertiary)", textAlign: "center", background: "var(--bg-secondary)",
+                      position: "sticky", left: 0, zIndex: 5,
                     }}
                   >
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 34 }}>
@@ -1169,26 +1243,16 @@ export default function TablesPage() {
                         className="row-del"
                         onClick={() => handleDeleteRow(row.id)}
                         title="Delete row"
-                        style={{
-                          display: "none",
-                          background: "none",
-                          border: "none",
-                          cursor: "pointer",
-                          color: "var(--red)",
-                          padding: 0,
-                          lineHeight: 1,
-                        }}
+                        style={{ display: "none", background: "none", border: "none", cursor: "pointer", color: "var(--red)", padding: 0, lineHeight: 1 }}
                       >
                         <Trash2 size={12} />
                       </button>
                     </div>
                   </td>
 
-                  {/* Cells */}
                   {columns.map((col) => {
                     const isEditing = editingCell?.rowId === row.id && editingCell?.colId === col.id;
                     const cellValue = row.cells[col.id];
-
                     return (
                       <td
                         key={col.id}
@@ -1200,11 +1264,8 @@ export default function TablesPage() {
                         }}
                         style={{
                           padding: isEditing ? "2px 4px" : "6px 10px",
-                          borderBottom: "1px solid var(--border)",
-                          borderRight: "1px solid var(--border)",
-                          cursor: isEditing ? "text" : "cell",
-                          minHeight: 34,
-                          verticalAlign: "middle",
+                          borderBottom: "1px solid var(--border)", borderRight: "1px solid var(--border)",
+                          cursor: isEditing ? "text" : "cell", minHeight: 34, verticalAlign: "middle",
                         }}
                       >
                         {isEditing ? (
@@ -1221,38 +1282,17 @@ export default function TablesPage() {
                     );
                   })}
 
-                  {/* Empty cell for the + column */}
-                  <td
-                    style={{
-                      borderBottom: "1px solid var(--border)",
-                      width: 40,
-                    }}
-                  />
+                  <td style={{ borderBottom: "1px solid var(--border)", width: 40 }} />
                 </tr>
               ))}
 
-              {/* Add row button */}
               <tr>
-                <td
-                  colSpan={columns.length + 2}
-                  style={{
-                    padding: 0,
-                  }}
-                >
+                <td colSpan={columns.length + 2} style={{ padding: 0 }}>
                   <button
                     onClick={handleAddRow}
                     style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      width: "100%",
-                      padding: "8px 12px",
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      fontSize: 12,
-                      color: "var(--text-tertiary)",
-                      textAlign: "left",
+                      display: "flex", alignItems: "center", gap: 6, width: "100%", padding: "8px 12px",
+                      background: "none", border: "none", cursor: "pointer", fontSize: 12, color: "var(--text-tertiary)", textAlign: "left",
                     }}
                     onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-secondary)")}
                     onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
@@ -1276,30 +1316,16 @@ export default function TablesPage() {
       {/* Add Column Popover */}
       {showAddCol && (
         <>
-          {/* Invisible backdrop to close on outside click */}
-          <div
-            style={{ position: "fixed", inset: 0, zIndex: 99 }}
-            onClick={() => setShowAddCol(false)}
-          />
+          <div style={{ position: "fixed", inset: 0, zIndex: 99 }} onClick={() => setShowAddCol(false)} />
           <div
             ref={addColPopoverRef}
             onClick={(e) => e.stopPropagation()}
             style={{
               position: "fixed",
-              top: (() => {
-                const rect = addColBtnRef.current?.getBoundingClientRect();
-                return rect ? rect.bottom + 4 : 0;
-              })(),
-              left: (() => {
-                const rect = addColBtnRef.current?.getBoundingClientRect();
-                return rect ? rect.right - 300 : 0;
-              })(),
-              width: 300,
-              background: "var(--bg)",
-              borderRadius: "var(--radius-lg)",
-              padding: 16,
-              boxShadow: "0 4px 24px rgba(0,0,0,0.16), 0 0 0 1px var(--border)",
-              zIndex: 100,
+              top: (() => { const rect = addColBtnRef.current?.getBoundingClientRect(); return rect ? rect.bottom + 4 : 0; })(),
+              left: (() => { const rect = addColBtnRef.current?.getBoundingClientRect(); return rect ? rect.right - 300 : 0; })(),
+              width: 300, background: "var(--bg)", borderRadius: "var(--radius-lg)", padding: 16,
+              boxShadow: "0 4px 24px rgba(0,0,0,0.16), 0 0 0 1px var(--border)", zIndex: 100,
             }}
           >
             <div style={{ marginBottom: 10 }}>
@@ -1310,15 +1336,8 @@ export default function TablesPage() {
                 onKeyDown={(e) => e.key === "Enter" && handleAddColumn()}
                 placeholder="Field name"
                 style={{
-                  width: "100%",
-                  padding: "7px 10px",
-                  border: "1px solid var(--border)",
-                  borderRadius: "var(--radius-sm)",
-                  fontSize: 13,
-                  outline: "none",
-                  background: "var(--bg)",
-                  color: "var(--text)",
-                  boxSizing: "border-box",
+                  width: "100%", padding: "7px 10px", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)",
+                  fontSize: 13, outline: "none", background: "var(--bg)", color: "var(--text)", boxSizing: "border-box",
                 }}
               />
             </div>
@@ -1335,19 +1354,10 @@ export default function TablesPage() {
                       key={ct.value}
                       onClick={() => setNewColType(ct.value)}
                       style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        padding: "6px 8px",
-                        border: "none",
+                        display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", border: "none",
                         background: selected ? "rgba(59,130,246,0.1)" : "transparent",
-                        color: selected ? "var(--blue)" : "var(--text)",
-                        borderRadius: "var(--radius-sm)",
-                        fontSize: 13,
-                        cursor: "pointer",
-                        fontWeight: selected ? 500 : 400,
-                        width: "100%",
-                        textAlign: "left",
+                        color: selected ? "var(--blue)" : "var(--text)", borderRadius: "var(--radius-sm)",
+                        fontSize: 13, cursor: "pointer", fontWeight: selected ? 500 : 400, width: "100%", textAlign: "left",
                       }}
                       onMouseEnter={(e) => { if (!selected) e.currentTarget.style.background = "var(--bg-secondary)"; }}
                       onMouseLeave={(e) => { if (!selected) e.currentTarget.style.background = "transparent"; }}
@@ -1370,15 +1380,8 @@ export default function TablesPage() {
                   onKeyDown={(e) => e.key === "Enter" && handleAddColumn()}
                   placeholder="e.g. Todo, In Progress, Done"
                   style={{
-                    width: "100%",
-                    padding: "7px 10px",
-                    border: "1px solid var(--border)",
-                    borderRadius: "var(--radius-sm)",
-                    fontSize: 13,
-                    outline: "none",
-                    background: "var(--bg)",
-                    color: "var(--text)",
-                    boxSizing: "border-box",
+                    width: "100%", padding: "7px 10px", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)",
+                    fontSize: 13, outline: "none", background: "var(--bg)", color: "var(--text)", boxSizing: "border-box",
                   }}
                 />
               </div>
@@ -1386,15 +1389,7 @@ export default function TablesPage() {
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
               <button
                 onClick={() => setShowAddCol(false)}
-                style={{
-                  padding: "6px 12px",
-                  background: "none",
-                  border: "1px solid var(--border)",
-                  borderRadius: "var(--radius-sm)",
-                  fontSize: 12,
-                  cursor: "pointer",
-                  color: "var(--text-secondary)",
-                }}
+                style={{ padding: "6px 12px", background: "none", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", fontSize: 12, cursor: "pointer", color: "var(--text-secondary)" }}
               >
                 Cancel
               </button>
@@ -1405,10 +1400,7 @@ export default function TablesPage() {
                   padding: "6px 12px",
                   background: newColName.trim() ? "var(--blue)" : "var(--bg-secondary)",
                   color: newColName.trim() ? "#fff" : "var(--text-tertiary)",
-                  border: "none",
-                  borderRadius: "var(--radius-sm)",
-                  fontSize: 12,
-                  fontWeight: 500,
+                  border: "none", borderRadius: "var(--radius-sm)", fontSize: 12, fontWeight: 500,
                   cursor: newColName.trim() ? "pointer" : "default",
                 }}
               >
@@ -1421,10 +1413,82 @@ export default function TablesPage() {
 
       {/* Click outside to close column menu */}
       {colMenuOpen && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 15 }} onClick={() => setColMenuOpen(null)} />
+      )}
+
+      {/* Create Table Modal */}
+      {showCreateTable && (
         <div
-          style={{ position: "fixed", inset: 0, zIndex: 15 }}
-          onClick={() => setColMenuOpen(null)}
-        />
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}
+          onClick={() => setShowCreateTable(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ background: "var(--bg)", borderRadius: "var(--radius-lg)", padding: 24, width: 400, boxShadow: "var(--shadow-lg, 0 10px 40px rgba(0,0,0,0.15))" }}
+          >
+            <h3 style={{ fontSize: 16, fontWeight: 600, margin: "0 0 16px", color: "var(--text)" }}>
+              New Table in {selectedBase?.name}
+            </h3>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>
+                Table Name
+              </label>
+              <input
+                autoFocus
+                value={newTableName}
+                onChange={(e) => setNewTableName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleCreateTable()}
+                placeholder="e.g. Leads, Inventory, Content Calendar..."
+                style={{
+                  width: "100%", padding: "8px 10px", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)",
+                  fontSize: 13, outline: "none", background: "var(--bg)", color: "var(--text)", boxSizing: "border-box",
+                }}
+              />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>
+                Description (optional)
+              </label>
+              <input
+                value={newTableDesc}
+                onChange={(e) => setNewTableDesc(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleCreateTable()}
+                placeholder="What is this table for?"
+                style={{
+                  width: "100%", padding: "8px 10px", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)",
+                  fontSize: 13, outline: "none", background: "var(--bg)", color: "var(--text)", boxSizing: "border-box",
+                }}
+              />
+            </div>
+            {createError && (
+              <div style={{ padding: "8px 12px", marginBottom: 12, background: "var(--red-bg, #fef2f2)", border: "1px solid var(--red-border, #fecaca)", borderRadius: "var(--radius-sm)", color: "var(--red, #dc2626)", fontSize: 12 }}>
+                {createError}
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button
+                onClick={() => { setShowCreateTable(false); setCreateError(null); }}
+                style={{ padding: "8px 14px", background: "none", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", fontSize: 13, cursor: "pointer", color: "var(--text-secondary)" }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateTable}
+                disabled={!newTableName.trim() || creating}
+                style={{
+                  padding: "8px 14px",
+                  background: newTableName.trim() && !creating ? "var(--text)" : "var(--bg-secondary)",
+                  color: newTableName.trim() && !creating ? "var(--bg)" : "var(--text-tertiary)",
+                  border: "none", borderRadius: "var(--radius-sm)", fontSize: 13, fontWeight: 500,
+                  cursor: newTableName.trim() && !creating ? "pointer" : "default",
+                  opacity: creating ? 0.7 : 1,
+                }}
+              >
+                {creating ? "Creating..." : "Create Table"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

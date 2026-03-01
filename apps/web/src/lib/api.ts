@@ -658,18 +658,71 @@ class ApiClient {
     }>("/api/billing/overview");
   }
 
-  // Tables (Airtable-style DB)
-  async listTables() {
+  // Bases (project containers for tables)
+  async listBases() {
     return this.request<{
+      bases: Array<{
+        id: string;
+        companyId: string;
+        name: string;
+        description: string | null;
+        color: string;
+        icon: string;
+        createdAt: string;
+        updatedAt: string;
+      }>;
+    }>("/api/tables/bases");
+  }
+
+  async getBase(baseId: string) {
+    return this.request<{
+      base: any;
       tables: Array<{
         id: string;
         companyId: string;
+        baseId: string;
         name: string;
         description: string | null;
         createdAt: string;
         updatedAt: string;
       }>;
-    }>("/api/tables");
+    }>(`/api/tables/bases?baseId=${baseId}`);
+  }
+
+  async createBase(data: { name: string; description?: string; color?: string; icon?: string }) {
+    return this.request<{ base: any }>("/api/tables/bases", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateBase(baseId: string, data: { name?: string; description?: string; color?: string; icon?: string }) {
+    return this.request<{ base: any }>(`/api/tables/bases?baseId=${baseId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteBase(baseId: string) {
+    return this.request<{ message: string }>(`/api/tables/bases?baseId=${baseId}`, {
+      method: "DELETE",
+    });
+  }
+
+  // Tables (Airtable-style DB)
+  async listTables(baseId?: string) {
+    const params = baseId ? `?baseId=${baseId}` : "";
+    return this.request<{
+      tables: Array<{
+        id: string;
+        companyId: string;
+        baseId: string | null;
+        name: string;
+        description: string | null;
+        createdAt: string;
+        updatedAt: string;
+      }>;
+    }>(`/api/tables${params}`);
   }
 
   async getTable(tableId: string) {
@@ -695,7 +748,7 @@ class ApiClient {
     }>(`/api/tables?tableId=${tableId}`);
   }
 
-  async createTable(data: { name: string; description?: string }) {
+  async createTable(data: { name: string; description?: string; baseId?: string }) {
     return this.request<{ table: any; columns: any[] }>("/api/tables", {
       method: "POST",
       body: JSON.stringify(data),
