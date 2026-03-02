@@ -34,7 +34,10 @@ function getLocalIps(): string[] {
 /** Track last nudge time per employee to avoid spamming. Resets on worker restart. */
 const lastNudge = new Map<string, number>();
 
-const NUDGE_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes — doubled to avoid overlapping with 15-min heartbeat
+// Only nudge if the employee hasn't been prompted by ANY source in this window.
+// Heartbeat fires every 15 min, so 20 min means the task-check only fires as a
+// backup when heartbeat missed or the employee had no other interaction.
+const RECENTLY_PROMPTED_MS = 20 * 60 * 1000; // 20 minutes
 const STALE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes — tasks not updated in this long are stale
 
 export async function checkPendingTasks(): Promise<void> {
@@ -87,17 +90,19 @@ async function checkEmployeeTasks(employee: {
     return; // No container to talk to
   }
 
-  // Check cooldown — don't nudge more than once per 30 minutes
+  // Skip if this worker already nudged recently
   const lastTime = lastNudge.get(employee.id) || 0;
-  if (Date.now() - lastTime < NUDGE_COOLDOWN_MS) {
+  if (Date.now() - lastTime < RECENTLY_PROMPTED_MS) {
     return;
   }
 
-  // Skip if the employee was recently prompted by ANY source (heartbeat, chat, trigger)
-  // to avoid overlapping with the 15-min heartbeat and causing duplicate work
+  // Skip if the employee was recently prompted by ANY source (heartbeat, chat, trigger).
+  // This is the key guard against overlap: the heartbeat fires every 15 min and updates
+  // lastRequestSentAt. With a 20-min window, the task-check only fires as a safety net
+  // when the heartbeat missed or the employee had no interaction at all.
   if (employee.lastRequestSentAt) {
     const sinceLastRequest = Date.now() - new Date(employee.lastRequestSentAt).getTime();
-    if (sinceLastRequest < NUDGE_COOLDOWN_MS) {
+    if (sinceLastRequest < RECENTLY_PROMPTED_MS) {
       return;
     }
   }
