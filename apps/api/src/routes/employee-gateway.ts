@@ -853,6 +853,25 @@ export async function employeeGatewayRoutes(fastify: FastifyInstance) {
       where: eq(users.companyId, employee.companyId),
     });
 
+    // Dedup: skip if the exact same message was sent in the last 60 seconds
+    const recentDuplicate = await db.query.chatMessages.findFirst({
+      where: and(
+        eq(chatMessages.employeeId, employee.id),
+        eq(chatMessages.role, "assistant"),
+        eq(chatMessages.content, fullMessage),
+        sql`${chatMessages.createdAt} > now() - interval '60 seconds'`,
+      ),
+    });
+    if (recentDuplicate) {
+      fastify.log.info(`[notify-manager] Dedup: skipped duplicate from ${employee.name}`);
+      return {
+        success: true,
+        delivered: { dashboard: true, slack: false },
+        message: "Manager has been notified.",
+        deduplicated: true,
+      };
+    }
+
     // 1. Save as a chat message in the dashboard (visible when manager opens employee chat)
     await db.insert(chatMessages).values({
       employeeId: employee.id,

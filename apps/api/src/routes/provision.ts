@@ -7,7 +7,7 @@ import crypto from "node:crypto";
 import path from "node:path";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, symlinkSync } from "node:fs";
 import { execSync } from "node:child_process";
-import { eq, and, or, inArray } from "drizzle-orm";
+import { eq, and, or, inArray, sql } from "drizzle-orm";
 import { db, employees, companies, users, chatMessages } from "@ai-employees/db";
 import { getJobTemplate, PLAN_LIMITS, type PlanTier, getModelForTier, type EmployeeTier } from "@ai-employees/shared";
 import { regenerateChannelConfig, type ChannelInput } from "@ai-employees/openclaw-config";
@@ -926,9 +926,23 @@ export async function provisionRoutes(fastify: FastifyInstance) {
 
     // Helper: persist a reply to chat_messages so it survives even if
     // the dashboard's HTTP request has already timed out.
+    // Dedup: the Vercel chat route also saves the reply, so check for a
+    // recent identical message before inserting to avoid duplicates.
     const saveReply = async (content: string, mode: string) => {
       if (!body.userId) return;
       try {
+        const existing = await db.query.chatMessages.findFirst({
+          where: and(
+            eq(chatMessages.employeeId, id),
+            eq(chatMessages.role, "assistant"),
+            eq(chatMessages.content, content),
+            sql`${chatMessages.createdAt} > now() - interval '30 seconds'`,
+          ),
+        });
+        if (existing) {
+          console.log(`[chat-proxy] Skipping duplicate save for employee ${id}`);
+          return;
+        }
         await db.insert(chatMessages).values({
           employeeId: id,
           userId: body.userId,
