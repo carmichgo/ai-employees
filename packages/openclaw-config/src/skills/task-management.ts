@@ -306,6 +306,59 @@ At any given moment, your task board should show:
 
 **Always keep moving forward.** If you finish a task and have pending tasks queued, pick up the next one immediately — don't wait for the next heartbeat. If no pending tasks remain, follow the "When Your Task Board Is Empty" steps above. Your manager should see a productive, organized board — not an empty one with no plan and not an overflowing one full of duplicate or vague self-created tasks.
 
+## Large / Multi-Step Tasks (Video Production, Pipelines, etc.)
+
+Some tasks are too large to complete in a single heartbeat cycle. For any task that involves many sequential steps, API calls, or file generation — you MUST use the checkpoint pattern to avoid restarting from scratch:
+
+### 1. Break it into sub-tasks
+Instead of one monolithic task, create separate tasks for each phase:
+\`\`\`bash
+# DON'T: One mega-task "Produce 8-minute video"
+# DO: Break into phases
+curl -s -X POST "$BLITZ_API_URL/employee/tasks" -H "$AUTH" -H "$CT" \\
+  -d '{"title": "Video #1 — Generate static frames (batch 1/3)", "priority": "high", "category": "content", "status": "in_progress"}'
+curl -s -X POST "$BLITZ_API_URL/employee/tasks" -H "$AUTH" -H "$CT" \\
+  -d '{"title": "Video #1 — Generate video clips via Veo 3", "priority": "high", "category": "content", "status": "pending"}'
+curl -s -X POST "$BLITZ_API_URL/employee/tasks" -H "$AUTH" -H "$CT" \\
+  -d '{"title": "Video #1 — Generate voiceover audio", "priority": "high", "category": "content", "status": "pending"}'
+curl -s -X POST "$BLITZ_API_URL/employee/tasks" -H "$AUTH" -H "$CT" \\
+  -d '{"title": "Video #1 — Stitch final video", "priority": "high", "category": "content", "status": "pending"}'
+\`\`\`
+
+Each sub-task is small enough to complete within one heartbeat cycle.
+
+### 2. Save checkpoint files
+After each meaningful step, write progress to a checkpoint file so you can resume:
+\`\`\`bash
+mkdir -p /home/node/.openclaw/workspace/checkpoints
+cat > /home/node/.openclaw/workspace/checkpoints/<task-id>.json << 'EOF'
+{
+  "taskId": "...",
+  "phase": "frame-generation",
+  "completedSteps": ["frame-1", "frame-2", "frame-3"],
+  "nextStep": "frame-4",
+  "outputPaths": ["/path/to/frame1.png", "/path/to/frame2.png"],
+  "lastUpdated": "2025-03-15T10:00:00Z"
+}
+EOF
+\`\`\`
+
+### 3. ALWAYS check before regenerating
+Before generating ANY artifact (frame, clip, audio, file), check if it already exists:
+\`\`\`bash
+# Check for existing outputs from a previous attempt
+ls /path/to/output/directory/
+# Check for checkpoint file
+cat /home/node/.openclaw/workspace/checkpoints/<task-id>.json 2>/dev/null
+\`\`\`
+
+If outputs exist, skip regeneration and move to the next step. Never re-generate files that are already on disk.
+
+### 4. Mark sub-tasks complete as you go
+Complete each sub-task as you finish it. This gives your manager real-time visibility and prevents you from redoing completed phases.
+
+**The cardinal rule: NEVER restart a pipeline from zero.** Always check what exists, resume from there.
+
 ## Recurring Tasks
 
 For work that repeats on a schedule (daily email checks, weekly reports, regular monitoring, etc.):

@@ -151,23 +151,6 @@ async function checkEmployeeTasks(employee: {
       ),
     );
 
-  // Find active in_progress tasks that are NOT stale (recently updated)
-  const activeTasks = await db
-    .select({
-      id: tasks.id,
-      title: tasks.title,
-      priority: tasks.priority,
-      updatedAt: tasks.updatedAt,
-    })
-    .from(tasks)
-    .where(
-      and(
-        eq(tasks.employeeId, employee.id),
-        eq(tasks.status, "in_progress"),
-        sql`${tasks.updatedAt} >= ${staleThresholdIso}::timestamptz`,
-      ),
-    );
-
   // Find blocked tasks
   const blockedTasks = await db
     .select({
@@ -183,8 +166,13 @@ async function checkEmployeeTasks(employee: {
       ),
     );
 
-  if (pendingTasks.length === 0 && staleTasks.length === 0 && blockedTasks.length === 0 && activeTasks.length === 0) {
-    return; // Nothing to nudge about
+  // Only nudge if there are actionable items: pending, stale, or blocked tasks.
+  // Active (non-stale) in_progress tasks should NOT trigger a nudge — the agent is
+  // already working on them, and nudging causes it to restart long-running work
+  // from scratch (since context is lost between messages). The heartbeat handles
+  // active task continuation; task-check is for catching things that fell through.
+  if (pendingTasks.length === 0 && staleTasks.length === 0 && blockedTasks.length === 0) {
+    return; // Only active in_progress tasks (or nothing) — don't interrupt
   }
 
   // Fetch recent comments for all active tasks so the employee has full context.
@@ -194,7 +182,6 @@ async function checkEmployeeTasks(employee: {
     ...pendingTasks.map((t) => t.id),
     ...staleTasks.map((t) => t.id),
     ...blockedTasks.map((t) => t.id),
-    ...activeTasks.map((t) => t.id),
   ];
   const commentsByTask: Record<string, Array<{ authorType: string; authorName: string; content: string; createdAt: Date | null }>> = {};
   if (allTaskIds.length > 0) {
@@ -283,18 +270,9 @@ async function checkEmployeeTasks(employee: {
     parts.push("");
   }
 
-  if (activeTasks.length > 0) {
-    parts.push(`### ${activeTasks.length} active task${activeTasks.length > 1 ? "s" : ""} in progress:`);
-    parts.push("");
-    for (const t of activeTasks) {
-      parts.push(`- **${t.title}** (ID: \`${t.id}\`)`);
-      const comments = formatTaskComments(t.id);
-      if (comments) parts.push(comments);
-    }
-    parts.push("");
-    parts.push(`Make sure these still reflect what you're working on. Add a progress comment if you haven't recently, or mark \`completed\` if done.`);
-    parts.push("");
-  }
+  // NOTE: Active (non-stale) in_progress tasks are intentionally NOT mentioned here.
+  // Nudging about them causes the agent to "pick up" the task again and restart
+  // long-running work from scratch. The heartbeat handles active task continuation.
 
   parts.push("---");
   parts.push("Do NOT create new tasks for this notification. **Review and update your existing tasks:**");
@@ -346,8 +324,8 @@ async function checkEmployeeTasks(employee: {
 
     if (res.ok) {
       lastNudge.set(employee.id, Date.now());
-      const total = pendingTasks.length + staleTasks.length + blockedTasks.length + activeTasks.length;
-      console.log(`[task-check] Nudged ${employee.name} about ${total} task(s) (${pendingTasks.length} pending, ${staleTasks.length} stale, ${blockedTasks.length} blocked, ${activeTasks.length} active)`);
+      const total = pendingTasks.length + staleTasks.length + blockedTasks.length;
+      console.log(`[task-check] Nudged ${employee.name} about ${total} task(s) (${pendingTasks.length} pending, ${staleTasks.length} stale, ${blockedTasks.length} blocked)`);
     } else {
       console.log(`[task-check] Failed to nudge ${employee.name}: HTTP ${res.status}`);
     }
