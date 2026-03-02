@@ -327,41 +327,44 @@ curl -s -X POST "$BLITZ_API_URL/employee/tasks" -H "$AUTH" -H "$CT" \\
 
 Each sub-task is small enough to complete within one heartbeat cycle.
 
-### 2. Save progress to checkpoint.md
-After each meaningful step, update \`/home/node/.openclaw/workspace/checkpoint.md\` so you can resume if interrupted. This is a single file that tracks ALL active pipelines — one section per task:
+### 2. Save per-task checkpoint files
+After each meaningful step, write progress to a checkpoint file so you can resume. One JSON file per task — isolated, machine-readable, no risk of one task clobbering another:
 
-\`\`\`markdown
-# Active Checkpoints
+\`\`\`bash
+mkdir -p /home/node/.openclaw/workspace/checkpoints
 
-## Video #1 — Frame Generation
-- **Task ID:** abc-123
-- **Status:** In progress — 8/24 frames generated
-- **Completed:**
-  - frame-01.png → /home/node/video1/frames/frame-01.png
-  - frame-02.png → /home/node/video1/frames/frame-02.png
-  - ...
-  - frame-08.png → /home/node/video1/frames/frame-08.png
-- **Next step:** Generate frame-09 (scene: product demo, prompt: "...")
-- **Output directory:** /home/node/video1/frames/
-- **Last updated:** 2025-03-15 10:00 UTC
-
-## Video #1 — Voiceover
-- **Task ID:** def-456
-- **Status:** Not started (waiting on frame generation)
-- **Script:** /home/node/video1/script.txt
+# Write/update checkpoint after each step
+cat > /home/node/.openclaw/workspace/checkpoints/TASK_ID.json << 'CHECKPOINT'
+{
+  "taskId": "abc-123",
+  "title": "Video #1 — Generate static frames",
+  "phase": "frame-generation",
+  "totalSteps": 24,
+  "completedSteps": ["frame-01", "frame-02", "frame-03", "frame-08"],
+  "nextStep": "frame-09",
+  "nextStepDetails": "Scene: product demo, prompt: wide shot of dashboard",
+  "outputDir": "/home/node/video1/frames/",
+  "outputFiles": [
+    "/home/node/video1/frames/frame-01.png",
+    "/home/node/video1/frames/frame-02.png",
+    "/home/node/video1/frames/frame-08.png"
+  ],
+  "lastUpdated": "2025-03-15T10:00:00Z"
+}
+CHECKPOINT
 \`\`\`
 
-**Update this file after EVERY meaningful step** — generating a frame, completing an API call, finishing a batch. Think of it as your resume point.
+**Update the checkpoint after EVERY meaningful step** — generating a frame, completing an API call, finishing a batch. Delete the checkpoint file when the task is completed.
 
 ### 3. ALWAYS check before regenerating
 Before generating ANY artifact (frame, clip, audio, file):
-1. **Read checkpoint.md** — see what's already been completed
+1. **Read the checkpoint** — \`cat /home/node/.openclaw/workspace/checkpoints/TASK_ID.json 2>/dev/null\`
 2. **Check the output directory** — \`ls /path/to/output/\` to verify files exist on disk
 3. **Skip anything that's already done** — move to the next uncompleted step
 
 \`\`\`bash
-# Read your checkpoint to see where you left off
-cat /home/node/.openclaw/workspace/checkpoint.md
+# Check for checkpoint — tells you exactly where you left off
+cat /home/node/.openclaw/workspace/checkpoints/TASK_ID.json 2>/dev/null | jq .
 # Verify files exist on disk
 ls /home/node/video1/frames/
 \`\`\`
