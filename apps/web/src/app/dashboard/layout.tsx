@@ -295,12 +295,13 @@ export default function DashboardLayout({
           minHeight: "100vh",
           position: "relative",
           zIndex: 1,
+          overflow: "hidden",
         }}
       >
         <div
           style={
             isFullWidth
-              ? { padding: "24px 32px", height: "100vh" }
+              ? { padding: "24px 32px", height: "100vh", overflow: "hidden" }
               : { maxWidth: 1100, margin: "0 auto", padding: "24px 32px" }
           }
         >
