@@ -1144,13 +1144,20 @@ export default function TablesPage() {
       ) : (
         <div style={{ flex: 1, overflow: "auto", border: "1px solid var(--border)", borderTop: "none", background: "var(--bg)", minWidth: 0, minHeight: 0 }}>
           <table
-            style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: columns.length * 180 + 80 }}
+            style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, tableLayout: "fixed" }}
           >
+            <colgroup>
+              <col style={{ width: 40 }} />
+              {columns.map((col) => (
+                <col key={col.id} />
+              ))}
+              <col style={{ width: 40 }} />
+            </colgroup>
             <thead>
               <tr style={{ position: "sticky", top: 0, zIndex: 10 }}>
                 <th
                   style={{
-                    width: 40, minWidth: 40, padding: "8px 4px", background: "var(--bg-secondary)",
+                    padding: "8px 4px", background: "var(--bg-secondary)",
                     borderBottom: "1px solid var(--border)", borderRight: "1px solid var(--border)",
                     fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textAlign: "center",
                     position: "sticky", left: 0, zIndex: 11,
@@ -1166,7 +1173,8 @@ export default function TablesPage() {
                       style={{
                         padding: "0", background: "var(--bg-secondary)",
                         borderBottom: "1px solid var(--border)", borderRight: "1px solid var(--border)",
-                        fontWeight: 500, color: "var(--text-secondary)", textAlign: "left", minWidth: 150, position: "relative",
+                        fontWeight: 500, color: "var(--text-secondary)", textAlign: "left", position: "relative",
+                        overflow: "hidden",
                       }}
                     >
                       {renamingCol === col.id ? (
@@ -1250,7 +1258,7 @@ export default function TablesPage() {
                 <th
                   ref={addColBtnRef}
                   style={{
-                    width: 40, minWidth: 40, padding: 0, background: "var(--bg-secondary)",
+                    padding: 0, background: "var(--bg-secondary)",
                     borderBottom: "1px solid var(--border)", textAlign: "center", position: "relative",
                   }}
                 >
@@ -1312,6 +1320,7 @@ export default function TablesPage() {
                           padding: isEditing ? "2px 4px" : "6px 10px",
                           borderBottom: "1px solid var(--border)", borderRight: "1px solid var(--border)",
                           cursor: isEditing ? "text" : "cell", minHeight: 34, verticalAlign: "middle",
+                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                         }}
                       >
                         {isEditing ? (
@@ -1328,7 +1337,7 @@ export default function TablesPage() {
                     );
                   })}
 
-                  <td style={{ borderBottom: "1px solid var(--border)", width: 40 }} />
+                  <td style={{ borderBottom: "1px solid var(--border)" }} />
                 </tr>
               ))}
 
