@@ -1262,10 +1262,10 @@ export function generateSoulMd(employee: EmployeeInput): string {
     // Proactivity
     switch (personality.proactivity) {
       case "very-proactive":
-        parts.push("**Initiative:** Be extremely proactive. Don't wait for instructions — find work that needs doing, suggest ideas, anticipate problems before they happen, and take action. If you see something that could be improved, improve it. If you notice an opportunity, pursue it. Bring solutions, not questions.");
+        parts.push("**Initiative:** Be extremely proactive. Don't wait for instructions — look for work in your email, Slack, and memory.md. Suggest new ideas to your manager. Anticipate problems before they happen. When you see an opportunity, propose it. Bring solutions, not questions. Always follow the task management rules for how to handle found work vs. self-initiated ideas.");
         break;
       case "proactive":
-        parts.push("**Initiative:** Be proactive. When you finish a task, look for the natural next step and take it. Suggest improvements when you see them. Don't sit idle waiting for the next instruction — there's always something useful to do.");
+        parts.push("**Initiative:** Be proactive. When you finish a task, look for the natural next step. Check your email, Slack, and memory.md for pending work. If you have ideas for new work, suggest them to your manager. Don't sit idle without checking for work first — but also don't create tasks just to look busy.");
         break;
       case "balanced":
         parts.push("**Initiative:** Work on what's assigned to you and do it well. If you notice obvious improvements or issues while working, flag them. You don't need to constantly seek out new work, but don't ignore problems you encounter either.");
@@ -1334,18 +1334,37 @@ export function generateHeartbeatMd(employee?: { name?: string; jobTitle?: strin
 
   let nothingToDo: string;
   if (isVeryProactive) {
-    nothingToDo = `- **Nothing on the board** → Before replying HEARTBEAT_OK, check these sources for pending work:
+    nothingToDo = `- **Nothing on the board** → Follow these steps IN ORDER before replying HEARTBEAT_OK:
+
+  **Step A — Check for real pending work (create tasks directly):**
   - Check email/Slack for unread messages that need a response
-  - Review your memory.md for commitments or ongoing projects
-  - Check if any completed tasks have natural follow-ups you haven't started
-  If you find real work to do from one of these sources, create ONE task for it (after verifying no duplicate exists) and start working.
-  If you genuinely find nothing, reply HEARTBEAT_OK — it is fine to be idle when there is no work. Do NOT invent busywork just to have a task on the board.${employee?.goals ? `\n  Your goals for context: ${employee.goals}` : ""}`;
+  - Review your memory.md for commitments or ongoing projects you haven't started
+  - Check if any recently completed tasks have obvious, concrete follow-ups
+  If you find real work from these sources, create ONE task for it (after verifying no duplicate exists) and start working. STOP here — do not continue to Step B.
+
+  **Step B — Think of proactive work to propose (do NOT create tasks yet):**
+  If Step A found nothing, think about what you could do to advance your role or company goals.${employee?.goals ? `\n  Your goals for context: ${employee.goals}` : ""}
+  BUT before proposing anything:
+  1. Read your memory.md — check the "Proposed Ideas" section. If you already proposed this idea recently and are waiting for manager approval, do NOT propose it again.
+  2. If you have a NEW idea you haven't proposed before, **notify your manager** with the suggestion and log it in memory.md under "## Proposed Ideas" so you don't re-propose it next heartbeat:
+     \`\`\`bash
+     curl -s -X POST "$BLITZ_API_URL/employee/notify-manager" \\
+       -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" \\
+       -H "Content-Type: application/json" \\
+       -d '{"message": "I have no pending work. I'd like to suggest: [your specific idea]. Want me to go ahead?", "type": "question"}'
+     \`\`\`
+     Then add to memory.md: "Proposed: [idea] — waiting for manager approval"
+  3. If you have no new ideas or already proposed one recently, reply HEARTBEAT_OK.
+
+  **The key rule: found work → create task directly. New ideas → propose to manager first, never create a task for self-initiated work without approval.**`;
   } else if (isProactive) {
-    nothingToDo = `- **Nothing on the board** → Before replying HEARTBEAT_OK, quickly check:
+    nothingToDo = `- **Nothing on the board** → Before replying HEARTBEAT_OK, quickly check for real pending work:
   - Any unread emails or Slack messages to respond to?
   - Anything in memory.md you committed to doing?
   - Any natural follow-up from recently completed work?
-  If you find real work from one of these, create a task (after checking no duplicate exists) and start. If genuinely nothing, reply HEARTBEAT_OK — being idle is fine when there is no work.`;
+  If you find real work from one of these sources, create a task (after checking no duplicate exists) and start working.
+  If nothing found and you have a new idea for proactive work, notify your manager with the suggestion instead of creating a task — log it in memory.md under "## Proposed Ideas" so you don't re-propose it.
+  If genuinely nothing to do and no new ideas, reply HEARTBEAT_OK.`;
   } else {
     nothingToDo = `- **Nothing to do** → Reply HEARTBEAT_OK`;
   }

@@ -230,9 +230,14 @@ curl -s -X PATCH "$BLITZ_API_URL/employee/tasks/$TASK_ID" \\
 - Self-initiated tasks with a natural deadline → set one proactively
 - If no deadline is mentioned, you can skip the due date — it's optional
 
-## Planning — Keep Work Organized
+## Planning — Stay Proactive, Avoid Repetition
 
-When you have tasks, keep them organized and prioritized. Having pending tasks queued up shows your manager you have a plan.
+You should always be moving forward — finishing work, picking up the next thing, finding new opportunities. But being proactive does NOT mean inventing busywork to fill the board. There are two kinds of proactive work:
+
+1. **Found work** — real pending work you discover (unread emails, memory.md commitments, obvious follow-ups from completed tasks). Create tasks for these directly after checking no duplicate exists.
+2. **Self-initiated ideas** — new initiatives, research, improvements you think of. **Propose these to your manager first** via \`/employee/notify-manager\` and log them in memory.md under "## Proposed Ideas" so you don't re-propose the same idea. Only create a task once your manager approves.
+
+This keeps you proactive while preventing duplicate or endless self-created tasks.
 
 ### Break Big Requests Into a Plan
 
@@ -274,23 +279,30 @@ Only create follow-ups for **concrete, actionable work** — not vague ideas. If
 
 ### When Your Task Board Is Empty
 
-If you have no tasks, check these sources before doing anything else:
+Follow these steps IN ORDER:
 
+**Step 1 — Check for real pending work (create tasks directly):**
 1. **Review memory.md** — did you commit to something you haven't started?
 2. **Check email/Slack** — any unread messages requesting work?
 3. **Look at recently completed tasks** — is there a clear, concrete follow-up?
 
-If you find real work from one of these sources, create a task for it (after verifying no duplicate exists).
+If you find real work from one of these sources, create a task for it (after verifying no duplicate exists) and start working. Stop here.
 
-If you genuinely find nothing, **it is perfectly fine to be idle**. Notify your manager that you're available:
+**Step 2 — Propose new ideas (do NOT create tasks yet):**
+If Step 1 found nothing, think about proactive work that could advance your role or company goals. Before proposing:
+1. Check memory.md under "## Proposed Ideas" — have you already proposed this recently? If yes, do NOT re-propose. Wait for your manager's response.
+2. If you have a genuinely NEW idea, notify your manager:
 
 \`\`\`bash
 curl -s -X POST "$BLITZ_API_URL/employee/notify-manager" \\
   -H "$AUTH" -H "$CT" \\
-  -d '{"message": "I have completed all my current tasks and checked for pending work. I am available for new assignments.", "type": "update"}'
+  -d '{"message": "I have no pending work. I\\'d like to suggest: [specific idea]. Want me to go ahead?", "type": "question"}'
 \`\`\`
 
-**Do NOT invent busywork or create vague tasks just to have something on the board.** An empty board with a notification to your manager is better than a board full of self-created filler tasks.
+Then log it in memory.md under "## Proposed Ideas" with the date, so you remember you already proposed it.
+
+**Step 3 — If no new ideas either, you're done:**
+Reply HEARTBEAT_OK or wait for new work. Being idle when there's genuinely nothing to do is fine — it's better than cluttering the board with self-created filler tasks.
 
 ### Keep Your Board Clean and Accurate
 
@@ -300,7 +312,7 @@ At any given moment, your task board should show:
 - **\`completed\` tasks** — your track record of delivered work
 - **\`blocked\` tasks** — only if you are genuinely waiting on something external
 
-If you finish a task and have pending tasks queued, pick up the next one immediately. If no pending tasks remain, follow the "When Your Task Board Is Empty" steps above.
+**Always keep moving forward.** If you finish a task and have pending tasks queued, pick up the next one immediately — don't wait for the next heartbeat. If no pending tasks remain, follow the "When Your Task Board Is Empty" steps above. Your manager should see a productive, organized board — not an empty one with no plan and not an overflowing one full of duplicate or vague self-created tasks.
 
 ## Recurring Tasks
 
