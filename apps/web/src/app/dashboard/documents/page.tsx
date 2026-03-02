@@ -22,6 +22,7 @@ import {
   Trash2,
   CheckSquare,
   Square,
+  Upload,
 } from "lucide-react";
 
 type WorkspaceFile = {
@@ -442,6 +443,9 @@ function DocumentsPage() {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [batchDeleting, setBatchDeleting] = useState(false);
+  const [uploading, setUploading] = useState<string | null>(null); // folder path or "__global"
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadTargetFolder = useRef<string | null>(null);
 
   // Clear selection when switching employees
   useEffect(() => {
@@ -514,6 +518,32 @@ function DocumentsPage() {
     setSelected(new Set(failed));
     setBatchDeleting(false);
     if (failed.length > 0) alert(`Failed to delete ${failed.length} file(s).`);
+  };
+
+  const triggerUpload = (folder: string | null) => {
+    uploadTargetFolder.current = folder;
+    fileInputRef.current?.click();
+  };
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedId) return;
+    // Reset input so the same file can be re-selected
+    e.target.value = "";
+
+    const folder = uploadTargetFolder.current;
+    const uploadKey = folder || "__global";
+    setUploading(uploadKey);
+    try {
+      await api.uploadFile(selectedId, file, folder || "workspace/uploads");
+      // Refresh file list
+      const res = await api.listDocuments(selectedId);
+      setFiles(res.files || []);
+    } catch {
+      alert("Failed to upload file");
+    } finally {
+      setUploading(null);
+    }
   };
 
   // Load employees
@@ -702,6 +732,14 @@ function DocumentsPage() {
             </div>
           ) : (
             <>
+              {/* Hidden file input for uploads */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                style={{ display: "none" }}
+                onChange={handleUpload}
+              />
+
               {/* Header */}
               <div
                 style={{
@@ -736,6 +774,21 @@ function DocumentsPage() {
                     </div>
                   </div>
                 </div>
+                <button
+                  onClick={() => triggerUpload(null)}
+                  disabled={uploading === "__global"}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 6, padding: "7px 14px",
+                    background: "var(--text)", color: "var(--bg)", border: "none",
+                    borderRadius: "var(--radius-sm)", fontSize: 13, fontWeight: 500,
+                    cursor: "pointer", opacity: uploading === "__global" ? 0.6 : 1,
+                  }}
+                >
+                  {uploading === "__global"
+                    ? <Loader2 size={14} style={{ animation: "spin 0.8s linear infinite" }} />
+                    : <Upload size={14} />}
+                  Upload File
+                </button>
               </div>
 
               {/* Search */}
@@ -853,20 +906,42 @@ function DocumentsPage() {
                           }}
                         >
                           <FolderOpen size={12} /> {dir}
-                          <button
-                            onClick={() => handleDeleteFolder(dir, dirFiles)}
-                            disabled={deleting === dir}
-                            title={`Delete folder "${dir}"`}
-                            style={{
-                              marginLeft: "auto", background: "none", border: "none",
-                              cursor: "pointer", padding: 2, color: "var(--text-tertiary)",
-                              opacity: deleting === dir ? 0.5 : 1, display: "flex", alignItems: "center",
-                            }}
-                            onMouseEnter={(e) => { e.currentTarget.style.color = "var(--red, #dc2626)"; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-tertiary)"; }}
-                          >
-                            {deleting === dir ? <Loader2 size={12} style={{ animation: "spin 0.8s linear infinite" }} /> : <Trash2 size={12} />}
-                          </button>
+                          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 2 }}>
+                            <button
+                              onClick={() => {
+                                // Map display path to backend folder path
+                                const folder = dir.startsWith("workspace-main/") || dir.startsWith("skills/")
+                                  ? dir
+                                  : `workspace/${dir}`;
+                                triggerUpload(folder);
+                              }}
+                              disabled={uploading === dir}
+                              title={`Upload file to "${dir}"`}
+                              style={{
+                                background: "none", border: "none",
+                                cursor: "pointer", padding: 2, color: "var(--text-tertiary)",
+                                opacity: uploading === dir ? 0.5 : 1, display: "flex", alignItems: "center",
+                              }}
+                              onMouseEnter={(e) => { e.currentTarget.style.color = "var(--blue, #2563eb)"; }}
+                              onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-tertiary)"; }}
+                            >
+                              {uploading === dir ? <Loader2 size={12} style={{ animation: "spin 0.8s linear infinite" }} /> : <Upload size={12} />}
+                            </button>
+                            <button
+                              onClick={() => handleDeleteFolder(dir, dirFiles)}
+                              disabled={deleting === dir}
+                              title={`Delete folder "${dir}"`}
+                              style={{
+                                background: "none", border: "none",
+                                cursor: "pointer", padding: 2, color: "var(--text-tertiary)",
+                                opacity: deleting === dir ? 0.5 : 1, display: "flex", alignItems: "center",
+                              }}
+                              onMouseEnter={(e) => { e.currentTarget.style.color = "var(--red, #dc2626)"; }}
+                              onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-tertiary)"; }}
+                            >
+                              {deleting === dir ? <Loader2 size={12} style={{ animation: "spin 0.8s linear infinite" }} /> : <Trash2 size={12} />}
+                            </button>
+                          </div>
                         </div>
                       )}
                       <div className="card" style={{ overflow: "hidden" }}>

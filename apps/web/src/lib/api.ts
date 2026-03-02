@@ -395,10 +395,11 @@ class ApiClient {
     }>(`/api/employees/${employeeId}/files`);
   }
 
-  async uploadFile(employeeId: string, file: File) {
+  async uploadFile(employeeId: string, file: File, folder?: string) {
     const token = this.getToken();
     const formData = new FormData();
     formData.append("file", file);
+    if (folder) formData.append("folder", folder);
 
     const res = await fetch(`${API_URL}/api/employees/${employeeId}/files`, {
       method: "POST",

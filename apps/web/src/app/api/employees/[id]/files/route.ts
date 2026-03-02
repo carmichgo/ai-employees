@@ -48,6 +48,7 @@ export async function POST(
   // Read multipart form data
   const formData = await request.formData();
   const file = formData.get("file") as File | null;
+  const folder = formData.get("folder") as string | null;
 
   if (!file) {
     return NextResponse.json({ error: "No file provided" }, { status: 400 });
@@ -71,6 +72,7 @@ export async function POST(
       name: file.name,
       content: base64,
       mimeType: file.type,
+      ...(folder ? { folder } : {}),
     }),
   });
 

@@ -50,6 +50,7 @@ export async function fileRoutes(fastify: FastifyInstance) {
         name: string;
         content: string; // base64 encoded
         mimeType?: string;
+        folder?: string; // optional target folder relative to config base (e.g. "workspace/uploads" or "workspace-main/reports")
       };
 
       if (!body.name || !body.content) {
@@ -62,15 +63,31 @@ export async function fileRoutes(fastify: FastifyInstance) {
       if (!employee) return reply.status(404).send({ error: "Employee not found" });
 
       const filename = sanitizeFilename(body.name);
-      const uploadsDir = getUploadsDir(id);
-      mkdirSync(uploadsDir, { recursive: true });
+
+      // Determine target directory
+      let targetDir: string;
+      if (body.folder) {
+        // Prevent path traversal
+        const normalized = path.normalize(body.folder).replace(/^(\.\.(\/|\\|$))+/, "");
+        if (normalized.includes("..")) {
+          return reply.status(400).send({ error: "Invalid folder path" });
+        }
+        const baseDir = path.join(CONFIG_BASE, id);
+        targetDir = path.join(baseDir, normalized);
+        if (!targetDir.startsWith(baseDir + "/")) {
+          return reply.status(400).send({ error: "Invalid folder path" });
+        }
+      } else {
+        targetDir = getUploadsDir(id);
+      }
+      mkdirSync(targetDir, { recursive: true });
 
       const buffer = Buffer.from(body.content, "base64");
       if (buffer.length > MAX_FILE_SIZE) {
         return reply.status(413).send({ error: "File too large (max 10MB)" });
       }
 
-      const filePath = path.join(uploadsDir, filename);
+      const filePath = path.join(targetDir, filename);
       writeFileSync(filePath, buffer);
 
       // Fix ownership so the container can read the file
