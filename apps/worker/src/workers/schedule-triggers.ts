@@ -8,7 +8,7 @@
  *   3. Updates the trigger's lastRunAt timestamp
  */
 
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql, lt } from "drizzle-orm";
 import { db, employees, triggers, tasks } from "@ai-employees/db";
 import { networkInterfaces } from "os";
 
@@ -139,6 +139,24 @@ export async function checkScheduleTriggers(): Promise<void> {
         continue;
       }
 
+      // Atomic claim: UPDATE lastRunAt only if it's still old. This prevents
+      // TOCTOU race conditions when multiple workers check the same trigger.
+      const thresholdTime = new Date(now.getTime() - 55_000);
+      const claimed = await db.update(triggers)
+        .set({ lastRunAt: now, updatedAt: now })
+        .where(and(
+          eq(triggers.id, trigger.id),
+          // Only update if lastRunAt is null or older than threshold
+          trigger.lastRunAt
+            ? lt(triggers.lastRunAt, thresholdTime)
+            : sql`${triggers.lastRunAt} IS NULL OR ${triggers.lastRunAt} < ${thresholdTime.toISOString()}::timestamptz`,
+        ))
+        .returning({ id: triggers.id });
+
+      if (claimed.length === 0) {
+        continue; // Another worker already claimed this trigger
+      }
+
       const message = config.message || "Recurring task triggered.";
 
       // 1. Create a task record linked to this trigger
@@ -196,11 +214,7 @@ export async function checkScheduleTriggers(): Promise<void> {
         console.log(`[schedule] Could not reach ${employee.name}'s container for trigger "${trigger.name}"`);
       }
 
-      // 3. Update lastRunAt
-      await db
-        .update(triggers)
-        .set({ lastRunAt: now, updatedAt: now })
-        .where(eq(triggers.id, trigger.id));
+      // lastRunAt already updated atomically above (the atomic claim)
     } catch (error) {
       console.error(`[schedule] Error processing trigger ${trigger.id}:`, error);
     }

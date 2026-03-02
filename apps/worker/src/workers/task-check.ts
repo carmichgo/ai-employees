@@ -34,7 +34,7 @@ function getLocalIps(): string[] {
 /** Track last nudge time per employee to avoid spamming. Resets on worker restart. */
 const lastNudge = new Map<string, number>();
 
-const NUDGE_COOLDOWN_MS = 15 * 60 * 1000; // 15 minutes
+const NUDGE_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes — doubled to avoid overlapping with 15-min heartbeat
 const STALE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes — tasks not updated in this long are stale
 
 export async function checkPendingTasks(): Promise<void> {
@@ -55,6 +55,8 @@ export async function checkPendingTasks(): Promise<void> {
       containerPort: true,
       gatewayToken: true,
       modelConfig: true,
+      lastRequestSentAt: true,
+      lastResponseAt: true,
     },
   });
 
@@ -78,15 +80,33 @@ async function checkEmployeeTasks(employee: {
   containerPort: number | null;
   gatewayToken: string | null;
   modelConfig: unknown;
+  lastRequestSentAt: Date | null;
+  lastResponseAt: Date | null;
 }) {
   if (!employee.containerHost || !employee.containerPort || !employee.gatewayToken) {
     return; // No container to talk to
   }
 
-  // Check cooldown — don't nudge more than once per 15 minutes
+  // Check cooldown — don't nudge more than once per 30 minutes
   const lastTime = lastNudge.get(employee.id) || 0;
   if (Date.now() - lastTime < NUDGE_COOLDOWN_MS) {
     return;
+  }
+
+  // Skip if the employee was recently prompted by ANY source (heartbeat, chat, trigger)
+  // to avoid overlapping with the 15-min heartbeat and causing duplicate work
+  if (employee.lastRequestSentAt) {
+    const sinceLastRequest = Date.now() - new Date(employee.lastRequestSentAt).getTime();
+    if (sinceLastRequest < NUDGE_COOLDOWN_MS) {
+      return;
+    }
+  }
+
+  // Skip if the employee is currently busy (request sent but no response yet)
+  if (employee.lastRequestSentAt && employee.lastResponseAt) {
+    if (new Date(employee.lastRequestSentAt) > new Date(employee.lastResponseAt)) {
+      return; // Still processing a previous request
+    }
   }
 
   // Find pending tasks (any source) for this employee

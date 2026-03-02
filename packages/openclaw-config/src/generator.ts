@@ -177,22 +177,26 @@ export function generateOpenClawConfig(
       redactSensitive: "tools",
     },
 
-    // Cron scheduler — allows agents to create their own scheduled jobs
+    // Cron scheduler — allows agents to create their own scheduled jobs.
+    // maxConcurrentRuns: 1 prevents overlapping cron+heartbeat from causing
+    // duplicate work (e.g., creating the same video twice).
     cron: {
       enabled: true,
-      maxConcurrentRuns: 2,
+      maxConcurrentRuns: 1,
       sessionRetention: "24h",
     },
 
-    // Message queue — batch rapid messages instead of processing each individually
+    // Message queue — batch rapid messages instead of processing each individually.
+    // Debounce of 5s helps prevent duplicate processing when heartbeat + task-check
+    // or other sources send messages in quick succession.
     messages: {
       queue: {
         mode: "collect",
-        debounceMs: 2000,
+        debounceMs: 5000,
         cap: 20,
         drop: "summarize",
       },
-      inbound: { debounceMs: 2000 },
+      inbound: { debounceMs: 5000 },
     },
 
     // Session management — daily reset + disk cleanup to prevent unbounded growth
