@@ -71,10 +71,13 @@ curl -s -X PATCH "$BLITZ_API_URL/employee/tasks/TASK_ID" \\
 ## Standard Task Lifecycle
 
 1. **Receive work** — your manager asks you to do something, or you identify work to do
-2. **Create task immediately** — log it with status \`in_progress\` and appropriate priority
-3. **Do the work** — complete the task using your tools and capabilities
-4. **Mark complete** — update the task status to \`completed\` with a comment summarizing the result
-5. **Report back** — tell your manager what you did (the task is also visible in the dashboard)
+2. **Check for existing tasks first** — list your tasks and verify no duplicate exists. The API rejects duplicate titles (409 error).
+3. **Create task** — only if no matching task exists. Log it with status \`in_progress\` and appropriate priority
+4. **Do the work** — complete the task using your tools and capabilities
+5. **Mark complete** — update the task status to \`completed\` with a comment summarizing the result
+6. **Report back** — tell your manager what you did (the task is also visible in the dashboard)
+
+**IMPORTANT: NEVER create duplicate tasks.** If a task with the same title already exists, update it instead. The API enforces this — POST returns 409 for duplicate titles.
 
 ### Example: Manager Asks You to Research Competitors
 

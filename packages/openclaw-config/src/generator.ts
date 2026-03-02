@@ -727,12 +727,13 @@ export function generateAgentsMd(employee: EmployeeInput): string {
   parts.push("- The message is an `[Inter-team message from ...]` that is purely informational or a response to something you asked — only create a task if the colleague is requesting you to do actual work.");
   parts.push("- You are already working on a task for the same request — do NOT create duplicates. Check your existing tasks first.");
   parts.push("");
-  parts.push("**Before creating a task, check for duplicates:**");
+  parts.push("**MANDATORY: Before creating a task, check for duplicates (the API will REJECT duplicates with 409):**");
   parts.push("```bash");
-  parts.push("# List your current tasks to avoid duplicates");
+  parts.push("# List your current tasks — if a matching title exists, DO NOT create it again");
   parts.push("curl -s \"$BLITZ_API_URL/employee/tasks\" \\");
   parts.push("  -H \"Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN\" | jq '.tasks[] | {id, title, status}'");
   parts.push("```");
+  parts.push("If a task with the same or similar title exists (regardless of status), **update it** with a PATCH instead of creating a new one. The server enforces this — POST will return 409 if a duplicate title exists.");
   parts.push("");
   parts.push("**Create a task (do this FIRST before work, unless an exception above applies):**");
   parts.push("```bash");
@@ -1341,7 +1342,7 @@ export function generateHeartbeatMd(employee?: { name?: string; jobTitle?: strin
   - Monitor relevant channels, social media, or industry news
   - Improve or organize your workspace and files
   - Plan ahead — what should you be working on this week?
-  Create a task for whatever you decide to work on, then start.${employee?.goals ? `\n  Your goals for context: ${employee.goals}` : ""}`;
+  **Before creating a task, VERIFY it doesn't already exist** by reviewing the task list you just fetched above. Only create a new task if there is genuinely no existing task covering the same work.${employee?.goals ? `\n  Your goals for context: ${employee.goals}` : ""}`;
   } else if (isProactive) {
     nothingToDo = `- **Nothing on the board** → Before replying HEARTBEAT_OK, quickly check:
   - Any unread emails or Slack messages to respond to?
@@ -1391,7 +1392,8 @@ Before you finish this heartbeat cycle, **update /home/node/.openclaw/workspace/
 - ALWAYS read task comments before resuming work — they contain context you may have forgotten
 - ALWAYS update task status as you work. Add progress comments only when there is genuine new progress — do NOT add a comment just because a heartbeat fired if nothing has changed
 - If a task requires waiting (e.g. for a human response), mark it blocked with a comment explaining what you need, then notify your manager via \`/employee/notify-manager\` so they know you're waiting on them
-- If you discover new work while working, create a task for it
+- **NEVER create a duplicate task.** Before creating ANY new task, review the task list you fetched in Step 1. If a task with the same or similar title already exists (in any status except completed), DO NOT create it again — update the existing one instead. The API will reject duplicates with a 409 error.
+- If you discover new work while working, check your task list first, then create a task only if it's genuinely new
 - ALWAYS save important context (credentials, decisions, progress) to /home/node/.openclaw/workspace/memory.md
 `;
 }

@@ -5,7 +5,7 @@
  * The API looks up the employee by token and scopes all task operations to that employee.
  */
 import type { FastifyInstance } from "fastify";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, ne, sql } from "drizzle-orm";
 import { db, employees, tasks, taskComments } from "@ai-employees/db";
 
 /** Resolve employee from gateway token in Authorization header */
@@ -52,6 +52,45 @@ export async function taskRoutes(fastify: FastifyInstance) {
 
     if (!body.title) {
       return reply.status(400).send({ error: "title is required" });
+    }
+
+    // Deduplication — reject if a non-completed task with the same title already exists.
+    // Normalize: trim, lowercase, collapse whitespace for fuzzy matching.
+    const normalizedTitle = body.title.trim().toLowerCase().replace(/\s+/g, " ");
+    const existingTasks = await db
+      .select({ id: tasks.id, title: tasks.title, status: tasks.status, createdAt: tasks.createdAt })
+      .from(tasks)
+      .where(
+        and(
+          eq(tasks.employeeId, employee.id),
+          ne(tasks.status, "completed"),
+        ),
+      );
+
+    const duplicate = existingTasks.find((t) => {
+      const existingNorm = t.title.trim().toLowerCase().replace(/\s+/g, " ");
+      return existingNorm === normalizedTitle;
+    });
+
+    if (duplicate) {
+      return reply.status(409).send({
+        error: `Duplicate task — a non-completed task with this title already exists (id: ${duplicate.id}, status: ${duplicate.status}). Update the existing task instead of creating a new one.`,
+        existingTask: duplicate,
+      });
+    }
+
+    // Cooldown — reject if this employee created any task in the last 60 seconds.
+    // Prevents rapid-fire task creation from heartbeat loops.
+    const recentTask = existingTasks.find((t) => {
+      const age = Date.now() - new Date(t.createdAt).getTime();
+      return age < 60_000; // 60 seconds
+    });
+
+    if (recentTask) {
+      return reply.status(429).send({
+        error: `Slow down — you created a task less than 60 seconds ago ("${recentTask.title}"). Wait before creating another.`,
+        recentTask,
+      });
     }
 
     const [task] = await db
