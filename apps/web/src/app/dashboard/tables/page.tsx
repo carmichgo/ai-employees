@@ -1008,6 +1008,7 @@ export default function TablesPage() {
 
       {/* Table tabs bar — horizontally scrollable within viewport */}
       <div
+        className="table-tabs-bar"
         style={{
           display: "flex",
           alignItems: "center",
@@ -1017,8 +1018,8 @@ export default function TablesPage() {
           flexShrink: 0,
           overflowX: "auto",
           overflowY: "hidden",
-          maxWidth: "100%",
-          scrollbarWidth: "thin",
+          minWidth: 0,
+          scrollbarWidth: "none",
         }}
       >
         {tables.map((t) => {
@@ -1362,10 +1363,11 @@ export default function TablesPage() {
         </div>
       )}
 
-      {/* Row hover styles */}
+      {/* Row hover styles + tab bar scrollbar */}
       <style>{`
         tr:hover .row-num { display: none !important; }
         tr:hover .row-del { display: block !important; }
+        .table-tabs-bar::-webkit-scrollbar { display: none; }
       `}</style>
 
       {/* Add Column Popover */}
