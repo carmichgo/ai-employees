@@ -14,9 +14,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
 export const maxDuration = 120; // Chat responses from AI can take time
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { employees, chatMessages } from "@/lib/schema";
+import { employees, chatMessages, tasks } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
 
 async function authenticate(request: NextRequest) {
@@ -240,11 +240,41 @@ export async function POST(
   // The droplet API injects the full SOUL.md from disk as the system prompt —
   // we do NOT inject a separate system prompt here so there's one source of truth.
   try {
+    // Fetch active tasks so the agent knows what's already in progress and
+    // won't restart or duplicate existing work when responding to a chat message.
+    let taskContext = "";
+    try {
+      const activeTasks = await db
+        .select({
+          id: tasks.id,
+          title: tasks.title,
+          status: tasks.status,
+          priority: tasks.priority,
+        })
+        .from(tasks)
+        .where(
+          and(
+            eq(tasks.employeeId, id),
+            inArray(tasks.status, ["in_progress", "pending", "blocked"]),
+          ),
+        )
+        .limit(20);
+
+      if (activeTasks.length > 0) {
+        const taskList = activeTasks
+          .map((t) => `- [${t.status}] "${t.title}" (${t.priority}, id:${t.id.slice(0, 8)})`)
+          .join("\n");
+        taskContext = `\n\n[Current task board — these tasks already exist, do NOT recreate or restart them. Only create a new task if the manager is asking for something genuinely new that isn't covered below.]\n${taskList}`;
+      }
+    } catch {
+      // Non-fatal — task query may fail if table doesn't exist yet
+    }
+
     // Limit conversation history to avoid polluting context with old threads.
     const recentHistory = (conversationHistory || []).slice(-10);
     const messages: Array<{ role: string; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }> = [
       ...recentHistory,
-      { role: "user", content: message },
+      { role: "user", content: message + taskContext },
     ];
 
     // If files were attached, fetch their content from the droplet workspace
@@ -253,9 +283,10 @@ export async function POST(
       const imageExts = ["png", "jpg", "jpeg", "gif", "webp", "bmp"];
       const contentParts: Array<{ type: string; text?: string; image_url?: { url: string } }> = [];
 
-      // Start with the user's text
-      if (message) {
-        contentParts.push({ type: "text", text: message });
+      // Start with the user's text (include task context so the agent
+      // knows what's already in progress even when files are attached)
+      if (message || taskContext) {
+        contentParts.push({ type: "text", text: (message || "") + taskContext });
       }
 
       for (const file of files) {
