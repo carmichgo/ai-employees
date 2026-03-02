@@ -86,6 +86,9 @@ function InboxContent() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   // Track which employee a send is for, so we discard stale responses
   const sendingForRef = useRef<string | null>(null);
+  // Ref-based guard to prevent double-invocation of handleSend
+  // (React state `sending` can be stale in closures between renders)
+  const sendingGuardRef = useRef(false);
 
   // File upload state
   const [uploading, setUploading] = useState(false);
@@ -224,6 +227,7 @@ function InboxContent() {
       // Cancel any in-flight send for the previous employee
       setSending(false);
       sendingForRef.current = null;
+      sendingGuardRef.current = false;
       setPendingReplyId(null);
     }
   }, [selectedId, loadChat]);
@@ -569,12 +573,16 @@ function InboxContent() {
 
   // Send message
   const handleSend = async () => {
+    // Ref-based guard prevents double-invocation (state can be stale in closures)
+    if (sendingGuardRef.current) return;
     const text = input.trim();
     const filesToUpload = [...pendingFiles];
     if ((!text && filesToUpload.length === 0) || sending || !selectedId) return;
 
     const emp = employees.find((e) => e.id === selectedId);
     if (!emp || emp.status !== "active") return;
+
+    sendingGuardRef.current = true;
 
     // Build the user-visible message
     const fileNames = filesToUpload.map((f) => f.name);
@@ -707,6 +715,7 @@ function InboxContent() {
       if (sendingForRef.current === sendForId) {
         setSending(false);
       }
+      sendingGuardRef.current = false;
       inputRef.current?.focus();
     }
   };

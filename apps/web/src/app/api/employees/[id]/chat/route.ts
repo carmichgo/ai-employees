@@ -112,8 +112,7 @@ export async function GET(
     // Reverse to oldest-first for the UI
     rows.reverse();
 
-    // Deduplicate: both the Vercel route and the API on the droplet may save
-    // the same assistant reply (the API saves as a backup for the timeout case).
+    // Deduplicate: safety net for any legacy duplicate rows in the DB.
     // Filter out back-to-back assistant messages with identical content.
     const deduped = rows.filter((row, i) => {
       if (i === 0) return true;
@@ -124,7 +123,18 @@ export async function GET(
       return true;
     });
 
-    return NextResponse.json({ messages: deduped });
+    // Post-process assistant messages: convert workspace file paths to
+    // accessible URLs and auto-embed images. The droplet saves raw content
+    // to the DB, so we apply these transforms on read.
+    const processed = deduped.map((row) => {
+      if (row.role !== "assistant") return row;
+      let content = row.content;
+      content = rewriteWorkspacePaths(content, id);
+      content = autoEmbedImages(content, id);
+      return { ...row, content };
+    });
+
+    return NextResponse.json({ messages: processed });
   } catch (err: any) {
     console.error(`[chat GET] Failed for employee ${id}:`, err);
     return NextResponse.json({ error: `Failed to load chat: ${err.message}` }, { status: 500 });
@@ -375,22 +385,14 @@ export async function POST(
     reply = rewriteWorkspacePaths(reply, id);
     reply = autoEmbedImages(reply, id);
 
-    // Save assistant reply to DB. The API on the droplet also saves as a
-    // backup (in case this Vercel function times out), but we save here as
-    // the primary path since it's more reliable than depending on the
-    // droplet having the latest code deployed.
-    try {
-      await db.insert(chatMessages).values({
-        employeeId: id,
-        userId: session.userId,
-        role: "assistant",
-        content: reply,
-        mode: data.mode || "live",
-      });
-    } catch (saveErr) {
-      // Non-fatal — the reply will still be returned to the user
-      console.error(`[chat] Failed to save assistant reply:`, saveErr);
-    }
+    // NOTE: We do NOT save the assistant reply here — the droplet API
+    // already persists it (in saveReply) before returning the response.
+    // Saving here too caused duplicate messages because the content can
+    // differ after rewriteWorkspacePaths/autoEmbedImages transforms,
+    // bypassing the dedup filter in the GET handler.
+    // For the timeout case (mode: "pending"), the droplet continues
+    // running and saves when the container finishes — the frontend polls
+    // GET until the reply appears.
 
     // If the employee was in error/provisioning/onboarding but responded, restore to active
     if (employee.status !== "active") {
