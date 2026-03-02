@@ -14,11 +14,12 @@ You MUST log every piece of work you do to the company's task management system.
 
 **Always log a task when you:**
 - Receive a new assignment or request from your manager or any channel
-- Start working on something proactively (research, monitoring, maintenance, etc.)
 - Pick up a recurring task (email checks, social media posting, report generation, etc.)
 - Begin a significant sub-task within a larger project
 
-**The rule is simple: if you're doing work, there should be a task for it.**
+**The rule is simple: if someone asked you to do work, there should be a task for it.**
+
+**Before creating any task, ALWAYS list your existing tasks first** and verify no task with the same or similar title/topic already exists. If one does, update it with a PATCH instead of creating a new one.
 
 ## API Reference
 
@@ -71,13 +72,13 @@ curl -s -X PATCH "$BLITZ_API_URL/employee/tasks/TASK_ID" \\
 ## Standard Task Lifecycle
 
 1. **Receive work** — your manager asks you to do something, or you identify work to do
-2. **Check for existing tasks first** — list your tasks and verify no duplicate exists. The API rejects duplicate titles (409 error).
+2. **Check for existing tasks first** — list your tasks and verify no task with the same or similar title/topic already exists
 3. **Create task** — only if no matching task exists. Log it with status \`in_progress\` and appropriate priority
 4. **Do the work** — complete the task using your tools and capabilities
 5. **Mark complete** — update the task status to \`completed\` with a comment summarizing the result
 6. **Report back** — tell your manager what you did (the task is also visible in the dashboard)
 
-**IMPORTANT: NEVER create duplicate tasks.** If a task with the same title already exists, update it instead. The API enforces this — POST returns 409 for duplicate titles.
+**IMPORTANT: NEVER create duplicate tasks.** If a task with the same or similar title/topic already exists in any non-completed status, update it with a PATCH instead of creating a new one.
 
 ### Example: Manager Asks You to Research Competitors
 
@@ -229,9 +230,9 @@ curl -s -X PATCH "$BLITZ_API_URL/employee/tasks/$TASK_ID" \\
 - Self-initiated tasks with a natural deadline → set one proactively
 - If no deadline is mentioned, you can skip the due date — it's optional
 
-## Planning — Always Have Work Queued
+## Planning — Keep Work Organized
 
-**You should NEVER be idle. Your task board should always have tasks — either in progress or pending.** If your board is empty, you are failing at your job. A productive employee always has a plan for what comes next.
+When you have tasks, keep them organized and prioritized. Having pending tasks queued up shows your manager you have a plan.
 
 ### Break Big Requests Into a Plan
 
@@ -263,30 +264,33 @@ Work on them in order — pick up the next \`pending\` task as soon as you finis
 
 ### Create Follow-Up Tasks
 
-When you complete a task and it naturally leads to next steps, create follow-up tasks immediately:
+When you complete a task and it naturally leads to a clear next step, you can create a follow-up task — but **always check your existing tasks first** to make sure the follow-up doesn't already exist.
 
-- Finished research? Create a task to write the report.
-- Set up an account? Create a task to configure it or start using it.
-- Published content? Create a task to monitor engagement.
+- Finished research? Create a task to write the report (if one doesn't exist).
+- Set up an account? Create a task to configure it.
 - Hit a milestone? Create tasks for the next phase.
 
-**Don't wait for your manager to tell you what to do next.** If the next step is obvious, create the task and either start it or leave it \`pending\` for review.
+Only create follow-ups for **concrete, actionable work** — not vague ideas. If you're unsure whether a follow-up is needed, check with your manager instead of creating a task.
 
 ### When Your Task Board Is Empty
 
-If you have no tasks, you should proactively:
+If you have no tasks, check these sources before doing anything else:
 
-1. **Check if there's outstanding work** — review memory.md for commitments you made
-2. **Look for recurring tasks** — are there routine checks, reports, or maintenance you should be doing?
-3. **Suggest work to your manager** — notify them that you're available and suggest what you could work on
-4. **Review and improve** — revisit completed work for quality, update skills, organize your workspace
+1. **Review memory.md** — did you commit to something you haven't started?
+2. **Check email/Slack** — any unread messages requesting work?
+3. **Look at recently completed tasks** — is there a clear, concrete follow-up?
+
+If you find real work from one of these sources, create a task for it (after verifying no duplicate exists).
+
+If you genuinely find nothing, **it is perfectly fine to be idle**. Notify your manager that you're available:
 
 \`\`\`bash
-# Notify manager you're available
 curl -s -X POST "$BLITZ_API_URL/employee/notify-manager" \\
   -H "$AUTH" -H "$CT" \\
-  -d '{"message": "I have completed all my current tasks. I am available for new assignments. Shall I continue with [specific suggestion based on context]?", "type": "update"}'
+  -d '{"message": "I have completed all my current tasks and checked for pending work. I am available for new assignments.", "type": "update"}'
 \`\`\`
+
+**Do NOT invent busywork or create vague tasks just to have something on the board.** An empty board with a notification to your manager is better than a board full of self-created filler tasks.
 
 ### Keep Your Board Clean and Accurate
 
@@ -296,7 +300,7 @@ At any given moment, your task board should show:
 - **\`completed\` tasks** — your track record of delivered work
 - **\`blocked\` tasks** — only if you are genuinely waiting on something external
 
-**Never have zero active tasks.** If you finish something, immediately pick up the next pending task or create new work. Your manager should always see you are busy and productive when they look at your task board.
+If you finish a task and have pending tasks queued, pick up the next one immediately. If no pending tasks remain, follow the "When Your Task Board Is Empty" steps above.
 
 ## Recurring Tasks
 
