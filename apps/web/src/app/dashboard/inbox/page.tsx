@@ -175,18 +175,44 @@ function InboxContent() {
     async (empId: string) => {
       setChatLoading(true);
       setMessages([]);
+      setPendingReplyId(null);
       try {
         const historyRes = await api.getChatHistory(empId);
         if (historyRes.messages.length > 0) {
-          setMessages(
-            historyRes.messages.map((m) => ({
-              id: m.id,
-              role: m.role as "user" | "assistant",
-              content: m.content,
-              timestamp: new Date(m.createdAt),
-              mode: m.mode || undefined,
-            })),
-          );
+          const mapped = historyRes.messages.map((m) => ({
+            id: m.id,
+            role: m.role as "user" | "assistant",
+            content: m.content,
+            timestamp: new Date(m.createdAt),
+            mode: m.mode || undefined,
+          }));
+          setMessages(mapped);
+
+          // Detect if the AI is still working (page was refreshed mid-response).
+          // If the last message is from the user and was sent recently (<5 min ago),
+          // or the last assistant message has mode "pending", resume the waiting state.
+          const last = mapped[mapped.length - 1];
+          const FIVE_MINUTES = 5 * 60 * 1000;
+          const isRecent = Date.now() - last.timestamp.getTime() < FIVE_MINUTES;
+
+          if (last.role === "user" && isRecent) {
+            // No reply yet — show a pending indicator and start polling
+            const pendingId = `pending-resume-${Date.now()}`;
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: pendingId,
+                role: "assistant",
+                content: "Still working on this — the response will appear here when it's ready.",
+                timestamp: new Date(),
+                mode: "pending",
+              },
+            ]);
+            setPendingReplyId(pendingId);
+          } else if (last.role === "assistant" && last.mode === "pending" && isRecent) {
+            // Existing pending message — resume polling for the real reply
+            setPendingReplyId(last.id);
+          }
         } else {
           const emp = employees.find((e) => e.id === empId);
           if (emp) {
