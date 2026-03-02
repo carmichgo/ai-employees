@@ -727,13 +727,15 @@ export function generateAgentsMd(employee: EmployeeInput): string {
   parts.push("- The message is an `[Inter-team message from ...]` that is purely informational or a response to something you asked — only create a task if the colleague is requesting you to do actual work.");
   parts.push("- You are already working on a task for the same request — do NOT create duplicates. Check your existing tasks first.");
   parts.push("");
-  parts.push("**MANDATORY: Before creating a task, check for duplicates:**");
+  parts.push("**MANDATORY: Before creating a task, check ALL your existing tasks (every status including completed):**");
   parts.push("```bash");
-  parts.push("# List your current tasks — if a matching or similar title exists, DO NOT create it again");
+  parts.push("# List ALL tasks — check every status to know what exists and what you already did");
   parts.push("curl -s \"$BLITZ_API_URL/employee/tasks\" \\");
   parts.push("  -H \"Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN\" | jq '.tasks[] | {id, title, status}'");
   parts.push("```");
-  parts.push("If a task with the same or similar title/topic already exists in ANY non-completed status, **update it with a PATCH** instead of creating a new one. Creating duplicate tasks clutters the board and confuses your manager.");
+  parts.push("- If a non-completed task with the same or similar title/topic exists → **update it with a PATCH** instead of creating a new one.");
+  parts.push("- If similar work was already **completed** → do NOT redo it. Find something genuinely new instead.");
+  parts.push("- Creating duplicate tasks clutters the board and confuses your manager.");
   parts.push("");
   parts.push("**Create a task (do this FIRST before work, unless an exception above applies):**");
   parts.push("```bash");
@@ -1385,6 +1387,7 @@ curl -s "$BLITZ_API_URL/employee/tasks/<TASK_ID>/comments" \\
 - **in_progress tasks** → **Read the comments first** to remember where you left off. Continue working. Add a progress comment only if you've made actual progress since the last comment — do NOT repeat the same status.
 - **pending tasks** → Pick the highest-priority one, set it to in_progress, and start working.
 - **blocked tasks** → **Read the comments carefully** — your manager may have already provided what you need (credentials, instructions, approvals). If the blocker is resolved based on the comments, move to \`in_progress\` and continue. If still blocked and you have NOT already notified your manager about this specific blocker, notify them via \`/employee/notify-manager\`. Do NOT add a duplicate comment repeating the same blocker — only comment if something has changed.
+- **completed tasks** → These are your HISTORY. Do not touch them, but **read their titles** so you know what you already did. This prevents you from creating a new task that duplicates completed work.
 ${nothingToDo}
 
 ## 3. Work until done (or next heartbeat)
@@ -1401,8 +1404,8 @@ Before you finish this heartbeat cycle, **update /home/node/.openclaw/workspace/
 - ALWAYS read task comments before resuming work — they contain context you may have forgotten
 - ALWAYS update task status as you work. Add progress comments only when there is genuine new progress — do NOT add a comment just because a heartbeat fired if nothing has changed
 - If a task requires waiting (e.g. for a human response), mark it blocked with a comment explaining what you need, then notify your manager via \`/employee/notify-manager\` so they know you're waiting on them
-- **NEVER create a duplicate task.** Before creating ANY new task, review the task list you fetched in Step 1. If a task with the same or similar title/topic already exists (in any non-completed status), DO NOT create it — update the existing one with a PATCH instead
-- If you discover new work while working, check your task list first, then create a task only if it's genuinely new and no similar task exists
+- **NEVER create a duplicate task.** Before creating ANY new task, review the FULL task list you fetched in Step 1 — ALL statuses including completed. If a task with the same or similar title/topic already exists in a non-completed status, update the existing one with a PATCH. If similar work was already COMPLETED, do not redo it — find something genuinely new instead.
+- If you discover new work while working, check your full task list (all statuses) first, then create a task only if it's genuinely new and no similar task exists in any status
 - ALWAYS save important context (credentials, decisions, progress) to /home/node/.openclaw/workspace/memory.md
 `;
 }

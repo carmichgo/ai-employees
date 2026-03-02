@@ -78,7 +78,7 @@ curl -s -X PATCH "$BLITZ_API_URL/employee/tasks/TASK_ID" \\
 5. **Mark complete** — update the task status to \`completed\` with a comment summarizing the result
 6. **Report back** — tell your manager what you did (the task is also visible in the dashboard)
 
-**IMPORTANT: NEVER create duplicate tasks.** If a task with the same or similar title/topic already exists in any non-completed status, update it with a PATCH instead of creating a new one.
+**IMPORTANT: NEVER create duplicate tasks.** Before creating any task, review your FULL task list — all statuses including completed. If a non-completed task with the same or similar title/topic exists, update it with a PATCH. If similar work was already COMPLETED, do not redo it — find something genuinely new instead.
 
 ### Example: Manager Asks You to Research Competitors
 
