@@ -327,29 +327,43 @@ curl -s -X POST "$BLITZ_API_URL/employee/tasks" -H "$AUTH" -H "$CT" \\
 
 Each sub-task is small enough to complete within one heartbeat cycle.
 
-### 2. Save checkpoint files
-After each meaningful step, write progress to a checkpoint file so you can resume:
-\`\`\`bash
-mkdir -p /home/node/.openclaw/workspace/checkpoints
-cat > /home/node/.openclaw/workspace/checkpoints/<task-id>.json << 'EOF'
-{
-  "taskId": "...",
-  "phase": "frame-generation",
-  "completedSteps": ["frame-1", "frame-2", "frame-3"],
-  "nextStep": "frame-4",
-  "outputPaths": ["/path/to/frame1.png", "/path/to/frame2.png"],
-  "lastUpdated": "2025-03-15T10:00:00Z"
-}
-EOF
+### 2. Save progress to checkpoint.md
+After each meaningful step, update \`/home/node/.openclaw/workspace/checkpoint.md\` so you can resume if interrupted. This is a single file that tracks ALL active pipelines — one section per task:
+
+\`\`\`markdown
+# Active Checkpoints
+
+## Video #1 — Frame Generation
+- **Task ID:** abc-123
+- **Status:** In progress — 8/24 frames generated
+- **Completed:**
+  - frame-01.png → /home/node/video1/frames/frame-01.png
+  - frame-02.png → /home/node/video1/frames/frame-02.png
+  - ...
+  - frame-08.png → /home/node/video1/frames/frame-08.png
+- **Next step:** Generate frame-09 (scene: product demo, prompt: "...")
+- **Output directory:** /home/node/video1/frames/
+- **Last updated:** 2025-03-15 10:00 UTC
+
+## Video #1 — Voiceover
+- **Task ID:** def-456
+- **Status:** Not started (waiting on frame generation)
+- **Script:** /home/node/video1/script.txt
 \`\`\`
 
+**Update this file after EVERY meaningful step** — generating a frame, completing an API call, finishing a batch. Think of it as your resume point.
+
 ### 3. ALWAYS check before regenerating
-Before generating ANY artifact (frame, clip, audio, file), check if it already exists:
+Before generating ANY artifact (frame, clip, audio, file):
+1. **Read checkpoint.md** — see what's already been completed
+2. **Check the output directory** — \`ls /path/to/output/\` to verify files exist on disk
+3. **Skip anything that's already done** — move to the next uncompleted step
+
 \`\`\`bash
-# Check for existing outputs from a previous attempt
-ls /path/to/output/directory/
-# Check for checkpoint file
-cat /home/node/.openclaw/workspace/checkpoints/<task-id>.json 2>/dev/null
+# Read your checkpoint to see where you left off
+cat /home/node/.openclaw/workspace/checkpoint.md
+# Verify files exist on disk
+ls /home/node/video1/frames/
 \`\`\`
 
 If outputs exist, skip regeneration and move to the next step. Never re-generate files that are already on disk.

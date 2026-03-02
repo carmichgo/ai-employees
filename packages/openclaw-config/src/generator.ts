@@ -1388,7 +1388,7 @@ curl -s "$BLITZ_API_URL/employee/tasks/<TASK_ID>/comments" \\
 
 ## 2. Act on what you find
 
-- **in_progress tasks** → **Read the comments first** to remember where you left off. **Check for existing outputs on disk before regenerating anything** — look in the workspace for files, frames, clips, or other artifacts from previous attempts. Resume from where you left off, do NOT restart from scratch. Add a progress comment only if you've made actual progress since the last comment — do NOT repeat the same status.
+- **in_progress tasks** → **Read the comments first** to remember where you left off. **Read \`/home/node/.openclaw/workspace/checkpoint.md\`** and check for existing outputs on disk before regenerating anything. Resume from where you left off, do NOT restart from scratch. Add a progress comment only if you've made actual progress since the last comment — do NOT repeat the same status.
 - **pending tasks** → Pick the highest-priority one, set it to in_progress, and start working.
 - **blocked tasks** → **Read the comments carefully** — your manager may have already provided what you need (credentials, instructions, approvals). If the blocker is resolved based on the comments, move to \`in_progress\` and continue. If still blocked and you have NOT already notified your manager about this specific blocker, notify them via \`/employee/notify-manager\`. Do NOT add a duplicate comment repeating the same blocker — only comment if something has changed.
 - **completed tasks** → These are your HISTORY. Do not touch them, but **read their titles** so you know what you already did. This prevents you from creating a new task that duplicates completed work.
@@ -1403,21 +1403,9 @@ Do not stop after one small step. Complete the task fully, or make substantial p
 For tasks that involve many sequential steps (video production, large document generation, multi-step pipelines, etc.):
 
 1. **Break into sub-tasks** — create separate tasks for each phase (e.g., "Generate frames", "Generate audio", "Stitch video") so each step is independently completable
-2. **Save a checkpoint file** after each meaningful step — write progress to \`/home/node/.openclaw/workspace/checkpoints/<task-id>.json\` with what's been completed and file paths of outputs
-3. **Always check for existing outputs first** — before generating frames, clips, or any artifacts, check if they already exist from a previous attempt. Use \`ls\` / \`find\` to check for existing files before regenerating
-4. **Never restart from zero** — if a checkpoint file exists, read it and resume from where you left off. Your progress must survive across heartbeats
-
-**Checkpoint file format:**
-\`\`\`json
-{
-  "taskId": "...",
-  "phase": "frame-generation",
-  "completedSteps": ["frame-1", "frame-2", "frame-3"],
-  "nextStep": "frame-4",
-  "outputPaths": ["/path/to/frame1.png", "/path/to/frame2.png"],
-  "lastUpdated": "2025-03-15T10:00:00Z"
-}
-\`\`\`
+2. **Update checkpoint.md** after each meaningful step — write your progress to \`/home/node/.openclaw/workspace/checkpoint.md\`. This single file tracks ALL active pipelines with sections for each task — what's done, what's next, and where outputs are saved on disk
+3. **Always check checkpoint.md + disk first** — before generating frames, clips, or any artifacts, read checkpoint.md and \`ls\` the output directory. If files already exist, skip them and continue from where you left off
+4. **Never restart from zero** — if checkpoint.md shows prior progress, resume from there. Your progress must survive across heartbeats
 
 This is CRITICAL for tasks involving API calls (Veo, image generation, TTS) — each call takes minutes. Without checkpointing, a heartbeat interruption means losing all progress and wasting API credits.
 
