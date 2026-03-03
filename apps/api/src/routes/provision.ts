@@ -181,7 +181,11 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       where: eq(employees.id, id),
     });
     if (!employee) return reply.status(404).send({ error: "Employee not found" });
-    if (employee.status !== "active") return reply.status(400).send({ error: "Employee is not active" });
+    // Accept both "active" and "paused" — the Vercel route may have already set
+    // status to "paused" before calling us, so we still need to stop the container.
+    if (employee.status !== "active" && employee.status !== "paused") {
+      return reply.status(400).send({ error: "Employee is not active" });
+    }
 
     const queue = getProvisionQueue();
     await queue.add("stop-employee", { employeeId: id });

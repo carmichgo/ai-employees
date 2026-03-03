@@ -33,19 +33,9 @@ export async function POST(
     return NextResponse.json({ error: "Employee is not active" }, { status: 400 });
   }
 
-  // If employee has an active droplet, delegate to it
-  const backendConfig = await getEmployeeBackend(id);
-  if (backendConfig) {
-    try {
-      const backend = createBackendClient(backendConfig);
-      const result = await backend.pauseEmployee(id);
-      return NextResponse.json(result);
-    } catch (err: any) {
-      return NextResponse.json({ error: err.message }, { status: 500 });
-    }
-  }
-
-  // Demo mode fallback
+  // ALWAYS update DB status to "paused" first — this is the source of truth.
+  // Even if the backend call to stop the container fails, the employee should
+  // be marked paused so the user isn't stuck with no way to stop it.
   const [updated] = await db
     .update(employees)
     .set({ status: "paused", updatedAt: new Date() })
@@ -53,5 +43,18 @@ export async function POST(
     .returning();
 
   const { gatewayToken, ...safe } = updated;
+
+  // Then try to stop the container on the droplet (best-effort)
+  const backendConfig = await getEmployeeBackend(id);
+  if (backendConfig) {
+    try {
+      const backend = createBackendClient(backendConfig);
+      await backend.pauseEmployee(id);
+    } catch (err: any) {
+      // Log but don't fail — DB is already updated, container stop is best-effort
+      console.error(`[pause] Backend call failed for ${id}: ${err.message}`);
+    }
+  }
+
   return NextResponse.json({ employee: safe });
 }

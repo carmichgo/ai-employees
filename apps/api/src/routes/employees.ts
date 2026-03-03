@@ -186,7 +186,9 @@ export async function employeeRoutes(fastify: FastifyInstance) {
         return reply.status(404).send({ error: "Employee not found" });
       }
 
-      if (employee.status !== "active") {
+      // Accept both "active" and "paused" — the Vercel route may have already set
+      // status to "paused" before calling us, so we still need to stop the container.
+      if (employee.status !== "active" && employee.status !== "paused") {
         return reply.status(400).send({ error: "Employee is not active" });
       }
 

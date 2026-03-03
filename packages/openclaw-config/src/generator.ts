@@ -797,6 +797,27 @@ export function generateAgentsMd(employee: EmployeeInput): string {
   parts.push("TASK_ID=$(echo \"$TASK\" | jq -r '.task.id')");
   parts.push("```");
   parts.push("");
+  parts.push("**Log progress comments DURING work (MANDATORY for multi-step tasks):**");
+  parts.push("");
+  parts.push("For any task with multiple steps (generating multiple clips, calling multiple APIs, processing a pipeline), you MUST add a progress comment BEFORE and AFTER each step. This is how future-you knows what was already done.");
+  parts.push("```bash");
+  parts.push("# After each step completes, log it immediately:");
+  parts.push("curl -s -X POST \"$BLITZ_API_URL/employee/tasks/$TASK_ID/comments\" \\");
+  parts.push("  -H \"Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN\" \\");
+  parts.push("  -H \"Content-Type: application/json\" \\");
+  parts.push("  -d '{\"content\": \"Step 2/5 done: Generated video clip 2 (saved to /workspace/clip-2.mp4). Next: clip 3.\"}'");
+  parts.push("```");
+  parts.push("");
+  parts.push("**Example for a 5-video task:**");
+  parts.push("- After clip 1: `\"Step 1/5 done: Generated clip 1 — intro shot (saved to /workspace/clip-1.mp4)\"`");
+  parts.push("- After clip 2: `\"Step 2/5 done: Generated clip 2 — product demo (saved to /workspace/clip-2.mp4)\"`");
+  parts.push("- ...and so on for every step.");
+  parts.push("");
+  parts.push("**WHY THIS MATTERS:** When your context resets, you read these comments to know exactly where you left off. If your comments just say `\"Working on video generation\"` with no step details, you have no idea which clips are done and which aren't — and you'll redo everything from scratch. **Granular comments are your memory. Without them, the anti-loop protocol cannot work.**");
+  parts.push("");
+  parts.push("**RULE: Never call an expensive tool or API without first checking your task comments to see if that specific step was already completed.** Read comments → check which steps are logged as done → skip those → continue from the next undone step.");
+  parts.push("");
+
   parts.push("**Complete a task (ALWAYS do this after work is done):**");
   parts.push("```bash");
   parts.push("curl -s -X PATCH \"$BLITZ_API_URL/employee/tasks/$TASK_ID\" \\");
@@ -1460,6 +1481,8 @@ ${nothingToDo}
 ## 3. Work until done (or next heartbeat)
 
 Do not stop after one small step. Complete the task fully, or make substantial progress before stopping. If you finish a task, check for the next one immediately — do not wait for the next heartbeat.${isProactive ? " Keep the momentum going — idle time is wasted time." : ""}
+
+**MANDATORY: Log each step as a task comment.** For multi-step tasks (generating multiple clips, making multiple API calls, processing a pipeline), add a comment AFTER each step completes: \`"Step 2/5 done: Generated clip 2 (saved to /workspace/clip-2.mp4). Next: clip 3."\` This is how future-you (after context reset) knows exactly which steps are done and which to skip. **Never call an expensive API without first reading your task comments to check if that step was already completed.**
 
 ## 3b. Large tasks — checkpoint your progress
 

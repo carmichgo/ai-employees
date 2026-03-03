@@ -289,14 +289,22 @@ export default function EmployeeDetailPage() {
   // ── Employee actions ──
   const handlePause = async () => {
     setActionLoading(true);
-    const res = await api.pauseEmployee(employeeId);
-    setEmployee(res.employee);
+    try {
+      const res = await api.pauseEmployee(employeeId);
+      setEmployee(res.employee);
+    } catch (err: any) {
+      alert(`Failed to pause: ${err.message}`);
+    }
     setActionLoading(false);
   };
   const handleResume = async () => {
     setActionLoading(true);
-    const res = await api.resumeEmployee(employeeId);
-    setEmployee(res.employee);
+    try {
+      const res = await api.resumeEmployee(employeeId);
+      setEmployee(res.employee);
+    } catch (err: any) {
+      alert(`Failed to resume: ${err.message}`);
+    }
     setActionLoading(false);
   };
   const handleTerminate = async () => {
