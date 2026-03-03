@@ -321,7 +321,33 @@ export default function TablesPage() {
 
   // Column resize
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
-  const resizeRef = useRef<{ colId: string; startX: number; startWidth: number } | null>(null);
+  const resizeRef = useRef<{ colId: string; startX: number; startW: number } | null>(null);
+
+  const handleResizeStart = useCallback((colId: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const th = (e.target as HTMLElement).closest("th");
+    const startW = columnWidths[colId] || th?.offsetWidth || 180;
+    resizeRef.current = { colId, startX: e.clientX, startW };
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!resizeRef.current) return;
+      const diff = ev.clientX - resizeRef.current.startX;
+      const newW = Math.max(60, resizeRef.current.startW + diff);
+      setColumnWidths((prev) => ({ ...prev, [resizeRef.current!.colId]: newW }));
+    };
+    const onMouseUp = () => {
+      resizeRef.current = null;
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  }, [columnWidths]);
 
   // Base rename
   const [editingBaseName, setEditingBaseName] = useState(false);
@@ -330,34 +356,6 @@ export default function TablesPage() {
   // Table rename
   const [editingTableName, setEditingTableName] = useState(false);
   const [editTableNameVal, setEditTableNameVal] = useState("");
-
-  // ── Column resize handlers ─────────────────────────
-  const handleResizeStart = useCallback((colId: string, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const startWidth = columnWidths[colId] || 180;
-    resizeRef.current = { colId, startX: e.clientX, startWidth };
-
-    const handleMouseMove = (ev: MouseEvent) => {
-      if (!resizeRef.current) return;
-      const delta = ev.clientX - resizeRef.current.startX;
-      const newWidth = Math.max(60, resizeRef.current.startWidth + delta);
-      setColumnWidths((prev) => ({ ...prev, [resizeRef.current!.colId]: newWidth }));
-    };
-
-    const handleMouseUp = () => {
-      resizeRef.current = null;
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    };
-
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-  }, [columnWidths]);
 
   // ── Load bases list ──────────────────────────────
   const loadBases = useCallback(async () => {
