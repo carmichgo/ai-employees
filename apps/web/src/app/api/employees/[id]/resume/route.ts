@@ -35,27 +35,20 @@ export async function POST(
     return NextResponse.json({ error: "Employee is not paused" }, { status: 400 });
   }
 
-  // If stuck in provisioning, try to recover directly by checking if the container is already healthy
-  if (employee.status === "provisioning" && employee.containerHost && employee.containerPort) {
-    try {
-      const healthUrl = `http://${employee.containerHost}:${employee.containerPort}/api/health`;
-      const res = await fetch(healthUrl, { signal: AbortSignal.timeout(5000) });
-      if (res.ok) {
-        // Container is already running and healthy — just mark active
-        const [updated] = await db
-          .update(employees)
-          .set({ status: "active", errorMessage: null, updatedAt: new Date() })
-          .where(eq(employees.id, id))
-          .returning();
-        const { gatewayToken, ...safe } = updated;
-        return NextResponse.json({ employee: safe, recovered: true });
-      }
-    } catch {
-      // Gateway not reachable — fall through to normal resume via backend
-    }
+  // If stuck in provisioning with a container, force-recover to active.
+  // The droplet's health poll will verify the container is actually running
+  // within 60s, flipping to "error" if it's not.
+  if (employee.status === "provisioning") {
+    const [updated] = await db
+      .update(employees)
+      .set({ status: "active", errorMessage: null, updatedAt: new Date() })
+      .where(eq(employees.id, id))
+      .returning();
+    const { gatewayToken, ...safe } = updated;
+    return NextResponse.json({ employee: safe, recovered: true });
   }
 
-  // If employee has an active droplet, delegate to it
+  // If employee has an active droplet, delegate resume to it
   const backendConfig = await getEmployeeBackend(id);
   if (backendConfig) {
     try {
