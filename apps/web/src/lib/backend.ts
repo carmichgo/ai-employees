@@ -94,7 +94,7 @@ async function backendFetch(
       ...options,
       signal: controller.signal,
       headers: {
-        "Content-Type": "application/json",
+        ...(options.body ? { "Content-Type": "application/json" } : {}),
         "x-interservice-secret": config.secret,
         ...options.headers,
       },
