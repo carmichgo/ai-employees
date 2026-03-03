@@ -45,7 +45,8 @@ export async function POST(
     return NextResponse.json({ error: "Employee not found" }, { status: 404 });
   }
 
-  if (!employee.dropletIp || !employee.interserviceSecret || employee.dropletStatus !== "active") {
+  if (!employee.dropletIp || !employee.interserviceSecret ||
+      (employee.dropletStatus !== "active" && employee.dropletStatus !== "unhealthy")) {
     return NextResponse.json({ error: "Employee has no active droplet" }, { status: 400 });
   }
 
@@ -135,6 +136,14 @@ export async function POST(
     } catch (err: any) {
       results.push(`Failed to clear chat: ${err.message}`);
     }
+  }
+
+  // If restart succeeded and droplet was unhealthy, mark it active again
+  if (restarted && employee.dropletStatus === "unhealthy") {
+    await db
+      .update(employees)
+      .set({ dropletStatus: "active", errorMessage: null, updatedAt: new Date() } as any)
+      .where(eq(employees.id, id));
   }
 
   return NextResponse.json({ success: restarted, results });

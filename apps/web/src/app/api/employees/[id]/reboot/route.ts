@@ -12,6 +12,10 @@ export const maxDuration = 60;
  * Hard-reboot an employee's droplet via DigitalOcean API.
  * Use this when the droplet's API (port 3001) is unresponsive
  * and the normal /restart endpoint can't reach it.
+ *
+ * After power-cycling, polls the droplet health for up to ~45 seconds
+ * so the status is restored to "active" immediately instead of waiting
+ * for the cron health checker.
  */
 export async function POST(
   request: NextRequest,
@@ -55,11 +59,7 @@ export async function POST(
     return NextResponse.json({ error: "Failed to power-cycle droplet" }, { status: 502 });
   }
 
-  // Only mark droplet as unhealthy — do NOT clear container fields or change
-  // employee status. After a power-cycle the Docker containers and systemd
-  // services restart automatically, so the existing container (with all its
-  // workspace data) comes back. The health checker will flip dropletStatus
-  // back to "active" once port 3001 responds.
+  // Mark as unhealthy while we wait for recovery
   await db
     .update(employees)
     .set({
@@ -68,6 +68,36 @@ export async function POST(
       updatedAt: new Date(),
     } as any)
     .where(eq(employees.id, id));
+
+  // Poll for health recovery so the user doesn't stay stuck in "unhealthy"
+  let recovered = false;
+  if (employee.dropletIp) {
+    // Wait 15s for the droplet to start booting, then poll every 5s
+    await new Promise((r) => setTimeout(r, 15000));
+    for (let i = 0; i < 6; i++) {
+      const health = await checkDropletHealth(employee.dropletIp);
+      if (health.ok) {
+        recovered = true;
+        await db
+          .update(employees)
+          .set({
+            dropletStatus: "active",
+            errorMessage: null,
+            updatedAt: new Date(),
+          } as any)
+          .where(eq(employees.id, id));
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 5000));
+    }
+  }
+
+  if (recovered) {
+    return NextResponse.json({
+      success: true,
+      message: `${employee.name}'s server has been rebooted and is back online.`,
+    });
+  }
 
   return NextResponse.json({
     success: true,
