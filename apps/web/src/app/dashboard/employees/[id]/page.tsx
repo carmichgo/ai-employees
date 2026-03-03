@@ -743,7 +743,7 @@ export default function EmployeeDetailPage() {
           {employee.status === "active" && (
             <button className="btn-secondary btn-sm" onClick={handlePause} disabled={actionLoading} style={{ gap: 6 }}><Pause size={14} /> Pause</button>
           )}
-          {employee.status === "paused" && (
+          {(employee.status === "paused" || employee.status === "provisioning") && (
             <button className="btn-primary btn-sm" onClick={handleResume} disabled={actionLoading} style={{ gap: 6 }}><Play size={14} /> Resume</button>
           )}
           {employee.status !== "terminated" && employee.dropletId && (

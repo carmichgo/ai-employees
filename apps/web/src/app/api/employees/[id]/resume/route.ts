@@ -29,8 +29,30 @@ export async function POST(
   if (!employee) {
     return NextResponse.json({ error: "Employee not found" }, { status: 404 });
   }
-  if (employee.status !== "paused") {
+
+  // Allow resume from "paused" or recover from stuck "provisioning"
+  if (employee.status !== "paused" && employee.status !== "provisioning") {
     return NextResponse.json({ error: "Employee is not paused" }, { status: 400 });
+  }
+
+  // If stuck in provisioning, try to recover directly by checking if the container is already healthy
+  if (employee.status === "provisioning" && employee.containerHost && employee.containerPort) {
+    try {
+      const healthUrl = `http://${employee.containerHost}:${employee.containerPort}/api/health`;
+      const res = await fetch(healthUrl, { signal: AbortSignal.timeout(5000) });
+      if (res.ok) {
+        // Container is already running and healthy — just mark active
+        const [updated] = await db
+          .update(employees)
+          .set({ status: "active", errorMessage: null, updatedAt: new Date() })
+          .where(eq(employees.id, id))
+          .returning();
+        const { gatewayToken, ...safe } = updated;
+        return NextResponse.json({ employee: safe, recovered: true });
+      }
+    } catch {
+      // Gateway not reachable — fall through to normal resume via backend
+    }
   }
 
   // If employee has an active droplet, delegate to it
