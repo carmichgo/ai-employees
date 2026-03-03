@@ -319,6 +319,10 @@ export default function TablesPage() {
   const addColBtnRef = useRef<HTMLTableCellElement>(null);
   const addColPopoverRef = useRef<HTMLDivElement>(null);
 
+  // Column resize
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
+  const resizeRef = useRef<{ colId: string; startX: number; startWidth: number } | null>(null);
+
   // Base rename
   const [editingBaseName, setEditingBaseName] = useState(false);
   const [editBaseNameVal, setEditBaseNameVal] = useState("");
@@ -326,6 +330,34 @@ export default function TablesPage() {
   // Table rename
   const [editingTableName, setEditingTableName] = useState(false);
   const [editTableNameVal, setEditTableNameVal] = useState("");
+
+  // ── Column resize handlers ─────────────────────────
+  const handleResizeStart = useCallback((colId: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startWidth = columnWidths[colId] || 180;
+    resizeRef.current = { colId, startX: e.clientX, startWidth };
+
+    const handleMouseMove = (ev: MouseEvent) => {
+      if (!resizeRef.current) return;
+      const delta = ev.clientX - resizeRef.current.startX;
+      const newWidth = Math.max(60, resizeRef.current.startWidth + delta);
+      setColumnWidths((prev) => ({ ...prev, [resizeRef.current!.colId]: newWidth }));
+    };
+
+    const handleMouseUp = () => {
+      resizeRef.current = null;
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  }, [columnWidths]);
 
   // ── Load bases list ──────────────────────────────
   const loadBases = useCallback(async () => {
@@ -1145,12 +1177,12 @@ export default function TablesPage() {
       ) : (
         <div style={{ flex: 1, overflow: "auto", border: "1px solid var(--border)", borderTop: "none", background: "var(--bg)", minWidth: 0, minHeight: 0 }}>
           <table
-            style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, tableLayout: "fixed" }}
+            style={{ minWidth: "100%", borderCollapse: "collapse", fontSize: 13, tableLayout: "fixed" }}
           >
             <colgroup>
               <col style={{ width: 40 }} />
               {columns.map((col) => (
-                <col key={col.id} />
+                <col key={col.id} style={{ width: columnWidths[col.id] || 180 }} />
               ))}
               <col style={{ width: 40 }} />
             </colgroup>
@@ -1253,6 +1285,17 @@ export default function TablesPage() {
                           </button>
                         </div>
                       )}
+
+                      {/* Resize handle */}
+                      <div
+                        onMouseDown={(e) => handleResizeStart(col.id, e)}
+                        style={{
+                          position: "absolute", top: 0, right: 0, width: 5, height: "100%",
+                          cursor: "col-resize", zIndex: 15,
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = "var(--blue)")}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                      />
                     </th>
                   );
                 })}
