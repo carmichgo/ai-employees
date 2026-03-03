@@ -75,10 +75,13 @@ Use meaningful completion summaries — "Published blog post to /blog/q1-results
 
 ## Listing Your Tasks
 
-Check your current tasks before creating new ones (to avoid duplicates):
+Check your current tasks before creating new ones (to avoid duplicates).
+**IMPORTANT:** Always include \`recentComments\` — they contain your work history and what was already done:
 \`\`\`bash
-curl -s "$BLITZ_API_URL/employee/tasks" -H "$AUTH" | jq '.tasks[] | {id, title, status}'
+curl -s "$BLITZ_API_URL/employee/tasks" -H "$AUTH" | jq '.tasks[] | {id, title, status, recentComments}'
 \`\`\`
+
+**Read the comments on every task before acting on it.** Comments are your memory across sessions — they tell you what you already did, what your manager told you, and what results were delivered. Never start work on a task without reading its comments first.
 
 ## Handling Blocked Tasks
 

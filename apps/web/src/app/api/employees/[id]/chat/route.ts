@@ -14,9 +14,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
 export const maxDuration = 120; // Chat responses from AI can take time
-import { eq, and, desc, inArray } from "drizzle-orm";
+import { eq, and, desc, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { employees, chatMessages, tasks } from "@/lib/schema";
+import { employees, chatMessages, tasks, taskComments } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
 
 async function authenticate(request: NextRequest) {
@@ -240,8 +240,8 @@ export async function POST(
   // The droplet API injects the full SOUL.md from disk as the system prompt —
   // we do NOT inject a separate system prompt here so there's one source of truth.
   try {
-    // Fetch active tasks so the agent knows what's already in progress and
-    // won't restart or duplicate existing work when responding to a chat message.
+    // Fetch active tasks WITH recent comments so the agent knows what's already
+    // in progress and what work has been done — prevents restarting or duplicating work.
     let taskContext = "";
     try {
       const activeTasks = await db
@@ -260,11 +260,79 @@ export async function POST(
         )
         .limit(20);
 
-      if (activeTasks.length > 0) {
-        const taskList = activeTasks
-          .map((t) => `- [${t.status}] "${t.title}" (${t.priority}, id:${t.id.slice(0, 8)})`)
-          .join("\n");
-        taskContext = `\n\n[Current task board — these tasks already exist, do NOT recreate or restart them. Only create a new task if the manager is asking for something genuinely new that isn't covered below.]\n${taskList}`;
+      // Also fetch recently completed tasks (last 24h) so the agent knows what was already delivered
+      const recentlyCompleted = await db
+        .select({
+          id: tasks.id,
+          title: tasks.title,
+          status: tasks.status,
+          priority: tasks.priority,
+        })
+        .from(tasks)
+        .where(
+          and(
+            eq(tasks.employeeId, id),
+            eq(tasks.status, "completed"),
+            sql`${tasks.completedAt} > now() - interval '24 hours'`,
+          ),
+        )
+        .orderBy(desc(tasks.completedAt))
+        .limit(10);
+
+      const allContextTasks = [...activeTasks, ...recentlyCompleted];
+
+      if (allContextTasks.length > 0) {
+        // Fetch recent comments for these tasks so the agent has full work history
+        const taskIds = allContextTasks.map((t) => t.id);
+        const commentsByTask: Record<string, Array<{ authorName: string; content: string }>> = {};
+        try {
+          const comments = await db
+            .select({
+              taskId: taskComments.taskId,
+              authorName: taskComments.authorName,
+              content: taskComments.content,
+              createdAt: taskComments.createdAt,
+            })
+            .from(taskComments)
+            .where(sql`${taskComments.taskId} IN (${sql.join(taskIds.map((tid) => sql`${tid}::uuid`), sql`, `)})`)
+            .orderBy(desc(taskComments.createdAt));
+
+          for (const c of comments) {
+            const arr = commentsByTask[c.taskId] || (commentsByTask[c.taskId] = []);
+            if (arr.length < 3) arr.push({ authorName: c.authorName, content: c.content });
+          }
+          // Reverse to chronological order
+          for (const arr of Object.values(commentsByTask)) arr.reverse();
+        } catch {
+          // Non-fatal — comments table may not exist yet
+        }
+
+        const taskLines: string[] = [];
+        for (const t of activeTasks) {
+          taskLines.push(`- [${t.status}] "${t.title}" (${t.priority}, id:${t.id.slice(0, 8)})`);
+          const comments = commentsByTask[t.id];
+          if (comments?.length) {
+            for (const c of comments) {
+              const truncated = c.content.length > 200 ? c.content.slice(0, 200) + "..." : c.content;
+              taskLines.push(`    > ${c.authorName}: ${truncated}`);
+            }
+          }
+        }
+        if (recentlyCompleted.length > 0) {
+          taskLines.push("");
+          taskLines.push("Recently completed (do NOT redo these):");
+          for (const t of recentlyCompleted) {
+            taskLines.push(`- [completed] "${t.title}" (id:${t.id.slice(0, 8)})`);
+            const comments = commentsByTask[t.id];
+            if (comments?.length) {
+              const last = comments[comments.length - 1];
+              const truncated = last.content.length > 200 ? last.content.slice(0, 200) + "..." : last.content;
+              taskLines.push(`    > ${last.authorName}: ${truncated}`);
+            }
+          }
+        }
+
+        taskContext = `\n\n[Current task board — these tasks already exist, do NOT recreate or restart them. Read the comments to understand what work has already been done. Only create a new task if the manager is asking for something genuinely new that isn't covered below.]\n${taskLines.join("\n")}`;
       }
     } catch {
       // Non-fatal — task query may fail if table doesn't exist yet

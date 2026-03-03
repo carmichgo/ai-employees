@@ -31,8 +31,10 @@ CT="Content-Type: application/json"
 
 ### List Your Tasks
 \`\`\`bash
-curl -s "$BLITZ_API_URL/employee/tasks" -H "$AUTH" | jq .
+curl -s "$BLITZ_API_URL/employee/tasks" -H "$AUTH" | jq '.tasks[] | {id, title, status, priority, recentComments}'
 \`\`\`
+
+**CRITICAL: Always read \`recentComments\` on each task before acting.** Comments are your memory — they contain what you already did, what your manager told you, credentials they shared, and results you delivered. If you skip reading comments, you WILL redo work that was already finished.
 
 ### Create a Task
 \`\`\`bash

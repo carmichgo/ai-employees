@@ -233,11 +233,13 @@ export async function employeeGatewayRoutes(fastify: FastifyInstance) {
       .where(eq(tasks.employeeId, employee.id))
       .orderBy(desc(tasks.createdAt));
 
-    // Fetch recent comments for non-completed tasks so the employee has full
-    // context (e.g. manager replies, credentials shared, unblock instructions).
-    // This prevents context loss across heartbeats / session resets.
+    // Fetch recent comments for active tasks AND recently completed tasks so the
+    // employee has full context (e.g. manager replies, credentials, unblock
+    // instructions, and what was already delivered). This prevents context loss
+    // across heartbeats / session resets and stops agents from redoing completed work.
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const activeTaskIds = myTasks
-      .filter((t) => t.status !== "completed")
+      .filter((t) => t.status !== "completed" || (t.completedAt && new Date(t.completedAt) > oneDayAgo))
       .map((t) => t.id);
 
     const commentsByTask: Record<string, Array<{ authorType: string; authorName: string; content: string; createdAt: Date | null }>> = {};

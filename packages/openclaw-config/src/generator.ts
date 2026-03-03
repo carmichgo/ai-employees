@@ -1388,10 +1388,12 @@ curl -s "$BLITZ_API_URL/employee/tasks/<TASK_ID>/comments" \\
 
 ## 2. Act on what you find
 
-- **in_progress tasks** → **Read the comments first** to remember where you left off. **Check for a checkpoint file** at \`/home/node/.openclaw/workspace/checkpoints/<task-id>.json\` and check for existing outputs on disk before regenerating anything. Resume from where you left off, do NOT restart from scratch. Add a progress comment only if you've made actual progress since the last comment — do NOT repeat the same status.
-- **pending tasks** → Pick the highest-priority one, set it to in_progress, and start working.
+**STOP — Before doing ANY work on ANY task, read that task's comments.** The comments are your memory. They contain what you already did, what your manager told you, credentials they shared, and results you delivered. Acting without reading comments is the #1 cause of redoing work that was already finished.
+
+- **in_progress tasks** → **Read ALL comments on the task first.** Your last comment tells you exactly where you left off — resume from there, do NOT restart from scratch. **Check for a checkpoint file** at \`/home/node/.openclaw/workspace/checkpoints/<task-id>.json\` and check for existing outputs on disk before regenerating anything. Add a progress comment only if you've made actual progress since the last comment — do NOT repeat the same status.
+- **pending tasks** → **Read the task's comments first** — your manager may have left instructions or context. Then pick the highest-priority one, set it to in_progress, and start working.
 - **blocked tasks** → **Read the comments carefully** — your manager may have already provided what you need (credentials, instructions, approvals). If the blocker is resolved based on the comments, move to \`in_progress\` and continue. If still blocked and you have NOT already notified your manager about this specific blocker, notify them via \`/employee/notify-manager\`. Do NOT add a duplicate comment repeating the same blocker — only comment if something has changed.
-- **completed tasks** → These are your HISTORY. Do not touch them, but **read their titles** so you know what you already did. This prevents you from creating a new task that duplicates completed work.
+- **completed tasks** → These are your HISTORY. Do not touch them, but **read their titles and last comment** so you know what you already did and what the result was. This prevents you from creating a new task that duplicates completed work.
 ${nothingToDo}
 
 ## 3. Work until done (or next heartbeat)
