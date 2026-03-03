@@ -467,10 +467,26 @@ export async function startEmployee(employeeId: string): Promise<void> {
   const employee = await db.query.employees.findFirst({
     where: eq(employees.id, employeeId),
   });
-  if (!employee?.containerId) return;
+  if (!employee?.containerId) {
+    console.error(`[start] No containerId for employee ${employeeId}, setting error status`);
+    await db
+      .update(employees)
+      .set({ status: "error", errorMessage: "No container to start", updatedAt: new Date() })
+      .where(eq(employees.id, employeeId));
+    return;
+  }
 
   const container = docker.getContainer(employee.containerId);
-  await container.start();
+  try {
+    await container.start();
+  } catch (err: any) {
+    // Container may already be running (e.g. pause never killed it) — that's fine
+    if (err.statusCode === 304 || err.message?.includes("already started") || err.message?.includes("is already running")) {
+      console.log(`[start] Container for ${employeeId} already running, proceeding`);
+    } else {
+      throw err;
+    }
+  }
 
   // Get possibly-changed IP after start
   const info = await container.inspect();

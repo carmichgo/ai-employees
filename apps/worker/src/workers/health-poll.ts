@@ -1,4 +1,4 @@
-import { eq, and, not } from "drizzle-orm";
+import { eq, and, not, lt } from "drizzle-orm";
 import { db, employees } from "@ai-employees/db";
 import { docker } from "../docker/client.js";
 import { networkInterfaces } from "os";
@@ -28,7 +28,6 @@ export async function pollAllEmployeeHealth(): Promise<void> {
   const activeEmployees = await db.query.employees.findMany({
     where: and(
       not(eq(employees.status, "terminated")),
-      not(eq(employees.status, "provisioning")),
     ),
   });
 
@@ -39,6 +38,14 @@ export async function pollAllEmployeeHealth(): Promise<void> {
 
   for (const employee of localEmployees) {
     try {
+      // For provisioning employees, only try recovery if stuck for > 3 minutes
+      // and they already have a containerId (meaning the container was created)
+      if (employee.status === "provisioning") {
+        const stuckThreshold = new Date(Date.now() - 3 * 60 * 1000);
+        if (!employee.containerId || (employee.updatedAt && employee.updatedAt > stuckThreshold)) {
+          continue; // Not stuck yet or no container to check
+        }
+      }
       await pollEmployeeHealth(employee);
     } catch (error) {
       console.error(`[health] Error polling employee ${employee.id}:`, error);
