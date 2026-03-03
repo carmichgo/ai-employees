@@ -187,8 +187,28 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       return reply.status(400).send({ error: "Employee is not active" });
     }
 
-    const queue = getProvisionQueue();
-    await queue.add("stop-employee", { employeeId: id });
+    // Kill the container synchronously — don't just queue it.
+    // This ensures the container is actually dead before we respond.
+    if (employee.containerName) {
+      try {
+        execSync(`docker kill ${employee.containerName}`, { timeout: 15000 });
+        console.log(`[pause] Killed container ${employee.containerName} for employee ${id}`);
+      } catch (err: any) {
+        // If container is already stopped/not running, that's fine
+        if (!err.message?.includes("is not running")) {
+          console.error(`[pause] docker kill failed for ${employee.containerName}: ${err.message}`);
+        }
+      }
+    } else if (employee.containerId) {
+      try {
+        execSync(`docker kill ${employee.containerId}`, { timeout: 15000 });
+        console.log(`[pause] Killed container ${employee.containerId} for employee ${id}`);
+      } catch (err: any) {
+        if (!err.message?.includes("is not running")) {
+          console.error(`[pause] docker kill failed for ${employee.containerId}: ${err.message}`);
+        }
+      }
+    }
 
     const [updated] = await db
       .update(employees)

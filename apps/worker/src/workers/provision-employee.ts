@@ -453,7 +453,14 @@ export async function stopEmployee(employeeId: string): Promise<void> {
   if (!employee?.containerId) return;
 
   const container = docker.getContainer(employee.containerId);
-  await container.stop();
+  try {
+    await container.kill();
+  } catch (err: any) {
+    // Container may already be stopped — that's fine
+    if (!err.message?.includes("is not running") && !err.statusCode?.toString().startsWith("304")) {
+      throw err;
+    }
+  }
 }
 
 export async function startEmployee(employeeId: string): Promise<void> {
