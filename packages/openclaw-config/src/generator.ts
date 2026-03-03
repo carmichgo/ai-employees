@@ -712,6 +712,35 @@ export function generateAgentsMd(employee: EmployeeInput): string {
   // This MUST be the very first thing the model reads so it's never skipped.
   // ═══════════════════════════════════════════════════════════════════════
 
+  parts.push("## 🚨 RULE #0 — TASK BOARD FIRST, ALWAYS (ANTI-LOOP PROTOCOL)");
+  parts.push("");
+  parts.push("**YOUR CONTEXT LIES. YOUR TASK BOARD TELLS THE TRUTH.**");
+  parts.push("");
+  parts.push("When your conversation context resets (which happens regularly between sessions), you see recent chat messages that look like active work. **DO NOT ACT ON CHAT CONTEXT ALONE.** The chat may say 'generating video' or 'creating frames' — but the task board may show that work is already COMPLETED or IN_PROGRESS with substantial progress logged in the comments. If you act on stale chat context without checking the task board, you will redo work, waste API credits, and create duplicates.");
+  parts.push("");
+  parts.push("**MANDATORY FIRST ACTION — before responding to ANY message or doing ANY work:**");
+  parts.push("```bash");
+  parts.push("# ALWAYS run this FIRST — before reading chat context, before doing work, before ANYTHING");
+  parts.push("curl -s \"$BLITZ_API_URL/employee/tasks\" \\");
+  parts.push("  -H \"Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN\" | jq '.tasks[] | {id, title, status, recentComments}'");
+  parts.push("```");
+  parts.push("");
+  parts.push("**Then cross-reference chat context against the task board:**");
+  parts.push("- **Task is COMPLETED** → That work is DONE. Do not redo it. Move on.");
+  parts.push("- **Task is IN_PROGRESS with recent comments showing work was done** → Read the comments carefully. Work may already be finished or actively running (API calls polling, sub-agents working, videos generating). Check for outputs on disk (`ls` the workspace) and checkpoint files before restarting anything. If outputs already exist, the work is done — just mark the task completed.");
+  parts.push("- **Task is IN_PROGRESS but comments show it was just started or is waiting** → Resume from where the comments indicate, do NOT restart from scratch.");
+  parts.push("");
+  parts.push("**Before making ANY expensive API call** (video generation, image generation, TTS, etc.), ALWAYS check disk first:");
+  parts.push("```bash");
+  parts.push("# Check if outputs already exist before calling any generation API");
+  parts.push("ls -la /home/node/.openclaw/workspace/  # Check for existing output files");
+  parts.push("cat /home/node/.openclaw/workspace/checkpoints/*.json 2>/dev/null  # Check for checkpoints");
+  parts.push("```");
+  parts.push("If the files already exist → the work is done. Do NOT regenerate them.");
+  parts.push("");
+  parts.push("**This rule exists because of a real, recurring failure mode:** You see chat messages about generating videos/images/content, assume the work needs to be done, and call expensive APIs — when the task board and disk already show the work was finished or is in progress. This wastes real money and creates duplicates. CHECK THE BOARD AND DISK FIRST.");
+  parts.push("");
+
   parts.push("## ⚠️ RULE #1 — LOG EVERY TASK BEFORE YOU START (NON-NEGOTIABLE)");
   parts.push("");
   parts.push("**STOP. Before you read ANYTHING else in this document, internalize this rule:**");
@@ -1372,6 +1401,10 @@ export function generateHeartbeatMd(employee?: { name?: string; jobTitle?: strin
 
 When you receive this heartbeat prompt, follow these steps IN ORDER:
 
+## 0. ANTI-LOOP CHECK — Read this before doing ANYTHING
+
+**Your conversation context may contain stale chat messages about work that is already DONE or actively IN PROGRESS.** Do NOT trust chat context. The ONLY source of truth is your task board and the files on disk. If you skip this step and act on chat context, you WILL redo work, waste API credits, and create duplicates. This has happened before — don't let it happen again.
+
 ## 1. Check your task board (WITH COMMENTS — this is your context)
 \`\`\`bash
 curl -s "$BLITZ_API_URL/employee/tasks" \\
@@ -1379,6 +1412,11 @@ curl -s "$BLITZ_API_URL/employee/tasks" \\
 \`\`\`
 
 **CRITICAL: This task list is your FULL CONTEXT — it includes ALL tasks (in_progress, pending, blocked, AND completed).** The completed tasks show you what you already did — use them to avoid repeating work. The \`recentComments\` on each task contain your work history — what you've done, what your manager told you, credentials they shared, unblock instructions, etc. **READ THE FULL LIST AND COMMENTS CAREFULLY.** They are your memory of what happened between heartbeats.
+
+**Cross-reference with chat context:** If your recent chat messages mention work (generating videos, creating images, making API calls), check the task board:
+- If that work is **COMPLETED** → it's DONE. Do not redo it.
+- If that work is **IN_PROGRESS** with comments showing progress → read the comments and check disk for outputs before restarting anything. The work may already be finished but just not marked completed, or it may be actively running.
+- **Before ANY expensive API call**, always \`ls\` the workspace and \`cat\` checkpoint files to see if outputs already exist.
 
 If you need the full comment history for a specific task:
 \`\`\`bash
@@ -1390,7 +1428,12 @@ curl -s "$BLITZ_API_URL/employee/tasks/<TASK_ID>/comments" \\
 
 **STOP — Before doing ANY work on ANY task, read that task's comments.** The comments are your memory. They contain what you already did, what your manager told you, credentials they shared, and results you delivered. Acting without reading comments is the #1 cause of redoing work that was already finished.
 
-- **in_progress tasks** → **Read ALL comments on the task first.** Your last comment tells you exactly where you left off — resume from there, do NOT restart from scratch. **Check for a checkpoint file** at \`/home/node/.openclaw/workspace/checkpoints/<task-id>.json\` and check for existing outputs on disk before regenerating anything. Add a progress comment only if you've made actual progress since the last comment — do NOT repeat the same status.
+- **in_progress tasks** → **Read ALL comments on the task first.** Your last comment tells you exactly where you left off — resume from there, do NOT restart from scratch. **Before doing ANY work**, check for existing outputs:
+  1. \`cat /home/node/.openclaw/workspace/checkpoints/<task-id>.json 2>/dev/null\` — checkpoint file
+  2. \`ls -la /home/node/.openclaw/workspace/\` — output files already on disk
+  3. If outputs exist and the task's comments show the work was done → **mark the task completed** instead of redoing it
+  4. If partially done → resume from checkpoint, do NOT regenerate things that already exist on disk
+  Add a progress comment only if you've made actual progress since the last comment — do NOT repeat the same status.
 - **pending tasks** → **Read the task's comments first** — your manager may have left instructions or context. Then pick the highest-priority one, set it to in_progress, and start working.
 - **blocked tasks** → **Read the comments carefully** — your manager may have already provided what you need (credentials, instructions, approvals). If the blocker is resolved based on the comments, move to \`in_progress\` and continue. If still blocked and you have NOT already notified your manager about this specific blocker, notify them via \`/employee/notify-manager\`. Do NOT add a duplicate comment repeating the same blocker — only comment if something has changed.
 - **completed tasks** → These are your HISTORY. Do not touch them, but **read their titles and last comment** so you know what you already did and what the result was. This prevents you from creating a new task that duplicates completed work.
