@@ -334,6 +334,21 @@ export default function EmployeeDetailPage() {
     }
   };
 
+  const handleReactivate = async () => {
+    if (!confirm(`Reactivate ${employee.name}? This will create a new server and takes 2-3 minutes.`)) return;
+    setActionLoading(true);
+    try {
+      const res = await api.reactivateEmployee(employeeId);
+      alert(res.message);
+      const empRes = await api.getEmployee(employeeId);
+      setEmployee(empRes.employee);
+    } catch (err: any) {
+      alert(`Reactivate failed: ${err.message}`);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // ── Email handlers ──
   const handleSaveEmail = async () => {
     setEmailSaving(true);
@@ -751,6 +766,9 @@ export default function EmployeeDetailPage() {
           )}
           {employee.status !== "terminated" && (
             <button className="btn-danger btn-sm" onClick={handleTerminate} disabled={actionLoading} style={{ gap: 6 }}><Trash2 size={14} /> Terminate</button>
+          )}
+          {employee.status === "terminated" && (
+            <button className="btn-primary btn-sm" onClick={handleReactivate} disabled={actionLoading} style={{ gap: 6 }}><Play size={14} /> Reactivate</button>
           )}
         </div>
       </div>

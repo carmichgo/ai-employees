@@ -39,11 +39,27 @@ export async function POST(
     return NextResponse.json({ error: "Employee not found" }, { status: 404 });
   }
 
-  if (employee.status !== "provisioning" && employee.status !== "error") {
+  if (employee.status !== "provisioning" && employee.status !== "error" && employee.status !== "terminated") {
     return NextResponse.json(
-      { error: `Employee is ${employee.status}, not provisioning/error` },
+      { error: `Employee is ${employee.status}, not provisioning/error/terminated` },
       { status: 400 },
     );
+  }
+
+  // If terminated, reset status to provisioning before re-creating droplet
+  if (employee.status === "terminated") {
+    await db
+      .update(employees)
+      .set({
+        status: "provisioning",
+        dropletId: null,
+        dropletIp: null,
+        dropletStatus: "none",
+        interserviceSecret: null,
+        errorMessage: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(employees.id, id));
   }
 
   // If employee has no droplet at all, create one

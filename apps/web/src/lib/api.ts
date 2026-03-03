@@ -307,6 +307,13 @@ class ApiClient {
     );
   }
 
+  async reactivateEmployee(id: string) {
+    return this.request<{ message: string; dropletStatus?: string }>(
+      `/api/employees/${id}/reprovision`,
+      { method: "POST" },
+    );
+  }
+
   async getTemplates() {
     return this.request<{ templates: any[]; categories: string[] }>(
       "/api/employees/templates",
