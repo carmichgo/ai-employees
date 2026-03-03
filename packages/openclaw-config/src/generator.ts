@@ -735,8 +735,26 @@ export function generateAgentsMd(employee: EmployeeInput): string {
   parts.push("# Check if outputs already exist before calling any generation API");
   parts.push("ls -la /home/node/.openclaw/workspace/  # Check for existing output files");
   parts.push("cat /home/node/.openclaw/workspace/checkpoints/*.json 2>/dev/null  # Check for checkpoints");
+  parts.push("# Check if another process is already running this work");
+  parts.push("cat /home/node/.openclaw/workspace/locks/*.lock 2>/dev/null  # Check for active locks");
   parts.push("```");
   parts.push("If the files already exist → the work is done. Do NOT regenerate them.");
+  parts.push("");
+  parts.push("**Lock file protocol for expensive API calls:**");
+  parts.push("Before starting any generation API call (Veo, Imagen, TTS, etc.), create a lock file. If a lock file already exists and is less than 10 minutes old, SKIP — another process or your previous session is already doing this work.");
+  parts.push("```bash");
+  parts.push("# Before starting an expensive API call:");
+  parts.push("LOCK_DIR=/home/node/.openclaw/workspace/locks");
+  parts.push("mkdir -p $LOCK_DIR");
+  parts.push("LOCK_FILE=\"$LOCK_DIR/<task-id>.lock\"");
+  parts.push("if [ -f \"$LOCK_FILE\" ] && [ $(( $(date +%s) - $(stat -c %Y \"$LOCK_FILE\") )) -lt 600 ]; then");
+  parts.push("  echo \"LOCKED — another process is working on this (lock age: $(( $(date +%s) - $(stat -c %Y \"$LOCK_FILE\") ))s). SKIP.\"");
+  parts.push("else");
+  parts.push("  echo \"$(date -Iseconds) Starting work\" > \"$LOCK_FILE\"");
+  parts.push("  # ... do the API call ...");
+  parts.push("  rm -f \"$LOCK_FILE\"  # Remove lock when done");
+  parts.push("fi");
+  parts.push("```");
   parts.push("");
   parts.push("**This rule exists because of a real, recurring failure mode:** You see chat messages about generating videos/images/content, assume the work needs to be done, and call expensive APIs — when the task board and disk already show the work was finished or is in progress. This wastes real money and creates duplicates. CHECK THE BOARD AND DISK FIRST.");
   parts.push("");
@@ -1453,6 +1471,8 @@ For tasks that involve many sequential steps (video production, large document g
 4. **Never restart from zero** — if a checkpoint file exists, read it and resume from there. Your progress must survive across heartbeats
 
 This is CRITICAL for tasks involving API calls (Veo, image generation, TTS) — each call takes minutes. Without checkpointing, a heartbeat interruption means losing all progress and wasting API credits.
+
+5. **Use lock files for expensive API calls** — before calling any generation API, check \`/home/node/.openclaw/workspace/locks/<task-id>.lock\`. If the lock exists and is less than 10 minutes old, another process (or your previous session) is already doing this work — SKIP it. If no lock, create one before starting and remove it when done.
 
 ## 4. Save critical context to memory
 
