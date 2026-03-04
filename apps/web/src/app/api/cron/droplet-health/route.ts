@@ -67,7 +67,9 @@ export async function GET(request: NextRequest) {
         isNotNull(employees.dropletIp),
         not(eq(employees.dropletStatus, "destroyed")),
         not(eq(employees.dropletStatus, "provisioning")),
+        not(eq(employees.dropletStatus, "off")),
         not(eq(employees.status, "terminated")),
+        not(eq(employees.status, "paused")),
       ),
     );
 

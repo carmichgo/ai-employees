@@ -906,6 +906,62 @@ export async function powerCycleEmployeeDroplet(employeeId: string): Promise<boo
   }
 }
 
+/** Gracefully shut down an employee's droplet (power off) */
+export async function shutdownEmployeeDroplet(employeeId: string): Promise<boolean> {
+  const [employee] = await db
+    .select()
+    .from(employees)
+    .where(eq(employees.id, employeeId))
+    .limit(1);
+
+  if (!employee?.dropletId) return false;
+
+  try {
+    await doFetch(`/droplets/${employee.dropletId}/actions`, {
+      method: "POST",
+      body: JSON.stringify({ type: "shutdown" }),
+    });
+    console.log(`[droplet] Shutdown droplet ${employee.dropletId} for employee ${employee.name}`);
+    return true;
+  } catch (err: any) {
+    // If graceful shutdown fails, try power_off
+    try {
+      await doFetch(`/droplets/${employee.dropletId}/actions`, {
+        method: "POST",
+        body: JSON.stringify({ type: "power_off" }),
+      });
+      console.log(`[droplet] Power-off droplet ${employee.dropletId} for employee ${employee.name}`);
+      return true;
+    } catch (err2: any) {
+      console.error(`[droplet] Failed to shutdown droplet ${employee.dropletId}:`, err2.message);
+      return false;
+    }
+  }
+}
+
+/** Power on an employee's droplet */
+export async function powerOnEmployeeDroplet(employeeId: string): Promise<boolean> {
+  const [employee] = await db
+    .select()
+    .from(employees)
+    .where(eq(employees.id, employeeId))
+    .limit(1);
+
+  if (!employee?.dropletId) return false;
+
+  try {
+    await doFetch(`/droplets/${employee.dropletId}/actions`, {
+      method: "POST",
+      body: JSON.stringify({ type: "power_on" }),
+    });
+    console.log(`[droplet] Powered on droplet ${employee.dropletId} for employee ${employee.name}`);
+    return true;
+  } catch (err: any) {
+    console.error(`[droplet] Failed to power on droplet ${employee.dropletId}:`, err.message);
+    return false;
+  }
+}
+
 /** Check if a droplet exists and is running via DO API (without DB updates) */
 export async function getDropletInfo(dropletId: string): Promise<{
   exists: boolean;

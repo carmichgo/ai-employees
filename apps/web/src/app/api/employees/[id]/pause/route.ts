@@ -3,7 +3,9 @@ import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { employees } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
-import { getEmployeeBackend, createBackendClient } from "@/lib/backend";
+import { shutdownEmployeeDroplet } from "@/lib/digitalocean";
+
+export const maxDuration = 60;
 
 export async function POST(
   request: NextRequest,
@@ -33,29 +35,28 @@ export async function POST(
     return NextResponse.json({ error: "Employee is not active" }, { status: 400 });
   }
 
-  // Try to actually kill the container on the droplet FIRST.
-  // Only mark as "paused" in DB if the container is confirmed dead.
-  const backendConfig = await getEmployeeBackend(id);
-  if (backendConfig) {
-    try {
-      const backend = createBackendClient(backendConfig);
-      await backend.pauseEmployee(id);
-    } catch (err: any) {
-      console.error(`[pause] Backend call failed for ${id}: ${err.message}`);
+  // Shut down the droplet via DigitalOcean API (powers it off, stops billing for CPU)
+  if (employee.dropletId) {
+    const success = await shutdownEmployeeDroplet(id);
+    if (!success) {
       return NextResponse.json(
-        { error: `Failed to stop container: ${err.message}` },
+        { error: "Failed to shut down droplet" },
         { status: 502 },
       );
     }
   }
 
-  // Container is dead (or no droplet) — now update DB
+  // Mark as paused in DB
   const [updated] = await db
     .update(employees)
-    .set({ status: "paused", updatedAt: new Date() })
+    .set({
+      status: "paused",
+      dropletStatus: employee.dropletId ? "off" : employee.dropletStatus,
+      updatedAt: new Date(),
+    } as any)
     .where(eq(employees.id, id))
     .returning();
 
-  const { gatewayToken, ...safe } = updated;
+  const { gatewayToken, interserviceSecret, ...safe } = updated as any;
   return NextResponse.json({ employee: safe });
 }

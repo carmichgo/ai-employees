@@ -3,7 +3,9 @@ import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { employees } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
-import { getEmployeeBackend, createBackendClient } from "@/lib/backend";
+import { powerOnEmployeeDroplet, checkDropletHealth } from "@/lib/digitalocean";
+
+export const maxDuration = 60;
 
 export async function POST(
   request: NextRequest,
@@ -36,37 +38,90 @@ export async function POST(
   }
 
   // If stuck in provisioning with a container, force-recover to active.
-  // The droplet's health poll will verify the container is actually running
-  // within 60s, flipping to "error" if it's not.
   if (employee.status === "provisioning") {
     const [updated] = await db
       .update(employees)
       .set({ status: "active", errorMessage: null, updatedAt: new Date() })
       .where(eq(employees.id, id))
       .returning();
-    const { gatewayToken, ...safe } = updated;
+    const { gatewayToken, interserviceSecret, ...safe } = updated as any;
     return NextResponse.json({ employee: safe, recovered: true });
   }
 
-  // If employee has an active droplet, delegate resume to it
-  const backendConfig = await getEmployeeBackend(id);
-  if (backendConfig) {
-    try {
-      const backend = createBackendClient(backendConfig);
-      const result = await backend.resumeEmployee(id);
-      return NextResponse.json(result);
-    } catch (err: any) {
-      return NextResponse.json({ error: err.message }, { status: 500 });
+  // Power on the droplet via DigitalOcean API
+  if (employee.dropletId) {
+    const powered = await powerOnEmployeeDroplet(id);
+    if (!powered) {
+      return NextResponse.json(
+        { error: "Failed to power on droplet" },
+        { status: 502 },
+      );
     }
+
+    // Mark as active immediately so the UI updates, set droplet to booting
+    await db
+      .update(employees)
+      .set({
+        status: "active",
+        dropletStatus: "booting",
+        errorMessage: null,
+        updatedAt: new Date(),
+      } as any)
+      .where(eq(employees.id, id));
+
+    // Poll for health recovery (droplet takes ~30-60s to boot)
+    let recovered = false;
+    if (employee.dropletIp) {
+      await new Promise((r) => setTimeout(r, 15000));
+      for (let i = 0; i < 8; i++) {
+        const health = await checkDropletHealth(employee.dropletIp);
+        if (health.ok) {
+          recovered = true;
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 5000));
+      }
+    }
+
+    if (recovered) {
+      const [updated] = await db
+        .update(employees)
+        .set({
+          status: "active",
+          dropletStatus: "active",
+          lastHealthAt: new Date(),
+          errorMessage: null,
+          updatedAt: new Date(),
+        } as any)
+        .where(eq(employees.id, id))
+        .returning();
+      const { gatewayToken, interserviceSecret, ...safe } = updated as any;
+      return NextResponse.json({
+        employee: safe,
+        message: `${employee.name} is back online.`,
+      });
+    }
+
+    // Didn't recover in time but droplet is booting — health cron will update
+    const [current] = await db
+      .select()
+      .from(employees)
+      .where(eq(employees.id, id))
+      .limit(1);
+    const { gatewayToken, interserviceSecret, ...safe } = current as any;
+    return NextResponse.json({
+      employee: safe,
+      message: `${employee.name}'s server is powering on. It may take another minute to be fully ready.`,
+    });
   }
 
-  // Demo mode fallback
+  // No droplet (demo mode) — just set active
   const [updated] = await db
     .update(employees)
     .set({ status: "active", updatedAt: new Date() })
     .where(eq(employees.id, id))
     .returning();
 
-  const { gatewayToken, ...safe } = updated;
+  const { gatewayToken, interserviceSecret, ...safe } = updated as any;
   return NextResponse.json({ employee: safe });
 }
