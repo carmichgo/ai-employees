@@ -8,7 +8,7 @@ import {
   MessageCircle, Save, X, Eye, EyeOff, ChevronDown, Upload, FileText, Zap,
   Webhook, Timer, Plus, ToggleLeft, ToggleRight, Copy, Check, KeyRound, Globe, Edit3,
   MessageSquare, Send, Smartphone, Gamepad2, Shield, MonitorSmartphone, Hash, Radio, Phone, Headphones,
-  Monitor, Sparkles, RotateCw,
+  Monitor, Sparkles, RotateCw, Square,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -344,6 +344,18 @@ export default function EmployeeDetailPage() {
       setEmployee(empRes.employee);
     } catch (err: any) {
       alert(`Reactivate failed: ${err.message}`);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleStop = async () => {
+    setActionLoading(true);
+    try {
+      const res = await api.stopEmployee(employeeId);
+      alert(res.message);
+    } catch (err: any) {
+      alert(`Stop failed: ${err.message}`);
     } finally {
       setActionLoading(false);
     }
@@ -761,6 +773,9 @@ export default function EmployeeDetailPage() {
           {(employee.status === "paused" || employee.status === "provisioning") && (
             <button className="btn-primary btn-sm" onClick={handleResume} disabled={actionLoading} style={{ gap: 6 }}><Play size={14} /> Resume</button>
           )}
+          {employee.status === "active" && employee.dropletStatus === "active" && (
+            <button className="btn-sm" onClick={handleStop} disabled={actionLoading} style={{ gap: 6, background: "rgba(239,68,68,0.08)", color: "#ef4444", border: "1px solid #ef4444" }}><Square size={14} fill="#ef4444" /> Stop</button>
+          )}
           {employee.status !== "terminated" && employee.dropletId && (
             <button className="btn-secondary btn-sm" onClick={handleReboot} disabled={actionLoading} style={{ gap: 6 }}><RotateCw size={14} /> Reboot</button>
           )}
@@ -823,6 +838,44 @@ export default function EmployeeDetailPage() {
           <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6 }}>
             {employee.goals || "No goals configured"}
           </div>
+        </div>
+      </div>
+
+      {/* Approval Mode Toggle */}
+      <div className="card" style={{ padding: "16px 20px", marginBottom: 16, background: "#ffffff", border: "1px solid var(--border)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 14, color: "var(--text)" }}>Require approval for batch work</div>
+            <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>
+              {employee.name} must get your OK before continuing with repetitive tasks (videos, posts, reports, etc.)
+            </div>
+          </div>
+          <button
+            onClick={async () => {
+              const pc = (employee.personalityConfig as any) || {};
+              const newVal = !pc.approvalMode;
+              try {
+                const res = await api.updateEmployee(employee.id, {
+                  personalityConfig: { ...pc, approvalMode: newVal },
+                });
+                setEmployee(res.employee);
+              } catch (err: any) {
+                alert(`Failed: ${err.message}`);
+              }
+            }}
+            style={{
+              width: 44, height: 24, borderRadius: 12, border: "none", cursor: "pointer", flexShrink: 0,
+              background: (employee.personalityConfig as any)?.approvalMode ? "var(--blue, #2563eb)" : "var(--border, #e5e5e5)",
+              position: "relative", transition: "background 0.2s",
+            }}
+          >
+            <div style={{
+              width: 18, height: 18, borderRadius: 9, background: "#fff",
+              position: "absolute", top: 3,
+              left: (employee.personalityConfig as any)?.approvalMode ? 23 : 3,
+              transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+            }} />
+          </button>
         </div>
       </div>
 

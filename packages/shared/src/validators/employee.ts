@@ -5,6 +5,7 @@ export const personalityConfigSchema = z.object({
   proactivity: z.enum(["very-proactive", "proactive", "balanced", "reactive"]).default("proactive"),
   communication: z.enum(["concise", "detailed", "casual", "formal"]).default("concise"),
   bossTechnicalLevel: z.enum(["very-technical", "technical", "somewhat-technical", "non-technical"]).optional(),
+  approvalMode: z.boolean().optional(),
 });
 
 export const authorityMemberSchema = z.object({

@@ -1144,6 +1144,33 @@ function HireEmployeeWizard() {
               form.personality.communication,
               (v) => setForm({ ...form, personality: { ...form.personality, communication: v as any } }),
             )}
+
+            {/* Approval Mode Toggle */}
+            <div style={{ marginTop: 20, padding: "16px 20px", background: "var(--bg-secondary)", borderRadius: 12, border: "1px solid var(--border)" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 14, color: "var(--text)" }}>Require approval for batch work</div>
+                  <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>
+                    Employee must get your OK before continuing with repetitive tasks (e.g., creating multiple videos, posts, or reports)
+                  </div>
+                </div>
+                <button
+                  onClick={() => setForm({ ...form, personality: { ...form.personality, approvalMode: !form.personality.approvalMode } })}
+                  style={{
+                    width: 44, height: 24, borderRadius: 12, border: "none", cursor: "pointer", flexShrink: 0,
+                    background: form.personality.approvalMode ? "var(--blue, #2563eb)" : "var(--border, #e5e5e5)",
+                    position: "relative", transition: "background 0.2s",
+                  }}
+                >
+                  <div style={{
+                    width: 18, height: 18, borderRadius: 9, background: "#fff",
+                    position: "absolute", top: 3,
+                    left: form.personality.approvalMode ? 23 : 3,
+                    transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+                  }} />
+                </button>
+              </div>
+            </div>
           </div>
 
           {renderBottomNav({})}

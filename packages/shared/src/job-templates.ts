@@ -17,6 +17,7 @@ export interface PersonalityConfig {
   proactivity: "very-proactive" | "proactive" | "balanced" | "reactive";
   communication: "concise" | "detailed" | "casual" | "formal";
   bossTechnicalLevel?: "very-technical" | "technical" | "somewhat-technical" | "non-technical";
+  approvalMode?: boolean;
 }
 
 export const DEFAULT_PERSONALITY: PersonalityConfig = {

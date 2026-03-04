@@ -95,12 +95,22 @@ export async function PATCH(
   if (input.persona !== undefined) updateData.persona = input.persona;
   if (input.goals !== undefined) updateData.goals = input.goals;
   if (input.modelConfig) updateData.modelConfig = input.modelConfig;
+  if (input.personalityConfig) updateData.personalityConfig = input.personalityConfig;
 
   const [updated] = await db
     .update(employees)
     .set(updateData)
     .where(eq(employees.id, id))
     .returning();
+
+  // If personality config changed, regenerate SOUL.md on the droplet (fire-and-forget)
+  if (input.personalityConfig && updated.dropletIp && updated.interserviceSecret && updated.dropletStatus === "active") {
+    fetch(`http://${updated.dropletIp}:3001/internal/regenerate-configs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-interservice-secret": updated.interserviceSecret },
+      signal: AbortSignal.timeout(15000),
+    }).catch(() => {});
+  }
 
   return NextResponse.json({ employee: sanitize(updated) });
 }

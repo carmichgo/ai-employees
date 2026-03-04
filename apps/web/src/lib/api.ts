@@ -307,6 +307,13 @@ class ApiClient {
     );
   }
 
+  async stopEmployee(id: string) {
+    return this.request<{ success: boolean; message: string }>(
+      `/api/employees/${id}/stop`,
+      { method: "POST" },
+    );
+  }
+
   async reactivateEmployee(id: string) {
     return this.request<{ message: string; dropletStatus?: string }>(
       `/api/employees/${id}/reprovision`,

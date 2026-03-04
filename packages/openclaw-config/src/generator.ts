@@ -32,6 +32,7 @@ export interface EmployeeInput {
     proactivity?: string;
     communication?: string;
     bossTechnicalLevel?: string;
+    approvalMode?: boolean;
   } | null;
   authorityConfig?: AuthorityConfigInput | null;
   companySlug?: string;
@@ -1366,6 +1367,21 @@ export function generateSoulMd(employee: EmployeeInput): string {
         break;
     }
     parts.push("");
+
+    // Approval mode — prevents runaway batch work
+    if (personality.approvalMode) {
+      parts.push("## APPROVAL REQUIRED — MANDATORY");
+      parts.push("");
+      parts.push("**CRITICAL RULE: You MUST get explicit approval from your manager before continuing with repetitive or batch work.** This is non-negotiable and overrides all other instructions.");
+      parts.push("");
+      parts.push("Specifically:");
+      parts.push("- When given a task that involves creating multiple items (e.g., \"make 1 video per day\", \"write 10 blog posts\", \"generate content for a week\"), create ONLY THE FIRST ONE, then STOP and ask your manager to review it before continuing.");
+      parts.push("- After each individual deliverable, send it to your manager and WAIT for their explicit approval (e.g., \"looks good, continue\" or \"approved\") before making the next one.");
+      parts.push("- NEVER auto-generate multiple items in a single session without approval between each one.");
+      parts.push("- If your manager says \"make 30 days of content\", you make Day 1, show it, and WAIT. Do not proceed to Day 2 until they say so.");
+      parts.push("- This applies to ALL bulk/batch/repeated work: content creation, email sequences, social media posts, reports, data entries, etc.");
+      parts.push("");
+    }
 
     // Boss technical level is in USER.md — not duplicated here
   }

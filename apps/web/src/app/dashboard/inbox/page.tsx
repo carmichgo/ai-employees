@@ -26,6 +26,7 @@ import {
   Paperclip,
   X,
   Image as ImageIcon,
+  Square,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -596,6 +597,19 @@ function InboxContent() {
 
   const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); setDragOver(true); }, []);
   const handleDragLeave = useCallback((e: React.DragEvent) => { e.preventDefault(); setDragOver(false); }, []);
+
+  // Stop employee — kill all running processes
+  const handleStop = async () => {
+    if (!selectedId) return;
+    try {
+      await api.stopEmployee(selectedId);
+      setSending(false);
+      sendingGuardRef.current = false;
+      sendingForRef.current = null;
+    } catch (err: any) {
+      alert(`Stop failed: ${err.message}`);
+    }
+  };
 
   // Send message
   const handleSend = async () => {
@@ -1347,6 +1361,18 @@ function InboxContent() {
                         <span className="typing-dot" style={{ animationDelay: "0.2s" }} />
                         <span className="typing-dot" style={{ animationDelay: "0.4s" }} />
                       </div>
+                      <button
+                        onClick={handleStop}
+                        title="Stop — kill all running processes"
+                        style={{
+                          padding: "8px 14px", borderRadius: 8, border: "1px solid #ef4444",
+                          background: "rgba(239, 68, 68, 0.08)", color: "#ef4444",
+                          cursor: "pointer", fontSize: 12, fontWeight: 600,
+                          display: "flex", alignItems: "center", gap: 6, alignSelf: "center",
+                        }}
+                      >
+                        <Square size={12} fill="#ef4444" /> Stop
+                      </button>
                     </div>
                   )}
 
