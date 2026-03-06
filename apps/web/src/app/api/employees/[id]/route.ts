@@ -5,7 +5,7 @@ import { employees, tasks } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
 import { updateEmployeeSchema } from "@ai-employees/shared";
 import { getEmployeeBackend, createBackendClient } from "@/lib/backend";
-import { destroyEmployeeDroplet, pollEmployeeDropletStatus } from "@/lib/digitalocean";
+import { destroyEmployeeDroplet, pollEmployeeDropletStatus, checkDropletHealth } from "@/lib/digitalocean";
 
 export const maxDuration = 60;
 
@@ -57,6 +57,20 @@ export async function GET(
           .where(eq(employees.id, id))
           .limit(1);
         if (updated) {
+          // If droplet is active with an IP, check if it's actually healthy
+          // and auto-recover the status from "provisioning" to "active".
+          // This fixes the case where a restart fallback set status to
+          // "provisioning" but reprovision failed, leaving it stuck.
+          if (updated.dropletIp && updated.dropletStatus === "active") {
+            const health = await checkDropletHealth(updated.dropletIp);
+            if (health.ok) {
+              await db
+                .update(employees)
+                .set({ status: "active", errorMessage: null, updatedAt: new Date() })
+                .where(eq(employees.id, id));
+              return NextResponse.json({ employee: sanitize({ ...updated, status: "active", errorMessage: null }) });
+            }
+          }
           return NextResponse.json({ employee: sanitize(updated) });
         }
       }

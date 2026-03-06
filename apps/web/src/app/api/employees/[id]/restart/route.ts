@@ -85,6 +85,7 @@ export async function POST(
 
   // 2. Fallback: teardown + reprovision (works with old droplet code)
   if (!restarted) {
+    const previousStatus = employee.status;
     try {
       // Teardown existing container
       const tearRes = await fetch(`${baseUrl}/internal/employees/${id}/teardown`, {
@@ -119,9 +120,20 @@ export async function POST(
       } else {
         const err = await provRes.json().catch(() => ({ error: "reprovision failed" }));
         results.push(`Reprovision: ${err.error || err.message}`);
+        // Reprovision failed — restore previous status so the employee
+        // doesn't get stuck in "provisioning" forever
+        await db
+          .update(employees)
+          .set({ status: previousStatus || "error", errorMessage: `Reprovision failed: ${err.error || err.message}`, updatedAt: new Date() } as any)
+          .where(eq(employees.id, id));
       }
     } catch (err: any) {
       results.push(`Fallback restart error: ${err.message}`);
+      // Restore status on exception too
+      await db
+        .update(employees)
+        .set({ status: previousStatus || "error", errorMessage: `Restart failed: ${err.message}`, updatedAt: new Date() } as any)
+        .where(eq(employees.id, id));
     }
   }
 
