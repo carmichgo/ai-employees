@@ -350,11 +350,18 @@ export default function EmployeeDetailPage() {
   };
 
   const handleRestart = async () => {
-    if (!confirm(`Restart ${employee.name}'s container? This recreates the container without affecting the server.`)) return;
     setActionLoading(true);
     try {
-      const res = await api.restartEmployee(employeeId);
-      alert(res.results?.join("\n") || "Restart triggered");
+      // If employee has a droplet IP, use the restart endpoint (tries restart → reprovision → teardown+reprovision)
+      // Otherwise fall back to reprovision endpoint directly
+      if (employee.dropletIp) {
+        const res = await api.restartEmployee(employeeId);
+        if (!res.success) {
+          alert(`Restart failed. Try Reboot instead.`);
+        }
+      } else {
+        await fetch(`/api/employees/${employeeId}/reprovision`, { method: "POST" });
+      }
       const empRes = await api.getEmployee(employeeId);
       setEmployee(empRes.employee);
     } catch (err: any) {
@@ -808,20 +815,17 @@ export default function EmployeeDetailPage() {
           {employee.status === "active" && (
             <button className="btn-secondary btn-sm" onClick={handlePause} disabled={actionLoading} style={{ gap: 6 }}><Pause size={14} /> Pause</button>
           )}
-          {(employee.status === "paused" || employee.status === "provisioning" || employee.status === "error") && (
+          {employee.status === "paused" && (
             <button className="btn-primary btn-sm" onClick={handleResume} disabled={actionLoading} style={{ gap: 6 }}><Play size={14} /> Resume</button>
           )}
           {employee.status === "active" && employee.dropletStatus === "active" && (
             <button className="btn-sm" onClick={handleStop} disabled={actionLoading} style={{ gap: 6, background: "rgba(239,68,68,0.08)", color: "#ef4444", border: "1px solid #ef4444" }}><Square size={14} fill="#ef4444" /> Stop</button>
           )}
-          {employee.status !== "terminated" && employee.dropletId && (
-            <button className="btn-secondary btn-sm" onClick={handleReboot} disabled={actionLoading} style={{ gap: 6 }}><RotateCw size={14} /> Reboot</button>
-          )}
-          {employee.status !== "terminated" && employee.dropletIp && (
+          {employee.status !== "terminated" && employee.status !== "paused" && (employee.dropletIp || employee.dropletId) && (
             <button className="btn-secondary btn-sm" onClick={handleRestart} disabled={actionLoading} style={{ gap: 6 }}><RefreshCw size={14} /> Restart</button>
           )}
-          {(employee.status === "error" || employee.status === "provisioning") && employee.dropletId && (
-            <button className="btn-sm" onClick={handleForceReset} disabled={actionLoading} style={{ gap: 6, background: "rgba(234,88,12,0.08)", color: "#ea580c", border: "1px solid #ea580c" }}><Zap size={14} /> Force Reset</button>
+          {employee.status !== "terminated" && employee.dropletId && (
+            <button className="btn-secondary btn-sm" onClick={handleReboot} disabled={actionLoading} style={{ gap: 6 }}><RotateCw size={14} /> Reboot</button>
           )}
           {employee.status !== "terminated" && (
             <button className="btn-danger btn-sm" onClick={handleTerminate} disabled={actionLoading} style={{ gap: 6 }}><Trash2 size={14} /> Terminate</button>
@@ -846,17 +850,11 @@ export default function EmployeeDetailPage() {
           </div>
           <button
             className="btn-secondary btn-sm"
-            onClick={async () => {
-              setActionLoading(true);
-              try {
-                await fetch(`/api/employees/${employeeId}/reprovision`, { method: "POST" });
-              } catch {}
-              setActionLoading(false);
-            }}
+            onClick={handleRestart}
             disabled={actionLoading}
             style={{ marginTop: 20, fontSize: 12 }}
           >
-            {actionLoading ? "Retrying..." : "Retry Provisioning"}
+            {actionLoading ? "Restarting..." : "Retry"}
           </button>
         </div>
       )}
@@ -869,17 +867,12 @@ export default function EmployeeDetailPage() {
             <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 12 }}>{employee.errorMessage}</div>
           )}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button className="btn-primary btn-sm" onClick={handleResume} disabled={actionLoading} style={{ gap: 6 }}>
-              <Play size={14} /> Try Resume
+            <button className="btn-primary btn-sm" onClick={handleRestart} disabled={actionLoading} style={{ gap: 6 }}>
+              <RefreshCw size={14} /> Restart
             </button>
             {employee.dropletId && (
               <button className="btn-secondary btn-sm" onClick={handleReboot} disabled={actionLoading} style={{ gap: 6 }}>
                 <RotateCw size={14} /> Reboot Server
-              </button>
-            )}
-            {employee.dropletId && (
-              <button className="btn-sm" onClick={handleForceReset} disabled={actionLoading} style={{ gap: 6, background: "rgba(234,88,12,0.08)", color: "#ea580c", border: "1px solid #ea580c" }}>
-                <Zap size={14} /> Force Reset
               </button>
             )}
           </div>

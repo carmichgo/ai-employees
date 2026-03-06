@@ -28,9 +28,8 @@ import {
   Image as ImageIcon,
   Square,
   ArrowLeft,
-  Play,
   RotateCw,
-  Zap,
+  RefreshCw,
   AlertTriangle,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -1394,18 +1393,21 @@ function InboxContent() {
                                 style={{ fontSize: 11, padding: "4px 10px", gap: 4 }}
                                 onClick={async () => {
                                   try {
-                                    await fetch(`/api/employees/${selectedId}/resume`, { method: "POST" });
+                                    await fetch(`/api/employees/${selectedId}/restart`, { method: "POST" });
                                     setMessages((prev) => [...prev, {
                                       id: `system-${Date.now()}`,
                                       role: "assistant",
-                                      content: "Attempting to resume... try sending a message in a moment.",
+                                      content: "Restarting workspace... try sending a message in ~30 seconds.",
                                       timestamp: new Date(),
                                       mode: "system",
                                     }]);
+                                    // Refresh employee list to pick up status change
+                                    const empRes = await api.listEmployees();
+                                    setEmployees(empRes.employees.filter((e: Employee) => e.status !== "terminated"));
                                   } catch {}
                                 }}
                               >
-                                <Play size={11} /> Try Resume
+                                <RefreshCw size={11} /> Restart
                               </button>
                               <button
                                 className="btn-secondary btn-sm"
@@ -1424,24 +1426,6 @@ function InboxContent() {
                                 }}
                               >
                                 <RotateCw size={11} /> Reboot Server
-                              </button>
-                              <button
-                                className="btn-sm"
-                                style={{ fontSize: 11, padding: "4px 10px", gap: 4, background: "rgba(234,88,12,0.08)", color: "#ea580c", border: "1px solid #ea580c" }}
-                                onClick={async () => {
-                                  try {
-                                    await fetch(`/api/employees/${selectedId}/force-reset`, { method: "POST" });
-                                    setMessages((prev) => [...prev, {
-                                      id: `system-${Date.now()}`,
-                                      role: "assistant",
-                                      content: "Force resetting container... memory and files are preserved. Try again in ~30 seconds.",
-                                      timestamp: new Date(),
-                                      mode: "system",
-                                    }]);
-                                  } catch {}
-                                }}
-                              >
-                                <Zap size={11} /> Force Reset
                               </button>
                             </div>
                           </div>
