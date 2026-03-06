@@ -13,9 +13,10 @@ export const maxDuration = 60;
  * Use this when the droplet's API (port 3001) is unresponsive
  * and the normal /restart endpoint can't reach it.
  *
- * After power-cycling, polls the droplet health for up to ~45 seconds
- * so the status is restored to "active" immediately instead of waiting
- * for the cron health checker.
+ * After power-cycling:
+ * 1. Polls droplet health (port 3001) for up to ~45s
+ * 2. Once the droplet API is back, triggers a container restart
+ *    so the OpenClaw gateway also comes back
  */
 export async function POST(
   request: NextRequest,
@@ -38,6 +39,7 @@ export async function POST(
       dropletId: employees.dropletId,
       dropletIp: employees.dropletIp,
       dropletStatus: employees.dropletStatus,
+      interserviceSecret: employees.interserviceSecret,
       companyId: employees.companyId,
     })
     .from(employees)
@@ -59,49 +61,116 @@ export async function POST(
     return NextResponse.json({ error: "Failed to power-cycle droplet" }, { status: 502 });
   }
 
-  // Mark as active (clear error status) and droplet as unhealthy while we wait for recovery
+  // Mark droplet as rebooting while we wait for recovery
   await db
     .update(employees)
     .set({
       status: "active",
       dropletStatus: "unhealthy",
-      errorMessage: null,
+      errorMessage: "Rebooting...",
       updatedAt: new Date(),
     } as any)
     .where(eq(employees.id, id));
 
-  // Poll for health recovery so the user doesn't stay stuck in "unhealthy"
-  let recovered = false;
+  // Poll for health recovery — wait for the droplet API (port 3001) to come back
+  let dropletBack = false;
   if (employee.dropletIp) {
-    // Wait 15s for the droplet to start booting, then poll every 5s
     await new Promise((r) => setTimeout(r, 15000));
     for (let i = 0; i < 6; i++) {
       const health = await checkDropletHealth(employee.dropletIp);
       if (health.ok) {
-        recovered = true;
-        await db
-          .update(employees)
-          .set({
-            dropletStatus: "active",
-            errorMessage: null,
-            updatedAt: new Date(),
-          } as any)
-          .where(eq(employees.id, id));
+        dropletBack = true;
         break;
       }
       await new Promise((r) => setTimeout(r, 5000));
     }
   }
 
-  if (recovered) {
+  if (!dropletBack) {
+    // Droplet hasn't responded yet — leave as unhealthy, cron will pick it up
+    await db
+      .update(employees)
+      .set({
+        dropletStatus: "unhealthy",
+        errorMessage: "Droplet rebooting — waiting for recovery",
+        updatedAt: new Date(),
+      } as any)
+      .where(eq(employees.id, id));
     return NextResponse.json({
       success: true,
-      message: `${employee.name}'s server has been rebooted and is back online.`,
+      message: `Rebooting ${employee.name}'s droplet. It may take 1-2 minutes to come back online.`,
     });
   }
 
+  // Droplet API is back — now restart the OpenClaw container.
+  // After a power-cycle, the container may not auto-start even though
+  // the API server does (systemd service vs Docker container).
+  let containerRestarted = false;
+  if (employee.interserviceSecret && employee.dropletIp) {
+    const headers = {
+      "Content-Type": "application/json",
+      "x-interservice-secret": employee.interserviceSecret,
+    };
+    const baseUrl = `http://${employee.dropletIp}:3001`;
+
+    // Try dedicated restart endpoint first
+    try {
+      const res = await fetch(`${baseUrl}/internal/employees/${id}/restart`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({}),
+        signal: AbortSignal.timeout(15000),
+      });
+      if (res.ok) {
+        containerRestarted = true;
+      }
+    } catch { /* endpoint may not exist or timed out */ }
+
+    // If restart didn't work, try reprovision (recreates the container)
+    if (!containerRestarted) {
+      try {
+        const res = await fetch(`${baseUrl}/internal/employees/${id}/reprovision`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({}),
+          signal: AbortSignal.timeout(15000),
+        });
+        if (res.ok) {
+          containerRestarted = true;
+        }
+      } catch { /* reprovision failed */ }
+    }
+  }
+
+  if (containerRestarted) {
+    await db
+      .update(employees)
+      .set({
+        status: "active",
+        dropletStatus: "active",
+        errorMessage: null,
+        updatedAt: new Date(),
+      } as any)
+      .where(eq(employees.id, id));
+    return NextResponse.json({
+      success: true,
+      message: `${employee.name}'s server has been rebooted and the workspace is restarting.`,
+    });
+  }
+
+  // Droplet is back but container restart failed — mark active but with warning
+  await db
+    .update(employees)
+    .set({
+      status: "active",
+      dropletStatus: "active",
+      errorMessage: "Droplet is back but container restart failed — try the Restart button",
+      updatedAt: new Date(),
+    } as any)
+    .where(eq(employees.id, id));
+
   return NextResponse.json({
     success: true,
-    message: `Rebooting ${employee.name}'s droplet. It will take 1-2 minutes to come back online.`,
+    message: `${employee.name}'s server is back but the workspace may need a manual restart.`,
   });
 }

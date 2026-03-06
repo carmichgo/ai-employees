@@ -3,15 +3,21 @@ import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { employees, chatMessages } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
+import { checkDropletHealth } from "@/lib/digitalocean";
 
 export const maxDuration = 60;
 
 /**
  * POST /api/employees/[id]/restart
- * Restart an employee's container to clear stuck state.
- * Tries the dedicated /restart endpoint first; if the droplet is running
- * old code (404), falls back to teardown + reprovision.
- * Optionally clears chat history too.
+ * Restart an employee's OpenClaw container to clear stuck state.
+ *
+ * Strategy (in order):
+ * 1. Try the dedicated /restart endpoint on the droplet API
+ * 2. If that fails, try /reprovision (recreates the container from scratch)
+ * 3. If that fails, try teardown + reprovision
+ * 4. Never leave the employee stuck in "provisioning" — always restore status on failure
+ *
+ * Optionally clears chat history too (body: { clearChat: true }).
  */
 export async function POST(
   request: NextRequest,
@@ -59,8 +65,27 @@ export async function POST(
   };
   const baseUrl = `http://${employee.dropletIp}:3001`;
 
-  // 1. Try dedicated restart endpoint first
+  // First check if the droplet API is even reachable
+  const dropletHealthy = await checkDropletHealth(employee.dropletIp);
+  if (!dropletHealthy.ok) {
+    // Droplet API is down — can't restart via API, need a reboot instead
+    await db
+      .update(employees)
+      .set({
+        status: "error",
+        errorMessage: "Droplet API unreachable — use Reboot instead of Restart",
+        updatedAt: new Date(),
+      } as any)
+      .where(eq(employees.id, id));
+    return NextResponse.json({
+      success: false,
+      results: ["Droplet API is unreachable — use the Reboot button to power-cycle the server"],
+    });
+  }
+
   let restarted = false;
+
+  // 1. Try dedicated restart endpoint (docker restart on the container)
   try {
     const res = await fetch(`${baseUrl}/internal/employees/${id}/restart`, {
       method: "POST",
@@ -74,18 +99,38 @@ export async function POST(
       results.push(data.message || "Container restarted");
       restarted = true;
     } else if (res.status === 404) {
-      // Endpoint doesn't exist — droplet running old code, fall back
+      results.push("Restart endpoint not available, trying reprovision");
     } else {
       const err = await res.json().catch(() => ({ error: "Unknown error" }));
-      results.push(`Restart endpoint failed: ${err.error}`);
+      results.push(`Restart failed: ${err.error}`);
     }
   } catch {
-    // Network error or timeout — try fallback
+    results.push("Restart endpoint unreachable, trying reprovision");
   }
 
-  // 2. Fallback: teardown + reprovision (works with old droplet code)
+  // 2. Try reprovision directly (no teardown needed — it handles existing containers)
   if (!restarted) {
-    const previousStatus = employee.status;
+    try {
+      const res = await fetch(`${baseUrl}/internal/employees/${id}/reprovision`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({}),
+        signal: AbortSignal.timeout(30000),
+      });
+      if (res.ok) {
+        results.push("Container reprovisioned");
+        restarted = true;
+      } else {
+        const err = await res.json().catch(() => ({ error: "reprovision failed" }));
+        results.push(`Reprovision failed: ${err.error || err.message}`);
+      }
+    } catch (err: any) {
+      results.push(`Reprovision error: ${err.message}`);
+    }
+  }
+
+  // 3. Last resort: teardown then reprovision
+  if (!restarted) {
     try {
       // Teardown existing container
       const tearRes = await fetch(`${baseUrl}/internal/employees/${id}/teardown`, {
@@ -96,18 +141,9 @@ export async function POST(
       });
       if (tearRes.ok) {
         results.push("Container torn down");
-      } else {
-        const err = await tearRes.json().catch(() => ({ error: "teardown failed" }));
-        results.push(`Teardown: ${err.error || err.message}`);
       }
 
-      // Clear container fields so reprovision creates a fresh one
-      await db
-        .update(employees)
-        .set({ status: "provisioning" } as any)
-        .where(eq(employees.id, id));
-
-      // Trigger reprovision
+      // Reprovision after teardown
       const provRes = await fetch(`${baseUrl}/internal/employees/${id}/reprovision`, {
         method: "POST",
         headers,
@@ -115,29 +151,18 @@ export async function POST(
         signal: AbortSignal.timeout(30000),
       });
       if (provRes.ok) {
-        results.push("Reprovision triggered — container will be back in ~30 seconds");
+        results.push("Container reprovisioned after teardown");
         restarted = true;
       } else {
         const err = await provRes.json().catch(() => ({ error: "reprovision failed" }));
-        results.push(`Reprovision: ${err.error || err.message}`);
-        // Reprovision failed — restore previous status so the employee
-        // doesn't get stuck in "provisioning" forever
-        await db
-          .update(employees)
-          .set({ status: previousStatus || "error", errorMessage: `Reprovision failed: ${err.error || err.message}`, updatedAt: new Date() } as any)
-          .where(eq(employees.id, id));
+        results.push(`Reprovision after teardown failed: ${err.error || err.message}`);
       }
     } catch (err: any) {
-      results.push(`Fallback restart error: ${err.message}`);
-      // Restore status on exception too
-      await db
-        .update(employees)
-        .set({ status: previousStatus || "error", errorMessage: `Restart failed: ${err.message}`, updatedAt: new Date() } as any)
-        .where(eq(employees.id, id));
+      results.push(`Teardown+reprovision error: ${err.message}`);
     }
   }
 
-  // 3. Optionally clear chat history
+  // 4. Optionally clear chat history
   if (clearChat) {
     try {
       await db
@@ -149,11 +174,20 @@ export async function POST(
     }
   }
 
-  // If restart succeeded, mark employee active and clear errors
+  // Update status based on outcome — NEVER leave as "provisioning"
   if (restarted) {
     await db
       .update(employees)
       .set({ status: "active", dropletStatus: "active", errorMessage: null, updatedAt: new Date() } as any)
+      .where(eq(employees.id, id));
+  } else {
+    await db
+      .update(employees)
+      .set({
+        status: "error",
+        errorMessage: `All restart attempts failed: ${results.join("; ")}`,
+        updatedAt: new Date(),
+      } as any)
       .where(eq(employees.id, id));
   }
 
