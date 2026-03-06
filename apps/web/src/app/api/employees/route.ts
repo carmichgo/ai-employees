@@ -7,6 +7,7 @@ export const maxDuration = 60;
 import { verifyToken } from "@/lib/auth";
 import { provisionAndReturn } from "@/lib/hire";
 import { createEmployeeSchema } from "@ai-employees/shared";
+import { checkDropletHealth } from "@/lib/digitalocean";
 
 async function authenticate(request: NextRequest) {
   const token =
@@ -35,6 +36,24 @@ export async function GET(request: NextRequest) {
       .from(employees)
       .where(eq(employees.companyId, session.companyId))
       .orderBy(employees.createdAt);
+
+    // Auto-recover employees stuck in "provisioning" whose droplet is actually healthy
+    for (const emp of result) {
+      if (emp.status === "provisioning" && emp.dropletIp) {
+        try {
+          const health = await checkDropletHealth(emp.dropletIp);
+          if (health.ok) {
+            await db
+              .update(employees)
+              .set({ status: "active", dropletStatus: "active", errorMessage: null, updatedAt: new Date() } as any)
+              .where(eq(employees.id, emp.id));
+            emp.status = "active";
+            emp.dropletStatus = "active";
+            emp.errorMessage = null;
+          }
+        } catch { /* non-fatal */ }
+      }
+    }
 
     return NextResponse.json({ employees: result.map(sanitize) });
   } catch (err: any) {

@@ -61,14 +61,14 @@ export async function GET(
           // and auto-recover the status from "provisioning" to "active".
           // This fixes the case where a restart fallback set status to
           // "provisioning" but reprovision failed, leaving it stuck.
-          if (updated.dropletIp && updated.dropletStatus === "active") {
+          if (updated.dropletIp) {
             const health = await checkDropletHealth(updated.dropletIp);
             if (health.ok) {
               await db
                 .update(employees)
-                .set({ status: "active", errorMessage: null, updatedAt: new Date() })
+                .set({ status: "active", dropletStatus: "active", errorMessage: null, updatedAt: new Date() } as any)
                 .where(eq(employees.id, id));
-              return NextResponse.json({ employee: sanitize({ ...updated, status: "active", errorMessage: null }) });
+              return NextResponse.json({ employee: sanitize({ ...updated, status: "active", dropletStatus: "active", errorMessage: null }) });
             }
           }
           return NextResponse.json({ employee: sanitize(updated) });

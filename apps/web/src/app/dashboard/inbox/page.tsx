@@ -1556,7 +1556,7 @@ function InboxContent() {
                   })}
                 </div>
               )}
-              {selectedEmployee.status === "active" ? (
+              {(selectedEmployee.status === "active" || (selectedEmployee.status === "provisioning" && selectedEmployee.dropletIp)) ? (
                 <div
                   style={{
                     display: "flex",
