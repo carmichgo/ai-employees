@@ -44,6 +44,8 @@ interface Employee {
   jobTitle: string;
   emoji: string | null;
   status: string;
+  dropletId: string | null;
+  dropletIp: string | null;
 }
 
 interface Message {
