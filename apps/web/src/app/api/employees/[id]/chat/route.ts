@@ -515,22 +515,30 @@ export async function POST(
       });
     }
 
-    // If the employee was already in error state, give a friendlier message
-    if (employee.status === "error") {
-      const reply = `I'm having trouble connecting right now — my workspace is recovering. Please try again in a moment.`;
-      await db.insert(chatMessages).values({
-        employeeId: id,
-        userId: session.userId,
-        role: "assistant",
-        content: reply,
-        mode: "system",
-      });
-      return NextResponse.json({ reply, mode: "system" });
+    // Employee is unreachable — mark as error so the UI shows recovery options
+    const wasActive = employee.status === "active";
+    if (wasActive) {
+      await db
+        .update(employees)
+        .set({
+          status: "error",
+          errorMessage: `Unreachable — connection failed at ${new Date().toLocaleString()}`,
+          updatedAt: new Date(),
+        })
+        .where(eq(employees.id, id));
     }
-    return NextResponse.json(
-      { error: `Connection error: ${err.message}` },
-      { status: 502 },
-    );
+
+    const reply = wasActive
+      ? `I'm having trouble reaching ${employee.name} — the workspace appears to be down. Use the recovery options below or visit the employee page to reboot.`
+      : `I'm having trouble connecting right now — my workspace is recovering. Please try again in a moment.`;
+    await db.insert(chatMessages).values({
+      employeeId: id,
+      userId: session.userId,
+      role: "assistant",
+      content: reply,
+      mode: "unreachable",
+    });
+    return NextResponse.json({ reply, mode: "unreachable", employeeId: id });
   }
 }
 

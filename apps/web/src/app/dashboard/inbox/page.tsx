@@ -28,6 +28,10 @@ import {
   Image as ImageIcon,
   Square,
   ArrowLeft,
+  Play,
+  RotateCw,
+  Zap,
+  AlertTriangle,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -1366,6 +1370,78 @@ function InboxContent() {
                           >
                             <Loader2 size={10} style={{ animation: "spin 1.5s linear infinite" }} />
                             Working on it — the response will appear automatically
+                          </div>
+                        )}
+                        {msg.mode === "unreachable" && (
+                          <div
+                            style={{
+                              marginTop: 10,
+                              padding: "10px 12px",
+                              borderRadius: 8,
+                              background: "rgba(220, 38, 38, 0.04)",
+                              border: "1px solid rgba(220, 38, 38, 0.15)",
+                              fontSize: 12,
+                            }}
+                          >
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#dc2626", fontWeight: 600, marginBottom: 8 }}>
+                              <AlertTriangle size={13} /> Workspace unreachable
+                            </div>
+                            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                              <button
+                                className="btn-primary btn-sm"
+                                style={{ fontSize: 11, padding: "4px 10px", gap: 4 }}
+                                onClick={async () => {
+                                  try {
+                                    await fetch(`/api/employees/${selectedId}/resume`, { method: "POST" });
+                                    setMessages((prev) => [...prev, {
+                                      id: `system-${Date.now()}`,
+                                      role: "assistant",
+                                      content: "Attempting to resume... try sending a message in a moment.",
+                                      timestamp: new Date(),
+                                      mode: "system",
+                                    }]);
+                                  } catch {}
+                                }}
+                              >
+                                <Play size={11} /> Try Resume
+                              </button>
+                              <button
+                                className="btn-secondary btn-sm"
+                                style={{ fontSize: 11, padding: "4px 10px", gap: 4 }}
+                                onClick={async () => {
+                                  try {
+                                    await fetch(`/api/employees/${selectedId}/reboot`, { method: "POST" });
+                                    setMessages((prev) => [...prev, {
+                                      id: `system-${Date.now()}`,
+                                      role: "assistant",
+                                      content: "Rebooting server... this takes 1-2 minutes. Try sending a message after that.",
+                                      timestamp: new Date(),
+                                      mode: "system",
+                                    }]);
+                                  } catch {}
+                                }}
+                              >
+                                <RotateCw size={11} /> Reboot Server
+                              </button>
+                              <button
+                                className="btn-sm"
+                                style={{ fontSize: 11, padding: "4px 10px", gap: 4, background: "rgba(234,88,12,0.08)", color: "#ea580c", border: "1px solid #ea580c" }}
+                                onClick={async () => {
+                                  try {
+                                    await fetch(`/api/employees/${selectedId}/force-reset`, { method: "POST" });
+                                    setMessages((prev) => [...prev, {
+                                      id: `system-${Date.now()}`,
+                                      role: "assistant",
+                                      content: "Force resetting container... memory and files are preserved. Try again in ~30 seconds.",
+                                      timestamp: new Date(),
+                                      mode: "system",
+                                    }]);
+                                  } catch {}
+                                }}
+                              >
+                                <Zap size={11} /> Force Reset
+                              </button>
+                            </div>
                           </div>
                         )}
                       </div>
