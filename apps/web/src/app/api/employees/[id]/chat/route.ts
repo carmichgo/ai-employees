@@ -18,6 +18,7 @@ import { eq, and, desc, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { employees, chatMessages, tasks, taskComments } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
+import { checkDropletHealth } from "@/lib/digitalocean";
 
 async function authenticate(request: NextRequest) {
   const token =
@@ -225,15 +226,33 @@ export async function POST(
 
   // Check if employee has an active droplet
   if (employee.dropletStatus !== "active" || !employee.dropletIp || !employee.interserviceSecret) {
-    const reply = generateDemoReply(employee, message);
-    await db.insert(chatMessages).values({
-      employeeId: id,
-      userId: session.userId,
-      role: "assistant",
-      content: reply,
-      mode: "demo",
-    });
-    return NextResponse.json({ reply, mode: "demo" });
+    // If the droplet is "unhealthy" but has an IP, try a live health check —
+    // it may have recovered since the last status update (e.g. after a reboot
+    // where the polling window was too short).
+    if (employee.dropletStatus === "unhealthy" && employee.dropletIp && employee.interserviceSecret) {
+      const health = await checkDropletHealth(employee.dropletIp);
+      if (health.ok) {
+        // Droplet recovered — update status and continue to real chat
+        await db
+          .update(employees)
+          .set({ dropletStatus: "active", errorMessage: null, updatedAt: new Date() } as any)
+          .where(eq(employees.id, id));
+        employee.dropletStatus = "active";
+      }
+    }
+
+    // Still not active after the live check — return demo reply
+    if (employee.dropletStatus !== "active" || !employee.dropletIp || !employee.interserviceSecret) {
+      const reply = generateDemoReply(employee, message);
+      await db.insert(chatMessages).values({
+        employeeId: id,
+        userId: session.userId,
+        role: "assistant",
+        content: reply,
+        mode: "demo",
+      });
+      return NextResponse.json({ reply, mode: "demo" });
+    }
   }
 
   // Route to OpenClaw container via the employee's dedicated droplet.
