@@ -850,6 +850,12 @@ async function checkDropletApi(ip: string, _secret: string): Promise<{ ok: boole
       return { ok: false, phase };
     }
 
+    // If the health endpoint reports gateway container status, verify it's running.
+    // The droplet API starts before the Docker container, so we need to wait for both.
+    if (body.gatewayRunning === false) {
+      return { ok: false, phase: "gateway_starting" };
+    }
+
     return { ok: true, phase };
   } catch {
     return { ok: false, phase: null };
@@ -984,7 +990,7 @@ export async function getDropletInfo(dropletId: string): Promise<{
   }
 }
 
-/** Check if a droplet's API health endpoint is responding */
+/** Check if a droplet's API health endpoint is responding AND the gateway container is running */
 export async function checkDropletHealth(ip: string): Promise<{ ok: boolean; phase: string | null }> {
   try {
     const controller = new AbortController();
@@ -1002,6 +1008,11 @@ export async function checkDropletHealth(ip: string): Promise<{ ok: boolean; pha
 
     if (typeof phase === "string" && phase.startsWith("PHASE2_FAILED")) {
       return { ok: false, phase };
+    }
+
+    // Verify the gateway container is actually running, not just the API server
+    if (body.gatewayRunning === false) {
+      return { ok: false, phase: "gateway_starting" };
     }
 
     return { ok: true, phase };

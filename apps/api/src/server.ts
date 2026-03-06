@@ -57,8 +57,31 @@ export async function buildServer(config: Env) {
   await fastify.register(gatewayProxyRoutes);
 
   // Health check (used by Vercel to verify droplet readiness)
-  fastify.get("/health", async () => ({ status: "ok", timestamp: new Date().toISOString() }));
-  fastify.get("/api/health", async () => ({ status: "ok", timestamp: new Date().toISOString() }));
+  // Includes container status so the platform knows if the gateway is actually running
+  const getHealthResponse = async () => {
+    const result: Record<string, unknown> = { status: "ok", timestamp: new Date().toISOString() };
+    try {
+      const containers = execSync(
+        "docker ps --format '{{.Names}} {{.Status}}' --filter 'label=ai-employees.employee-id' 2>/dev/null || echo ''",
+        { timeout: 3000 },
+      ).toString().trim();
+      if (containers) {
+        result.containers = containers.split("\n").map((line) => {
+          const [name, ...statusParts] = line.split(" ");
+          return { name, status: statusParts.join(" ") };
+        });
+        result.gatewayRunning = containers.toLowerCase().includes("up");
+      } else {
+        result.containers = [];
+        result.gatewayRunning = false;
+      }
+    } catch {
+      result.gatewayRunning = false;
+    }
+    return result;
+  };
+  fastify.get("/health", getHealthResponse);
+  fastify.get("/api/health", getHealthResponse);
 
   // Debug endpoint — check Docker, worker, env
   fastify.get("/debug", async () => {
