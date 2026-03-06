@@ -110,6 +110,13 @@ export function createBackendClient(config: CompanyBackendConfig) {
       return res.json();
     },
 
+    async retryEmployee(id: string) {
+      const res = await backendFetch(config, `/internal/employees/${id}/retry`, {
+        method: "POST",
+      });
+      return res.json();
+    },
+
     async terminateEmployee(id: string) {
       const res = await backendFetch(config, `/internal/employees/${id}`, {
         method: "DELETE",

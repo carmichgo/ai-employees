@@ -1,22 +1,51 @@
-import { eq, and, not, inArray } from "drizzle-orm";
+import { eq, not } from "drizzle-orm";
 import { db, employees } from "@ai-employees/db";
 import { docker } from "../docker/client.js";
 
+/** How long an employee can stay in "provisioning" before being marked as stuck */
+const PROVISION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
 export async function pollAllEmployeeHealth(): Promise<void> {
-  // Get all non-terminated employees
-  const activeEmployees = await db.query.employees.findMany({
-    where: and(
-      not(eq(employees.status, "terminated")),
-      not(eq(employees.status, "provisioning")),
-    ),
+  // Get all non-terminated employees (including provisioning — to detect stuck ones)
+  const allEmployees = await db.query.employees.findMany({
+    where: not(eq(employees.status, "terminated")),
   });
 
-  for (const employee of activeEmployees) {
+  for (const employee of allEmployees) {
     try {
-      await pollEmployeeHealth(employee);
+      if (employee.status === "provisioning") {
+        await checkStuckProvisioning(employee);
+      } else {
+        await pollEmployeeHealth(employee);
+      }
     } catch (error) {
       console.error(`[health] Error polling employee ${employee.id}:`, error);
     }
+  }
+}
+
+/** Detect employees stuck in provisioning for too long and mark them as error */
+async function checkStuckProvisioning(employee: {
+  id: string;
+  name: string;
+  updatedAt: Date | null;
+  createdAt: Date;
+}) {
+  const lastUpdate = employee.updatedAt || employee.createdAt;
+  const elapsed = Date.now() - new Date(lastUpdate).getTime();
+
+  if (elapsed > PROVISION_TIMEOUT_MS) {
+    console.log(
+      `[health] Employee ${employee.name} (${employee.id}) stuck in provisioning for ${Math.round(elapsed / 1000)}s — marking as error`,
+    );
+    await db
+      .update(employees)
+      .set({
+        status: "error",
+        errorMessage: "Provisioning timed out — please retry or contact support",
+        updatedAt: new Date(),
+      })
+      .where(eq(employees.id, employee.id));
   }
 }
 

@@ -129,6 +129,12 @@ class ApiClient {
     });
   }
 
+  async retryEmployee(id: string) {
+    return this.request<{ employee: any }>(`/api/employees/${id}/retry`, {
+      method: "POST",
+    });
+  }
+
   async terminateEmployee(id: string) {
     return this.request<{ employee: any }>(`/api/employees/${id}`, {
       method: "DELETE",

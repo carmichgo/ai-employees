@@ -223,6 +223,16 @@ export default function EmployeeDetailPage() {
     setEmployee(res.employee);
     setActionLoading(false);
   };
+  const handleRetry = async () => {
+    setActionLoading(true);
+    try {
+      const res = await api.retryEmployee(employeeId);
+      setEmployee(res.employee);
+    } catch (err: any) {
+      alert(`Failed to retry: ${err.message}`);
+    }
+    setActionLoading(false);
+  };
   const handleTerminate = async () => {
     if (!confirm(`Are you sure you want to terminate ${employee.name}? This will shut down their workstation.`)) return;
     setActionLoading(true);
@@ -489,6 +499,9 @@ export default function EmployeeDetailPage() {
           {employee.status === "paused" && (
             <button className="btn-primary btn-sm" onClick={handleResume} disabled={actionLoading} style={{ gap: 6 }}><Play size={14} /> Resume</button>
           )}
+          {employee.status === "error" && (
+            <button className="btn-primary btn-sm" onClick={handleRetry} disabled={actionLoading} style={{ gap: 6 }}><Play size={14} /> Retry</button>
+          )}
           {employee.status !== "terminated" && (
             <button className="btn-danger btn-sm" onClick={handleTerminate} disabled={actionLoading} style={{ gap: 6 }}><Trash2 size={14} /> Terminate</button>
           )}
@@ -511,10 +524,17 @@ export default function EmployeeDetailPage() {
       )}
 
       {/* Error state */}
-      {employee.status === "error" && employee.errorMessage && (
+      {employee.status === "error" && (
         <div className="card" style={{ padding: 20, marginBottom: 24, borderColor: "rgba(220, 38, 38, 0.15)", background: "rgba(220, 38, 38, 0.04)" }}>
-          <div style={{ fontWeight: 600, color: "var(--red)", marginBottom: 6, fontSize: 14 }}>Error</div>
-          <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>{employee.errorMessage}</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <div>
+              <div style={{ fontWeight: 600, color: "var(--red)", marginBottom: 6, fontSize: 14 }}>Provisioning Failed</div>
+              <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>{employee.errorMessage || "An unknown error occurred during setup."}</div>
+            </div>
+            <button className="btn-primary btn-sm" onClick={handleRetry} disabled={actionLoading} style={{ gap: 6, flexShrink: 0, marginLeft: 16 }}>
+              <Play size={14} /> Retry
+            </button>
+          </div>
         </div>
       )}
 

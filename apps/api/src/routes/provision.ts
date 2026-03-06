@@ -179,6 +179,47 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     return { employee: sanitize(updated) };
   });
 
+  // POST /internal/employees/:id/retry — re-provision an employee stuck in error
+  fastify.post<{ Params: { id: string } }>("/internal/employees/:id/retry", async (request, reply) => {
+    const { id } = request.params;
+
+    const employee = await db.query.employees.findFirst({
+      where: eq(employees.id, id),
+    });
+    if (!employee) return reply.status(404).send({ error: "Employee not found" });
+    if (employee.status !== "error") return reply.status(400).send({ error: "Employee is not in error state" });
+
+    // Clean up any existing container before re-provisioning
+    if (employee.containerId || employee.containerName) {
+      const queue = getProvisionQueue();
+      await queue.add("teardown-employee", { employeeId: id });
+      // Brief wait so teardown starts before re-provision
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+
+    // Get company for channels
+    const company = await db.query.companies.findFirst({
+      where: eq(companies.id, employee.companyId),
+    });
+
+    // Reset status and re-queue provisioning
+    const [updated] = await db
+      .update(employees)
+      .set({ status: "provisioning", errorMessage: null, containerId: null, containerHost: null, updatedAt: new Date() })
+      .where(eq(employees.id, id))
+      .returning();
+
+    const queue = getProvisionQueue();
+    await queue.add("provision-employee", {
+      employeeId: id,
+      companyId: employee.companyId,
+      channels: [],
+      skills: [],
+    });
+
+    return { employee: sanitize(updated) };
+  });
+
   // DELETE /internal/employees/:id
   fastify.delete<{ Params: { id: string } }>("/internal/employees/:id", async (request, reply) => {
     const { id } = request.params;
