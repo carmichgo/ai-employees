@@ -141,7 +141,7 @@ export default function DashboardOverview() {
       </div>
 
       {/* Stat cards */}
-      <div style={{
+      <div className="grid-stats" style={{
         display: "grid",
         gridTemplateColumns: "repeat(4, 1fr)",
         gap: 12,

@@ -1476,6 +1476,30 @@ html {
   }
 }
 
+/* ── Mobile Responsive ─────────────────── */
+
+@media (max-width: 768px) {
+  .mobile-hidden {
+    display: none !important;
+  }
+
+  .grid-stats {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  .grid-roles {
+    grid-template-columns: 1fr !important;
+  }
+
+  .grid-features {
+    grid-template-columns: 1fr !important;
+  }
+
+  .grid-priority {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
 /* ── CTA ──────────────────────────────────── */
 .lp-cta {
   position: relative;

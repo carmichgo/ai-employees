@@ -706,6 +706,13 @@ export default function EmployeeDetailPage() {
 
   return (
     <div className="animate-in" style={{ maxWidth: 800 }}>
+      <style>{`
+        @media (max-width: 768px) {
+          .emp-header { flex-direction: column !important; gap: 16px !important; }
+          .emp-header .emp-actions { align-self: flex-start; }
+          .emp-grid-2 { grid-template-columns: 1fr !important; }
+        }
+      `}</style>
       {/* Back link */}
       <Link href="/dashboard/employees" style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "var(--text-secondary)", textDecoration: "none", fontSize: 13, marginBottom: 24, transition: "color 0.15s" }}>
         <ArrowLeft size={14} /> Back to Employees
@@ -738,7 +745,7 @@ export default function EmployeeDetailPage() {
       )}
 
       {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 32 }}>
+      <div className="emp-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 32 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
           <div style={{
             width: 64, height: 64, borderRadius: "var(--radius-lg)",
@@ -756,7 +763,7 @@ export default function EmployeeDetailPage() {
             </div>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div className="emp-actions" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {(employee.status === "active" || employee.status === "paused") && (
             <>
               <Link href={`/dashboard/inbox?employee=${employeeId}`} className="btn-primary btn-sm" style={{ gap: 6, textDecoration: "none" }}>
@@ -826,7 +833,7 @@ export default function EmployeeDetailPage() {
       )}
 
       {/* Details grid */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+      <div className="emp-grid-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
         <div className="card" style={{ padding: 20, background: "#ffffff", border: "1px solid var(--border)" }}>
           <p className="label" style={{ marginBottom: 12 }}>Persona</p>
           <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6, maxHeight: 200, overflow: "auto" }}>
@@ -882,7 +889,7 @@ export default function EmployeeDetailPage() {
       {/* Technical details */}
       <div className="card" style={{ padding: 20, marginBottom: 16, background: "#ffffff", border: "1px solid var(--border)" }}>
         <p className="label" style={{ marginBottom: 16 }}>Technical Details</p>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, fontSize: 13 }}>
+        <div className="emp-grid-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, fontSize: 13 }}>
           {[
             { icon: Server, label: "Container", value: employee.containerName || "\u2014" },
             { icon: Server, label: "Host", value: employee.containerHost ? `${employee.containerHost}:${employee.containerPort}` : "\u2014" },
@@ -1461,7 +1468,7 @@ export default function EmployeeDetailPage() {
         {/* New trigger form */}
         {showNewTrigger && (
           <div style={{ background: "var(--bg-secondary)", borderRadius: "var(--radius-md)", padding: 16, marginBottom: 16, display: "flex", flexDirection: "column", gap: 12, border: "1px solid var(--border)" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div className="emp-grid-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div>
                 <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Type</label>
                 <div style={{ position: "relative" }}>
@@ -1638,7 +1645,7 @@ export default function EmployeeDetailPage() {
               <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Label</label>
               <input type="text" placeholder="e.g., Company CRM, GitHub, Trello" value={credLabel} onChange={(e) => setCredLabel(e.target.value)} className="input" style={{ width: "100%", fontSize: 13 }} />
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div className="emp-grid-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div>
                 <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Username / Email</label>
                 <input type="text" placeholder="username or email" value={credUsername} onChange={(e) => setCredUsername(e.target.value)} className="input" style={{ width: "100%", fontSize: 13 }} />

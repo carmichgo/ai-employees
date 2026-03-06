@@ -368,10 +368,16 @@ export default function TasksPage() {
         .quick-add-btn { opacity: 0; transition: opacity 0.15s; }
         .board-col:hover .quick-add-btn { opacity: 1; }
         .board-col.drag-over { background: rgba(37,99,235,0.03); border: 2px dashed rgba(37,99,235,0.3); border-radius: 10px; }
+        @media (max-width: 768px) {
+          .task-header-row { flex-direction: column; align-items: flex-start !important; gap: 12px !important; }
+          .task-list-row { grid-template-columns: 1fr !important; }
+          .task-list-row .task-meta-cell { display: none !important; }
+          .task-form-grid-3 { grid-template-columns: 1fr !important; }
+        }
       `}</style>
 
       {/* ── Header ── */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+      <div className="task-header-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 700, color: "#0a0a0a", letterSpacing: "-0.02em", margin: 0 }}>Tasks</h1>
           <p style={{ color: "#525252", fontSize: 14, margin: "4px 0 0" }}>
@@ -771,17 +777,17 @@ export default function TasksPage() {
       {view === "list" && (
         <div style={{ background: "#fff", border: "1px solid #e5e5e5", borderRadius: 10, overflow: "hidden" }}>
           {/* Header row */}
-          <div style={{
+          <div className="task-list-row" style={{
             display: "grid", gridTemplateColumns: "minmax(0, 1fr) 130px 80px 90px 100px 36px",
             gap: 12, padding: "10px 20px", background: "#f5f5f5",
             fontSize: 11, fontWeight: 600, color: "#a3a3a3", textTransform: "uppercase", letterSpacing: "0.04em",
           }}>
             <span>Task</span>
-            <span>Assignee</span>
-            <span>Priority</span>
-            <span>Status</span>
-            <span>Due</span>
-            <span></span>
+            <span className="task-meta-cell">Assignee</span>
+            <span className="task-meta-cell">Priority</span>
+            <span className="task-meta-cell">Status</span>
+            <span className="task-meta-cell">Due</span>
+            <span className="task-meta-cell"></span>
           </div>
           {filtered.length === 0 ? (
             <div style={{ padding: 48, textAlign: "center", color: "#a3a3a3", fontSize: 14 }}>
@@ -803,7 +809,7 @@ export default function TasksPage() {
                 return (
                   <div
                     key={task.id}
-                    className="task-row"
+                    className="task-row task-list-row"
                     onClick={() => openTask(task)}
                     style={{
                       display: "grid",
@@ -845,19 +851,19 @@ export default function TasksPage() {
                       </div>
                     </div>
                     {/* Assignee */}
-                    <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: "#525252", minWidth: 0 }}>
+                    <div className="task-meta-cell" style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: "#525252", minWidth: 0 }}>
                       <span style={{ fontSize: 14, flexShrink: 0 }}>{task.employeeEmoji || "A"}</span>
                       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{task.employeeName}</span>
                     </div>
                     {/* Priority */}
-                    <span style={{
+                    <span className="task-meta-cell" style={{
                       display: "inline-flex", alignItems: "center", gap: 3,
                       fontSize: 11, fontWeight: 500, color: pCfg.color, textTransform: "capitalize",
                     }}>
                       <PIcon size={12} /> {task.priority}
                     </span>
                     {/* Status */}
-                    <span style={{
+                    <span className="task-meta-cell" style={{
                       display: "inline-flex", alignItems: "center", gap: 4,
                       fontSize: 11, fontWeight: 500, color: col.color,
                     }}>
@@ -865,14 +871,14 @@ export default function TasksPage() {
                       {col.label}
                     </span>
                     {/* Due */}
-                    <span style={{ fontSize: 11, color: isOverdue ? "#dc2626" : "#a3a3a3", fontWeight: isOverdue ? 600 : 400 }}>
+                    <span className="task-meta-cell" style={{ fontSize: 11, color: isOverdue ? "#dc2626" : "#a3a3a3", fontWeight: isOverdue ? 600 : 400 }}>
                       {task.dueDate
                         ? new Date(task.dueDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })
                         : "\u2014"}
                     </span>
                     {/* Delete */}
                     <button
-                      className="delete-btn"
+                      className="delete-btn task-meta-cell"
                       onClick={(e) => { e.stopPropagation(); handleDelete(task.id); }}
                       style={{ background: "none", border: "none", cursor: "pointer", color: "#a3a3a3", padding: 4, display: "flex" }}
                     ><Trash2 size={14} /></button>
@@ -933,7 +939,7 @@ export default function TasksPage() {
                 />
               </div>
               {/* Row: Priority + Category + Due */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+              <div className="task-form-grid-3" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
                 <div>
                   <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#525252", marginBottom: 6 }}>Priority</label>
                   <select

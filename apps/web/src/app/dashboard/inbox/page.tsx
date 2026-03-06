@@ -27,6 +27,7 @@ import {
   X,
   Image as ImageIcon,
   Square,
+  ArrowLeft,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -813,6 +814,7 @@ function InboxContent() {
 
   return (
     <div
+      className="inbox-container"
       style={{
         display: "flex",
         height: "calc(100vh - 48px)",
@@ -821,8 +823,34 @@ function InboxContent() {
         overflow: "hidden",
       }}
     >
+      <style>{`
+        @media (max-width: 768px) {
+          .inbox-container {
+            height: calc(100vh - 68px) !important;
+            margin: -16px !important;
+            width: calc(100% + 32px) !important;
+          }
+          .inbox-sidebar {
+            display: ${selectedId ? "none" : "flex"} !important;
+            width: 100% !important;
+            min-width: 100% !important;
+          }
+          .inbox-chat {
+            display: ${selectedId ? "flex" : "none"} !important;
+          }
+          .inbox-back-btn {
+            display: flex !important;
+          }
+        }
+        @media (min-width: 769px) {
+          .inbox-back-btn {
+            display: none !important;
+          }
+        }
+      `}</style>
       {/* ── Employee Sidebar ── */}
       <div
+        className="inbox-sidebar"
         style={{
           width: 300,
           minWidth: 300,
@@ -988,6 +1016,7 @@ function InboxContent() {
 
       {/* ── Chat Panel ── */}
       <div
+        className="inbox-chat"
         onDrop={handleDrop}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -1048,6 +1077,22 @@ function InboxContent() {
                 flexShrink: 0,
               }}
             >
+              <button
+                className="inbox-back-btn"
+                onClick={() => setSelectedId(null)}
+                style={{
+                  display: "none",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: "none",
+                  border: "none",
+                  padding: 4,
+                  cursor: "pointer",
+                  color: "var(--text-secondary)",
+                }}
+              >
+                <ArrowLeft size={18} />
+              </button>
               <div
                 style={{
                   width: 36,
