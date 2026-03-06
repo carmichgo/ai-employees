@@ -323,8 +323,10 @@ export default function EmployeeDetailPage() {
     setActionLoading(true);
     try {
       const res = await api.rebootEmployee(employeeId);
-      alert(res.message);
-      // Refresh employee data
+      if (!res.success) {
+        alert(`Reboot failed: ${(res as any).error || "Unknown error"}`);
+      }
+      // Refresh — status should now be "provisioning", which triggers auto-polling
       const empRes = await api.getEmployee(employeeId);
       setEmployee(empRes.employee);
     } catch (err: any) {
@@ -352,13 +354,22 @@ export default function EmployeeDetailPage() {
   const handleRestart = async () => {
     setActionLoading(true);
     try {
-      // If employee has a droplet IP, use the restart endpoint (tries restart → reprovision → teardown+reprovision)
-      // Otherwise fall back to reprovision endpoint directly
       if (employee.dropletIp) {
         const res = await api.restartEmployee(employeeId);
         if (!res.success) {
-          alert(`Restart failed. Try Reboot instead.`);
+          // Restart failed (API unreachable) — auto-fallback to reboot
+          if (employee.dropletId) {
+            const rebootRes = await api.rebootEmployee(employeeId);
+            if (!rebootRes.success) {
+              alert(`Restart and reboot both failed.`);
+            }
+          } else {
+            alert(`Restart failed. Try Reboot instead.`);
+          }
         }
+      } else if (employee.dropletId) {
+        // No IP stored — reboot to get a fresh IP
+        await api.rebootEmployee(employeeId);
       } else {
         await fetch(`/api/employees/${employeeId}/reprovision`, { method: "POST" });
       }
@@ -841,9 +852,13 @@ export default function EmployeeDetailPage() {
         <div className="card animate-in" style={{ padding: 32, textAlign: "center", marginBottom: 24, background: "#ffffff", border: "1px solid var(--border)" }}>
           <Loader2 size={40} style={{ color: "var(--blue)", animation: "spin 2s linear infinite", marginBottom: 16 }} />
           <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
-          <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 8, color: "var(--text)" }}>Setting up {employee.name}&apos;s workstation...</h3>
+          <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 8, color: "var(--text)" }}>
+            {employee.dropletId ? `Rebooting ${employee.name}'s server...` : `Setting up ${employee.name}'s workstation...`}
+          </h3>
           <p style={{ color: "var(--text-secondary)", fontSize: 14, maxWidth: 400, margin: "0 auto" }}>
-            Spinning up an isolated environment, installing tools, and configuring accounts.
+            {employee.dropletId
+              ? "Power-cycling the server and waiting for it to come back online. This usually takes 1-2 minutes."
+              : "Spinning up an isolated environment, installing tools, and configuring accounts."}
           </p>
           <div style={{ marginTop: 24, height: 3, background: "var(--border)", borderRadius: 2, overflow: "hidden", maxWidth: 300, margin: "24px auto 0" }}>
             <div style={{ height: "100%", width: "60%", background: "var(--blue)", borderRadius: 2, animation: "shimmer 2s ease-in-out infinite" }} />
