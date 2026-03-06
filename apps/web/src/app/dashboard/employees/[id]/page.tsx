@@ -365,15 +365,12 @@ export default function EmployeeDetailPage() {
   };
 
   const handleForceReset = async () => {
-    if (!confirm(`Force reset ${employee.name}? This will destroy the current server and create a brand new one. All running state will be lost. Continue?`)) return;
+    if (!confirm(`Force reset ${employee.name}? This will recreate the container while preserving memory and files. The employee will be unavailable for ~30 seconds.`)) return;
     setActionLoading(true);
     try {
-      // Terminate first (ignoring errors if already in bad state)
-      try { await api.terminateEmployee(employeeId); } catch {}
-      // Small delay then reactivate
-      await new Promise((r) => setTimeout(r, 2000));
-      const res = await api.reactivateEmployee(employeeId);
-      alert(res.message || "Force reset started — new server will be ready in 2-3 minutes.");
+      const res = await fetch(`/api/employees/${employeeId}/force-reset`, { method: "POST" });
+      const data = await res.json();
+      alert(data.message || "Force reset triggered");
       const empRes = await api.getEmployee(employeeId);
       setEmployee(empRes.employee);
     } catch (err: any) {
