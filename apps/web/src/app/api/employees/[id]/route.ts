@@ -68,6 +68,19 @@ export async function GET(
                 .update(employees)
                 .set({ status: "active", dropletStatus: "active", errorMessage: null, updatedAt: new Date() } as any)
                 .where(eq(employees.id, id));
+
+              // Fire-and-forget: hot-update the droplet to deploy latest code
+              // after reboot recovery (power-cycle preserves old disk image).
+              if (updated.interserviceSecret) {
+                const backend = createBackendClient({
+                  url: `http://${updated.dropletIp}:3001`,
+                  secret: updated.interserviceSecret,
+                });
+                backend.hotUpdate().catch((err: any) => {
+                  console.error("[employee-get] post-reboot hot-update failed:", err.message);
+                });
+              }
+
               return NextResponse.json({ employee: sanitize({ ...updated, status: "active", dropletStatus: "active", errorMessage: null }) });
             }
           }
