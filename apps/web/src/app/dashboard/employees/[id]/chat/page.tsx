@@ -209,7 +209,7 @@ export default function EmployeeChatPage() {
 
   return (
     <div
-      className="animate-in"
+      className="animate-in chat-container"
       style={{
         "--text": "#0a0a0a",
         "--text-secondary": "#525252",
@@ -284,6 +284,7 @@ export default function EmployeeChatPage() {
 
       {/* Messages */}
       <div
+        className="chat-messages"
         style={{
           flex: 1,
           overflowY: "auto",
@@ -305,6 +306,7 @@ export default function EmployeeChatPage() {
           >
             {/* Avatar */}
             <div
+              className="chat-avatar"
               style={{
                 width: 32,
                 height: 32,
@@ -327,6 +329,7 @@ export default function EmployeeChatPage() {
 
             {/* Bubble */}
             <div
+              className="chat-bubble"
               style={{
                 maxWidth: "75%",
                 padding: "12px 16px",
@@ -366,6 +369,7 @@ export default function EmployeeChatPage() {
         {sending && (
           <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
             <div
+              className="chat-avatar"
               style={{
                 width: 32,
                 height: 32,
@@ -497,6 +501,28 @@ export default function EmployeeChatPage() {
         @keyframes bounce {
           0%, 80%, 100% { transform: translateY(0) }
           40% { transform: translateY(-6px) }
+        }
+
+        @media (max-width: 768px) {
+          .chat-container {
+            height: calc(100vh - 68px - 48px) !important;
+          }
+          .chat-avatar {
+            display: none !important;
+          }
+          .chat-bubble {
+            max-width: 90% !important;
+          }
+          .chat-header-employee-name {
+            max-width: 120px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+          }
+          .chat-messages {
+            padding: 16px 0 !important;
+            gap: 12px !important;
+          }
         }
 
         /* Markdown styles for chat messages */
