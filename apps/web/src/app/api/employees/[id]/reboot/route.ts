@@ -3,7 +3,7 @@ import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { employees } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
-import { powerCycleEmployeeDroplet, checkDropletHealth } from "@/lib/digitalocean";
+import { powerCycleEmployeeDroplet, checkDropletHealth, pollEmployeeDropletStatus } from "@/lib/digitalocean";
 
 export const maxDuration = 60;
 
@@ -72,22 +72,35 @@ export async function POST(
     } as any)
     .where(eq(employees.id, id));
 
-  // Poll for health recovery — wait for the droplet API (port 3001) to come back
+  // Poll for droplet recovery — uses DO API to get the current IP
+  // (IP can change after a power-cycle) and checks if the API is reachable
   let dropletBack = false;
-  if (employee.dropletIp) {
-    await new Promise((r) => setTimeout(r, 15000));
-    for (let i = 0; i < 6; i++) {
-      const health = await checkDropletHealth(employee.dropletIp);
-      if (health.ok) {
-        dropletBack = true;
-        break;
-      }
-      await new Promise((r) => setTimeout(r, 5000));
+  let currentIp = employee.dropletIp;
+  await new Promise((r) => setTimeout(r, 15000));
+  for (let i = 0; i < 6; i++) {
+    const pollResult = await pollEmployeeDropletStatus(id);
+    if (pollResult.status === "active" && pollResult.ip) {
+      dropletBack = true;
+      currentIp = pollResult.ip;
+      break;
     }
+    // Also update IP even if not fully active yet
+    if (pollResult.ip) currentIp = pollResult.ip;
+    await new Promise((r) => setTimeout(r, 5000));
   }
 
+  // Re-read the employee to get the updated IP from pollEmployeeDropletStatus
+  const [updatedEmployee] = await db
+    .select({
+      dropletIp: employees.dropletIp,
+      interserviceSecret: employees.interserviceSecret,
+    })
+    .from(employees)
+    .where(eq(employees.id, id))
+    .limit(1);
+  if (updatedEmployee?.dropletIp) currentIp = updatedEmployee.dropletIp;
+
   if (!dropletBack) {
-    // Droplet hasn't responded yet — leave as unhealthy, cron will pick it up
     await db
       .update(employees)
       .set({
@@ -106,12 +119,13 @@ export async function POST(
   // After a power-cycle, the container may not auto-start even though
   // the API server does (systemd service vs Docker container).
   let containerRestarted = false;
-  if (employee.interserviceSecret && employee.dropletIp) {
+  const secret = updatedEmployee?.interserviceSecret || employee.interserviceSecret;
+  if (secret && currentIp) {
     const headers = {
       "Content-Type": "application/json",
-      "x-interservice-secret": employee.interserviceSecret,
+      "x-interservice-secret": secret,
     };
-    const baseUrl = `http://${employee.dropletIp}:3001`;
+    const baseUrl = `http://${currentIp}:3001`;
 
     // Try dedicated restart endpoint first
     try {

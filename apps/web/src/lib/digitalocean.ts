@@ -685,7 +685,8 @@ export async function pollEmployeeDropletStatus(employeeId: string): Promise<{
       }
       return { status: "active", ip: employee.dropletIp, phase: apiCheck.phase };
     }
-    return { status: employee.dropletStatus || "error", ip: employee.dropletIp, phase: null };
+    // Old IP unreachable — fall through to query DO API for current IP
+    // (the IP may have changed after a reboot/power-cycle)
   }
 
   // Query DO API for the droplet's IP

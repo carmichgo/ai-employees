@@ -3,7 +3,7 @@ import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { employees, chatMessages } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
-import { checkDropletHealth } from "@/lib/digitalocean";
+import { checkDropletHealth, pollEmployeeDropletStatus } from "@/lib/digitalocean";
 
 export const maxDuration = 60;
 
@@ -59,16 +59,21 @@ export async function POST(
   const clearChat = (body as any).clearChat === true;
 
   const results: string[] = [];
-  const headers = {
-    "Content-Type": "application/json",
-    "x-interservice-secret": employee.interserviceSecret,
-  };
-  const baseUrl = `http://${employee.dropletIp}:3001`;
+  let currentIp = employee.dropletIp!;
 
   // First check if the droplet API is even reachable
-  const dropletHealthy = await checkDropletHealth(employee.dropletIp);
+  let dropletHealthy = await checkDropletHealth(currentIp);
   if (!dropletHealthy.ok) {
-    // Droplet API is down — can't restart via API, need a reboot instead
+    // IP might have changed (e.g. after a reboot) — try refreshing from DO
+    const pollResult = await pollEmployeeDropletStatus(id);
+    if (pollResult.status === "active" && pollResult.ip) {
+      currentIp = pollResult.ip;
+      dropletHealthy = await checkDropletHealth(currentIp);
+    }
+  }
+
+  if (!dropletHealthy.ok) {
+    // Droplet API is genuinely down — can't restart via API, need a reboot
     await db
       .update(employees)
       .set({
@@ -82,6 +87,12 @@ export async function POST(
       results: ["Droplet API is unreachable — use the Reboot button to power-cycle the server"],
     });
   }
+
+  const headers = {
+    "Content-Type": "application/json",
+    "x-interservice-secret": employee.interserviceSecret,
+  };
+  const baseUrl = `http://${currentIp}:3001`;
 
   let restarted = false;
 
