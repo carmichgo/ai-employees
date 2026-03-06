@@ -8,7 +8,7 @@ import {
   MessageCircle, Save, X, Eye, EyeOff, ChevronDown, Upload, FileText, Zap,
   Webhook, Timer, Plus, ToggleLeft, ToggleRight, Copy, Check, KeyRound, Globe, Edit3,
   MessageSquare, Send, Smartphone, Gamepad2, Shield, MonitorSmartphone, Hash, Radio, Phone, Headphones,
-  Monitor, Sparkles, RotateCw, Square,
+  Monitor, Sparkles, RotateCw, Square, RefreshCw,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -344,6 +344,40 @@ export default function EmployeeDetailPage() {
       setEmployee(empRes.employee);
     } catch (err: any) {
       alert(`Reactivate failed: ${err.message}`);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleRestart = async () => {
+    if (!confirm(`Restart ${employee.name}'s container? This recreates the container without affecting the server.`)) return;
+    setActionLoading(true);
+    try {
+      const res = await api.restartEmployee(employeeId);
+      alert(res.results?.join("\n") || "Restart triggered");
+      const empRes = await api.getEmployee(employeeId);
+      setEmployee(empRes.employee);
+    } catch (err: any) {
+      alert(`Restart failed: ${err.message}`);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleForceReset = async () => {
+    if (!confirm(`Force reset ${employee.name}? This will destroy the current server and create a brand new one. All running state will be lost. Continue?`)) return;
+    setActionLoading(true);
+    try {
+      // Terminate first (ignoring errors if already in bad state)
+      try { await api.terminateEmployee(employeeId); } catch {}
+      // Small delay then reactivate
+      await new Promise((r) => setTimeout(r, 2000));
+      const res = await api.reactivateEmployee(employeeId);
+      alert(res.message || "Force reset started — new server will be ready in 2-3 minutes.");
+      const empRes = await api.getEmployee(employeeId);
+      setEmployee(empRes.employee);
+    } catch (err: any) {
+      alert(`Force reset failed: ${err.message}`);
     } finally {
       setActionLoading(false);
     }
@@ -777,7 +811,7 @@ export default function EmployeeDetailPage() {
           {employee.status === "active" && (
             <button className="btn-secondary btn-sm" onClick={handlePause} disabled={actionLoading} style={{ gap: 6 }}><Pause size={14} /> Pause</button>
           )}
-          {(employee.status === "paused" || employee.status === "provisioning") && (
+          {(employee.status === "paused" || employee.status === "provisioning" || employee.status === "error") && (
             <button className="btn-primary btn-sm" onClick={handleResume} disabled={actionLoading} style={{ gap: 6 }}><Play size={14} /> Resume</button>
           )}
           {employee.status === "active" && employee.dropletStatus === "active" && (
@@ -785,6 +819,12 @@ export default function EmployeeDetailPage() {
           )}
           {employee.status !== "terminated" && employee.dropletId && (
             <button className="btn-secondary btn-sm" onClick={handleReboot} disabled={actionLoading} style={{ gap: 6 }}><RotateCw size={14} /> Reboot</button>
+          )}
+          {employee.status !== "terminated" && employee.dropletIp && (
+            <button className="btn-secondary btn-sm" onClick={handleRestart} disabled={actionLoading} style={{ gap: 6 }}><RefreshCw size={14} /> Restart</button>
+          )}
+          {(employee.status === "error" || employee.status === "provisioning") && employee.dropletId && (
+            <button className="btn-sm" onClick={handleForceReset} disabled={actionLoading} style={{ gap: 6, background: "rgba(234,88,12,0.08)", color: "#ea580c", border: "1px solid #ea580c" }}><Zap size={14} /> Force Reset</button>
           )}
           {employee.status !== "terminated" && (
             <button className="btn-danger btn-sm" onClick={handleTerminate} disabled={actionLoading} style={{ gap: 6 }}><Trash2 size={14} /> Terminate</button>
@@ -825,10 +865,27 @@ export default function EmployeeDetailPage() {
       )}
 
       {/* Error state */}
-      {employee.status === "error" && employee.errorMessage && (
+      {employee.status === "error" && (
         <div className="card" style={{ padding: 20, marginBottom: 24, borderColor: "rgba(220, 38, 38, 0.15)", background: "rgba(220, 38, 38, 0.04)" }}>
           <div style={{ fontWeight: 600, color: "var(--red)", marginBottom: 6, fontSize: 14 }}>Error</div>
-          <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>{employee.errorMessage}</div>
+          {employee.errorMessage && (
+            <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 12 }}>{employee.errorMessage}</div>
+          )}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button className="btn-primary btn-sm" onClick={handleResume} disabled={actionLoading} style={{ gap: 6 }}>
+              <Play size={14} /> Try Resume
+            </button>
+            {employee.dropletId && (
+              <button className="btn-secondary btn-sm" onClick={handleReboot} disabled={actionLoading} style={{ gap: 6 }}>
+                <RotateCw size={14} /> Reboot Server
+              </button>
+            )}
+            {employee.dropletId && (
+              <button className="btn-sm" onClick={handleForceReset} disabled={actionLoading} style={{ gap: 6, background: "rgba(234,88,12,0.08)", color: "#ea580c", border: "1px solid #ea580c" }}>
+                <Zap size={14} /> Force Reset
+              </button>
+            )}
+          </div>
         </div>
       )}
 

@@ -31,7 +31,7 @@ export async function POST(
   if (!employee) {
     return NextResponse.json({ error: "Employee not found" }, { status: 404 });
   }
-  if (employee.status !== "active") {
+  if (employee.status !== "active" && employee.status !== "error") {
     return NextResponse.json({ error: "Employee is not active" }, { status: 400 });
   }
 

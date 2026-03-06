@@ -32,13 +32,13 @@ export async function POST(
     return NextResponse.json({ error: "Employee not found" }, { status: 404 });
   }
 
-  // Allow resume from "paused" or recover from stuck "provisioning"
-  if (employee.status !== "paused" && employee.status !== "provisioning") {
-    return NextResponse.json({ error: "Employee is not paused" }, { status: 400 });
+  // Allow resume from "paused", recover from stuck "provisioning", or recover from "error"
+  if (employee.status !== "paused" && employee.status !== "provisioning" && employee.status !== "error") {
+    return NextResponse.json({ error: "Employee is not paused or in error" }, { status: 400 });
   }
 
-  // If stuck in provisioning with a container, force-recover to active.
-  if (employee.status === "provisioning") {
+  // If stuck in provisioning or error with a container, force-recover to active.
+  if (employee.status === "provisioning" || (employee.status === "error" && !employee.dropletId)) {
     const [updated] = await db
       .update(employees)
       .set({ status: "active", errorMessage: null, updatedAt: new Date() })

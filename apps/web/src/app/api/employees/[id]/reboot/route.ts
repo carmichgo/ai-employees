@@ -59,10 +59,11 @@ export async function POST(
     return NextResponse.json({ error: "Failed to power-cycle droplet" }, { status: 502 });
   }
 
-  // Mark as unhealthy while we wait for recovery
+  // Mark as active (clear error status) and droplet as unhealthy while we wait for recovery
   await db
     .update(employees)
     .set({
+      status: "active",
       dropletStatus: "unhealthy",
       errorMessage: null,
       updatedAt: new Date(),
