@@ -41,7 +41,7 @@ export default function LandingPage() {
           left: 0,
           right: 0,
           zIndex: 100,
-          padding: "0 32px",
+          padding: "0 clamp(16px, 4vw, 32px)",
           height: 56,
           display: "flex",
           alignItems: "center",
@@ -222,6 +222,8 @@ export default function LandingPage() {
           className="animate-in animate-in-delay-4"
           style={{
             display: "flex",
+            flexWrap: "wrap",
+            justifyContent: "center",
             gap: 20,
             marginTop: 64,
             color: "var(--text-tertiary)",
@@ -272,6 +274,7 @@ export default function LandingPage() {
         </div>
 
         <div
+          className="grid-roles"
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(3, 1fr)",
@@ -328,7 +331,7 @@ export default function LandingPage() {
           borderTop: "1px solid var(--border)",
         }}
       >
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 28 }}>
+        <div className="grid-features" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 28 }}>
           {FEATURES.map((f) => (
             <div key={f.title} style={{ padding: "4px 0" }}>
               <div

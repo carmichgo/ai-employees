@@ -15,6 +15,8 @@ import {
   MessageCircle,
   Server,
   Link2,
+  Menu,
+  X,
 } from "lucide-react";
 
 const NAV_SECTIONS = [
@@ -49,6 +51,7 @@ export default function DashboardLayout({
   const router = useRouter();
   const [company, setCompany] = useState<any>(null);
   const [user, setUser] = useState<any>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     const token = api.getToken();
@@ -68,6 +71,11 @@ export default function DashboardLayout({
       });
   }, [router]);
 
+  // Close sidebar on route change
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [pathname]);
+
   const isActive = (href: string) => {
     if (href === "/dashboard") return pathname === "/dashboard";
     return pathname.startsWith(href);
@@ -75,8 +83,112 @@ export default function DashboardLayout({
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
+      <style>{`
+        @media (max-width: 768px) {
+          .dashboard-sidebar {
+            transform: translateX(-100%);
+            transition: transform 0.25s ease;
+          }
+          .dashboard-sidebar.open {
+            transform: translateX(0);
+          }
+          .dashboard-main {
+            margin-left: 0 !important;
+          }
+          .dashboard-main-inner {
+            padding: 16px !important;
+          }
+          .mobile-header {
+            display: flex !important;
+          }
+          .sidebar-overlay {
+            display: block !important;
+          }
+        }
+        @media (min-width: 769px) {
+          .mobile-header {
+            display: none !important;
+          }
+          .sidebar-overlay {
+            display: none !important;
+          }
+        }
+      `}</style>
+
+      {/* Mobile header */}
+      <div
+        className="mobile-header"
+        style={{
+          display: "none",
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 40,
+          height: 52,
+          padding: "0 16px",
+          alignItems: "center",
+          justifyContent: "space-between",
+          background: "var(--bg-sidebar)",
+          borderBottom: "1px solid var(--border)",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div
+            style={{
+              width: 24,
+              height: 24,
+              borderRadius: 6,
+              background: "var(--text)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 11,
+              fontWeight: 700,
+              color: "var(--bg)",
+            }}
+          >
+            AI
+          </div>
+          <span style={{ fontWeight: 600, fontSize: 13, color: "var(--text)" }}>
+            AI Employees
+          </span>
+        </div>
+        <button
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          style={{
+            background: "none",
+            border: "none",
+            padding: 8,
+            cursor: "pointer",
+            color: "var(--text)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
+        </button>
+      </div>
+
+      {/* Sidebar overlay for mobile */}
+      {sidebarOpen && (
+        <div
+          className="sidebar-overlay"
+          onClick={() => setSidebarOpen(false)}
+          style={{
+            display: "none",
+            position: "fixed",
+            inset: 0,
+            zIndex: 45,
+            background: "rgba(0,0,0,0.3)",
+          }}
+        />
+      )}
+
       {/* Sidebar */}
       <aside
+        className={`dashboard-sidebar ${sidebarOpen ? "open" : ""}`}
         style={{
           width: 220,
           background: "var(--bg-sidebar)",
@@ -279,6 +391,7 @@ export default function DashboardLayout({
 
       {/* Main content */}
       <main
+        className="dashboard-main"
         style={{
           flex: 1,
           marginLeft: 220,
@@ -286,12 +399,21 @@ export default function DashboardLayout({
         }}
       >
         <div
+          className="dashboard-main-inner"
           style={{
             maxWidth: 1100,
             margin: "0 auto",
             padding: "24px 32px",
+            paddingTop: undefined,
           }}
         >
+          <style>{`
+            @media (max-width: 768px) {
+              .dashboard-main-inner {
+                padding-top: 68px !important;
+              }
+            }
+          `}</style>
           {children}
         </div>
       </main>

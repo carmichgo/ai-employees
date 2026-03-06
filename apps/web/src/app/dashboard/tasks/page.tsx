@@ -173,9 +173,15 @@ export default function TasksPage() {
         .task-row:hover .delete-btn { opacity: 0.5; }
         .delete-btn:hover { opacity: 1 !important; color: var(--red) !important; }
         .filter-btn:hover { background: var(--bg-secondary); }
+        @media (max-width: 768px) {
+          .task-row { flex-wrap: wrap; padding: 12px 14px !important; gap: 8px !important; }
+          .task-meta { display: none !important; }
+          .task-header-row { flex-direction: column; align-items: flex-start !important; gap: 12px !important; }
+          .task-header-row > div:first-child { margin-bottom: 0; }
+        }
       `}</style>
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 32 }}>
+      <div className="task-header-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 32 }}>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--text)", letterSpacing: "-0.02em", marginBottom: 4 }}>Tasks</h1>
           <p style={{ color: "var(--text-secondary)", fontSize: 14, margin: 0 }}>
@@ -199,7 +205,7 @@ export default function TasksPage() {
       </div>
 
       {/* Stats */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 32 }}>
+      <div className="grid-stats" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 32 }}>
         {[
           { label: "Active", value: counts.active, color: "var(--text)" },
           { label: "In Progress", value: counts.inProgress, color: "var(--blue)" },
@@ -331,7 +337,7 @@ export default function TasksPage() {
 
               <div>
                 <label style={{ display: "block", fontSize: 13, fontWeight: 500, color: "var(--text-secondary)", marginBottom: 6 }}>Priority</label>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+                <div className="grid-priority" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
                   {["low", "medium", "high", "urgent"].map((p) => (
                     <button
                       key={p}
@@ -497,7 +503,7 @@ export default function TasksPage() {
                 </div>
 
                 {/* Employee badge */}
-                <div style={{
+                <div className="task-meta" style={{
                   display: "flex", alignItems: "center", gap: 6,
                   background: "var(--bg-secondary)", padding: "4px 10px", borderRadius: "var(--radius-sm)",
                   fontSize: 12, color: "var(--text-secondary)", flexShrink: 0,
@@ -507,7 +513,7 @@ export default function TasksPage() {
                 </div>
 
                 {/* Priority */}
-                <div style={{
+                <div className="task-meta" style={{
                   fontSize: 11, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.05em",
                   color: PRIORITY_COLORS[task.priority] || "var(--text-tertiary)",
                   flexShrink: 0, width: 50, textAlign: "center",
@@ -516,7 +522,7 @@ export default function TasksPage() {
                 </div>
 
                 {/* Status label */}
-                <div style={{
+                <div className="task-meta" style={{
                   fontSize: 12, color: statusCfg.color,
                   display: "flex", alignItems: "center", gap: 4,
                   flexShrink: 0, width: 90,

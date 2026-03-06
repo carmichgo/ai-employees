@@ -448,7 +448,7 @@ export default function HireEmployeePage() {
     <div>
       <div style={styles.sectionLabel}>{label}</div>
       <p style={styles.sectionHint}>{hint}</p>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+      <div className="hire-grid-4" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
         {options.map((opt) => {
           const selected = currentValue === opt.value;
           return (
@@ -634,6 +634,17 @@ export default function HireEmployeePage() {
         padding: "40px 0",
       }}
     >
+      <style>{`
+        @media (max-width: 768px) {
+          .hire-grid-4 { grid-template-columns: repeat(2, 1fr) !important; }
+          .hire-grid-3 { grid-template-columns: repeat(2, 1fr) !important; }
+          .hire-grid-2 { grid-template-columns: 1fr !important; }
+        }
+        @media (max-width: 480px) {
+          .hire-grid-4 { grid-template-columns: 1fr !important; }
+          .hire-grid-3 { grid-template-columns: 1fr !important; }
+        }
+      `}</style>
       {/* ═══ Step 1: Role Selection ═══ */}
       {step === "role" && (
         <div key={animKey} className={animClass}>
@@ -644,6 +655,7 @@ export default function HireEmployeePage() {
 
           <div style={{ marginTop: 40 }}>
             <div
+              className="hire-grid-4"
               style={{
                 display: "grid",
                 gridTemplateColumns: "repeat(4, 1fr)",
@@ -1116,6 +1128,7 @@ export default function HireEmployeePage() {
           </p>
 
           <div
+            className="hire-grid-3"
             style={{
               marginTop: 40,
               display: "grid",
@@ -1153,6 +1166,7 @@ export default function HireEmployeePage() {
           </p>
 
           <div
+            className="hire-grid-2"
             style={{
               marginTop: 40,
               display: "grid",
@@ -1191,6 +1205,7 @@ export default function HireEmployeePage() {
           </p>
 
           <div
+            className="hire-grid-4"
             style={{
               marginTop: 40,
               display: "grid",
