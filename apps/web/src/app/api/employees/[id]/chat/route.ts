@@ -534,7 +534,45 @@ export async function POST(
       });
     }
 
-    // Employee is unreachable — mark as error so the UI shows recovery options
+    // Employee is unreachable — try to auto-restart the container before giving up.
+    // This handles the common case where the droplet is up but the OpenClaw gateway
+    // crashed or didn't start after a reboot.
+    let autoRestarted = false;
+    if (employee.dropletIp && employee.interserviceSecret) {
+      try {
+        const restartRes = await fetch(
+          `http://${employee.dropletIp}:3001/internal/employees/${id}/restart`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-interservice-secret": employee.interserviceSecret,
+            },
+            body: JSON.stringify({}),
+            signal: AbortSignal.timeout(30_000),
+          },
+        );
+        if (restartRes.ok) {
+          autoRestarted = true;
+        }
+      } catch {
+        // Droplet API also unreachable — fall through to error state
+      }
+    }
+
+    if (autoRestarted) {
+      const reply = `My workspace just needed a quick restart — it's coming back online now. Please resend your message in about 30 seconds.`;
+      await db.insert(chatMessages).values({
+        employeeId: id,
+        userId: session.userId,
+        role: "assistant",
+        content: reply,
+        mode: "unreachable",
+      });
+      return NextResponse.json({ reply, mode: "restarting", employeeId: id });
+    }
+
+    // Auto-restart failed — mark as error so the UI shows recovery options
     const wasActive = employee.status === "active";
     if (wasActive) {
       await db
