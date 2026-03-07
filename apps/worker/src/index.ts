@@ -12,10 +12,21 @@ import { pollAllEmployeeHealth } from "./workers/health-poll.js";
 import { checkPendingTasks } from "./workers/task-check.js";
 import { checkScheduleTriggers } from "./workers/schedule-triggers.js";
 
+// Prevent unhandled promise rejections / uncaught exceptions from crashing the worker
+process.on("unhandledRejection", (err) => {
+  console.error("[unhandledRejection]", err);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[uncaughtException]", err);
+});
+
 const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
 
 const connection = new IORedis(REDIS_URL, {
   maxRetriesPerRequest: null,
+});
+connection.on("error", (err) => {
+  console.error("[worker] Redis connection error:", err.message);
 });
 
 // Main provisioning worker
