@@ -122,6 +122,21 @@ export class SlackProxy {
     try {
       this.webClient = new WebClient(botToken) as SlackWebClient;
 
+      // Verify the bot token is valid before starting Socket Mode
+      // (invalid tokens cause unhandled rejections that crash the process)
+      try {
+        const authResult: any = await this.webClient.auth?.test?.();
+        if (!authResult?.ok) {
+          console.error("[slack-proxy] Bot token auth.test failed, Slack proxy disabled");
+          this.webClient = null;
+          return;
+        }
+      } catch (authErr) {
+        console.error("[slack-proxy] Bot token is invalid, Slack proxy disabled:", authErr);
+        this.webClient = null;
+        return;
+      }
+
       this.app = new BoltApp({
         token: botToken,
         appToken,
@@ -149,6 +164,9 @@ export class SlackProxy {
       console.log(`[slack-proxy] Connected to Slack for company ${company.slug} (${company.id})`);
     } catch (err) {
       console.error("[slack-proxy] Failed to start:", err);
+      // Clean up to prevent dangling connections
+      this.app = null;
+      this.webClient = null;
     }
   }
 

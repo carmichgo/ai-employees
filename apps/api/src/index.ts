@@ -1,6 +1,12 @@
 import { loadConfig } from "./config.js";
 import { buildServer } from "./server.js";
 
+// Prevent unhandled promise rejections from crashing the process
+// (e.g. Slack SDK auth errors that escape try/catch blocks)
+process.on("unhandledRejection", (err) => {
+  console.error("[unhandledRejection]", err);
+});
+
 const config = loadConfig();
 const server = await buildServer(config);
 
