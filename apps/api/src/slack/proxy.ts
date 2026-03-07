@@ -145,6 +145,12 @@ export class SlackProxy {
         logLevel: LogLevel.WARN,
       }) as SlackApp;
 
+      // Catch errors emitted by the Bolt app (e.g. socket disconnects)
+      // to prevent unhandled EventEmitter errors from crashing the process
+      (this.app as any).error?.(async (error: any) => {
+        console.error("[slack-proxy] Bolt app error:", error);
+      });
+
       // Register message handler
       this.app.message(async ({ message, client }: any) => {
         await this.handleMessage(message, client);

@@ -218,7 +218,11 @@ export async function buildServer(config: Env) {
     // Use systemd-run --scope to put the script in its own cgroup scope.
     // Without this, systemctl restart ai-employees-api kills the script
     // because systemd's default KillMode=control-group kills all processes in the service cgroup.
-    spawn("systemd-run", ["--scope", "--quiet", "--", "bash", "-c", fullScript], { detached: true, stdio: "ignore" }).unref();
+    const child = spawn("systemd-run", ["--scope", "--quiet", "--", "bash", "-c", fullScript], { detached: true, stdio: "ignore" });
+    child.on("error", (err) => {
+      fastify.log.error(`[hot-update] spawn error: ${err.message}`);
+    });
+    child.unref();
 
     return { status: "started", message: "Update running in background. Check /update-status for progress.", branch, mode: isGit ? "git" : "tarball" };
   });
