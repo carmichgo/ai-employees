@@ -151,7 +151,7 @@ export async function buildServer(config: Env) {
     // Check what the DB has for containerHost/Port
     try {
       const emps = await db.query.employees.findMany({ columns: { id: true, name: true, containerHost: true, containerPort: true, containerName: true, containerId: true, status: true, lastHealthAt: true } });
-      checks.employeeContainerInfo = emps.map((e: any) => ({ name: e.name, host: e.containerHost, port: e.containerPort, container: e.containerName, containerId: e.containerId ? e.containerId.slice(0, 12) : null, status: e.status, lastHealthAt: e.lastHealthAt }));
+      checks.employeeContainerInfo = emps.map((e: any) => ({ id: e.id, name: e.name, host: e.containerHost, port: e.containerPort, container: e.containerName, containerId: e.containerId ? e.containerId.slice(0, 12) : null, status: e.status, lastHealthAt: e.lastHealthAt }));
     } catch (e: any) { checks.employeeContainerInfo = `error: ${e.message}`; }
     return checks;
   });
