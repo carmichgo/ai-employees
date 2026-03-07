@@ -125,7 +125,7 @@ export class SlackProxy {
       // Verify the bot token is valid before starting Socket Mode
       // (invalid tokens cause unhandled rejections that crash the process)
       try {
-        const authResult: any = await this.webClient.auth?.test?.();
+        const authResult: any = await (this.webClient as any).auth?.test?.();
         if (!authResult?.ok) {
           console.error("[slack-proxy] Bot token auth.test failed, Slack proxy disabled");
           this.webClient = null;
