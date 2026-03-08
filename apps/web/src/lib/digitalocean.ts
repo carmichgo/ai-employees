@@ -75,6 +75,7 @@ function generateCloudInit(params: {
   twilioAuthToken: string;
   slackAppToken: string;
   slackSigningSecret: string;
+  resendApiKey: string;
   employeeId?: string;
   companyId?: string;
 }): string {
@@ -258,6 +259,7 @@ TWILIO_ACCOUNT_SID=${params.twilioAccountSid}
 TWILIO_AUTH_TOKEN=${params.twilioAuthToken}
 SLACK_APP_TOKEN=${params.slackAppToken}
 SLACK_SIGNING_SECRET=${params.slackSigningSecret}
+RESEND_API_KEY=${params.resendApiKey}
 ENVEOF
 
 # Download repo — try tarball first, then git clone as fallback
@@ -488,6 +490,7 @@ export async function createCompanyDroplet(companyId: string): Promise<{
   const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN || "";
   const slackAppToken = (process.env.SLACK_APP_TOKEN || "").trim();
   const slackSigningSecret = (process.env.SLACK_SIGNING_SECRET || "").trim();
+  const resendApiKey = process.env.RESEND_API_KEY || "";
 
   const userData = generateCloudInit({
     companySlug: company.slug,
@@ -503,6 +506,7 @@ export async function createCompanyDroplet(companyId: string): Promise<{
     twilioAuthToken,
     slackAppToken,
     slackSigningSecret,
+    resendApiKey,
   });
 
   // Get SSH keys from DO account (if any) so the user can SSH in for debugging
@@ -614,6 +618,7 @@ export async function createEmployeeDroplet(employeeId: string): Promise<{
     twilioAuthToken: process.env.TWILIO_AUTH_TOKEN || "",
     slackAppToken: (process.env.SLACK_APP_TOKEN || "").trim(),
     slackSigningSecret: (process.env.SLACK_SIGNING_SECRET || "").trim(),
+    resendApiKey: process.env.RESEND_API_KEY || "",
     employeeId: employee.id,
     companyId: employee.companyId,
   });

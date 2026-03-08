@@ -16,6 +16,7 @@ import { triggerRoutes } from "./routes/triggers.js";
 import { taskRoutes } from "./routes/tasks.js";
 import { employeeGatewayRoutes } from "./routes/employee-gateway.js";
 import { gatewayProxyRoutes } from "./routes/gateway-proxy.js";
+import { emailRoutes } from "./routes/email.js";
 import { getSlackProxy } from "./slack/proxy.js";
 
 export async function buildServer(config: Env) {
@@ -55,6 +56,7 @@ export async function buildServer(config: Env) {
   await fastify.register(taskRoutes);
   await fastify.register(employeeGatewayRoutes);
   await fastify.register(gatewayProxyRoutes);
+  await fastify.register(emailRoutes);
 
   // Health check (used by Vercel to verify droplet readiness)
   // Includes container status so the platform knows if the gateway is actually running
