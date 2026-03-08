@@ -255,12 +255,12 @@ export default function EmployeeDetailPage() {
   }, [employeeId]);
 
   // Auto-poll while provisioning, with auto-reprovision for stuck employees
-  const reprovisionAttempted = useRef(false);
+  const reprovisionAttempts = useRef(0);
   const provisioningStartRef = useRef<number | null>(null);
   useEffect(() => {
     if (!employee || (employee.status !== "provisioning" && employee.status !== "onboarding")) {
       provisioningStartRef.current = null;
-      reprovisionAttempted.current = false;
+      reprovisionAttempts.current = 0;
       return;
     }
     if (!provisioningStartRef.current) provisioningStartRef.current = Date.now();
@@ -270,15 +270,16 @@ export default function EmployeeDetailPage() {
         const res = await api.getEmployee(employeeId);
         setEmployee(res.employee);
 
-        // If still provisioning after 2 minutes, try reprovision once
+        // If still provisioning after 2 minutes, try reprovision (up to 3 times, every 2 min)
+        const elapsed = provisioningStartRef.current ? Date.now() - provisioningStartRef.current : 0;
+        const nextAttemptThreshold = 120000 + reprovisionAttempts.current * 120000;
         if (
           res.employee.status === "provisioning" &&
-          !reprovisionAttempted.current &&
-          provisioningStartRef.current &&
-          Date.now() - provisioningStartRef.current > 120000
+          reprovisionAttempts.current < 3 &&
+          elapsed > nextAttemptThreshold
         ) {
-          reprovisionAttempted.current = true;
-          console.log("[auto-reprovision] Attempting reprovision for stuck employee", employeeId);
+          reprovisionAttempts.current += 1;
+          console.log(`[auto-reprovision] Attempt ${reprovisionAttempts.current}/3 for stuck employee`, employeeId);
           fetch(`/api/employees/${employeeId}/reprovision`, { method: "POST" }).catch(() => {});
         }
       } catch {}
@@ -371,7 +372,11 @@ export default function EmployeeDetailPage() {
         // No IP stored — reboot to get a fresh IP
         await api.rebootEmployee(employeeId);
       } else {
-        await fetch(`/api/employees/${employeeId}/reprovision`, { method: "POST" });
+        const res = await fetch(`/api/employees/${employeeId}/reprovision`, { method: "POST" });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({ error: "Unknown error" }));
+          alert(`Provisioning failed: ${data.error || "Unknown error"}`);
+        }
       }
       const empRes = await api.getEmployee(employeeId);
       setEmployee(empRes.employee);

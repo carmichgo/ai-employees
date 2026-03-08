@@ -46,8 +46,8 @@ export async function POST(
     );
   }
 
-  // If terminated, reset status to provisioning before re-creating droplet
-  if (employee.status === "terminated") {
+  // If terminated or error, reset status to provisioning before re-creating droplet
+  if (employee.status === "terminated" || employee.status === "error") {
     await db
       .update(employees)
       .set({
@@ -72,6 +72,15 @@ export async function POST(
       });
     } catch (err: any) {
       console.error("[reprovision] createEmployeeDroplet failed:", err.message);
+      // Store the error on the employee so the UI can display it
+      await db
+        .update(employees)
+        .set({
+          status: "error",
+          errorMessage: `Droplet creation failed: ${err.message}`,
+          updatedAt: new Date(),
+        })
+        .where(eq(employees.id, id));
       return NextResponse.json(
         { error: `Failed to create droplet: ${err.message}` },
         { status: 502 },

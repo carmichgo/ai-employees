@@ -123,17 +123,34 @@ export async function provisionAndReturn(
       dropletStatus = "provisioning";
     } catch (err: any) {
       console.error(`[hire] Failed to create droplet for employee ${employee.id}:`, err.message);
-      // Employee is created in DB as "provisioning" — droplet creation can be retried
-      dropletStatus = "provisioning";
+      // Set status to error so the UI shows a retry button with the error message
+      await db
+        .update(employees)
+        .set({
+          status: "error",
+          errorMessage: `Droplet creation failed: ${err.message}`,
+          updatedAt: new Date(),
+        })
+        .where(eq(employees.id, employee.id));
+      dropletStatus = "error";
     }
   }
 
-  const message = dropletStatus
-    ? `${input.name} is being hired! Setting up dedicated infrastructure — this takes 2-3 minutes.`
-    : `${input.name} has been hired!`;
+  // Re-fetch employee to get current status (may have been set to "error")
+  const [updatedEmployee] = await db
+    .select()
+    .from(employees)
+    .where(eq(employees.id, employee.id))
+    .limit(1);
+
+  const message = dropletStatus === "error"
+    ? `Failed to set up ${input.name}'s infrastructure. You can retry from the employee page.`
+    : dropletStatus
+      ? `${input.name} is being hired! Setting up dedicated infrastructure — this takes 2-3 minutes.`
+      : `${input.name} has been hired!`;
 
   return {
-    employee: sanitize(employee),
+    employee: sanitize(updatedEmployee || employee),
     message,
     ...(dropletStatus && { dropletStatus }),
   };
