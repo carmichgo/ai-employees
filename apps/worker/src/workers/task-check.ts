@@ -13,7 +13,7 @@
  */
 
 import { eq, and, not, sql, desc } from "drizzle-orm";
-import { db, employees, tasks, taskComments } from "@ai-employees/db";
+import { db, employees, tasks, taskComments, recordTokenUsage } from "@ai-employees/db";
 import { networkInterfaces } from "os";
 
 /** Get all local IPv4 addresses for this machine */
@@ -52,6 +52,7 @@ export async function checkPendingTasks(): Promise<void> {
     ),
     columns: {
       id: true,
+      companyId: true,
       name: true,
       dropletIp: true,
       containerHost: true,
@@ -78,6 +79,7 @@ export async function checkPendingTasks(): Promise<void> {
 
 async function checkEmployeeTasks(employee: {
   id: string;
+  companyId: string;
   name: string;
   containerHost: string | null;
   containerPort: number | null;
@@ -308,12 +310,26 @@ async function checkEmployeeTasks(employee: {
       signal: AbortSignal.timeout(300_000), // 5 min timeout — employee may need to run commands
     });
 
-    // Drain the stream so the request completes
+    // Drain the stream and capture usage from the final SSE chunk
+    let streamUsage: { prompt_tokens?: number; completion_tokens?: number } | null = null;
     if (res.body) {
       const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
       while (true) {
-        const { done } = await reader.read();
+        const { done, value } = await reader.read();
         if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        // Parse SSE lines for usage data (typically in the last chunk)
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ") || line.trim() === "data: [DONE]") continue;
+          try {
+            const chunk = JSON.parse(line.slice(6));
+            if (chunk.usage) streamUsage = chunk.usage;
+          } catch { /* skip */ }
+        }
       }
     }
 
@@ -326,6 +342,18 @@ async function checkEmployeeTasks(employee: {
       lastNudge.set(employee.id, Date.now());
       const total = pendingTasks.length + staleTasks.length + blockedTasks.length;
       console.log(`[task-check] Nudged ${employee.name} about ${total} task(s) (${pendingTasks.length} pending, ${staleTasks.length} stale, ${blockedTasks.length} blocked)`);
+
+      // Record token usage
+      if (streamUsage && (streamUsage.prompt_tokens || streamUsage.completion_tokens)) {
+        recordTokenUsage({
+          companyId: employee.companyId,
+          employeeId: employee.id,
+          source: "task-check",
+          model,
+          tokensInput: streamUsage.prompt_tokens || 0,
+          tokensOutput: streamUsage.completion_tokens || 0,
+        });
+      }
     } else {
       console.log(`[task-check] Failed to nudge ${employee.name}: HTTP ${res.status}`);
     }

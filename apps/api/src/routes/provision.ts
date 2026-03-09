@@ -12,6 +12,7 @@ import { db, employees, companies, users, chatMessages } from "@ai-employees/db"
 import { getJobTemplate, PLAN_LIMITS, type PlanTier, getModelForTier, type EmployeeTier } from "@ai-employees/shared";
 import { regenerateChannelConfig, type ChannelInput } from "@ai-employees/openclaw-config";
 import { getProvisionQueue } from "../queues.js";
+import { recordTokenUsage, extractUsage } from "../usage.js";
 
 function slugify(name: string) {
   return name
@@ -1038,9 +1039,10 @@ export async function provisionRoutes(fastify: FastifyInstance) {
         }
       }
 
+      const chatModel = (employee.modelConfig as { primary?: string })?.primary || "anthropic/claude-sonnet-4-5-20250929";
       const sendToContainer = async (host: string) => {
         const containerUrl = `http://${host}:${containerPort}/v1/chat/completions`;
-        const model = (employee.modelConfig as { primary?: string })?.primary || "anthropic/claude-sonnet-4-5-20250929";
+        const model = chatModel;
         console.log(`[chat-proxy] Sending to ${containerUrl} model=${model} msgs=${chatMessages.length} token=${employee.gatewayToken ? "set" : "MISSING"}`);
         return fetch(containerUrl, {
           method: "POST",
@@ -1092,6 +1094,18 @@ export async function provisionRoutes(fastify: FastifyInstance) {
           const data = await res.json() as { choices?: { message?: { content?: string } }[]; usage?: unknown };
           replyText = data.choices?.[0]?.message?.content || "No response";
           usage = data.usage;
+        }
+
+        // Record token usage
+        const usageData = extractUsage({ usage });
+        if (usageData) {
+          recordTokenUsage({
+            companyId: employee.companyId,
+            employeeId: id,
+            source: "chat",
+            model: chatModel,
+            ...usageData,
+          });
         }
 
         // Always persist — this is the key fix. The dashboard may have timed
@@ -1165,6 +1179,18 @@ export async function provisionRoutes(fastify: FastifyInstance) {
                   retryReplyText = retryData.choices?.[0]?.message?.content || "No response";
                   retryUsage = retryData.usage;
                 }
+                // Record token usage for retry
+                const retryUsageData = extractUsage({ usage: retryUsage });
+                if (retryUsageData) {
+                  recordTokenUsage({
+                    companyId: employee.companyId,
+                    employeeId: id,
+                    source: "chat",
+                    model: chatModel,
+                    ...retryUsageData,
+                  });
+                }
+
                 await saveReply(retryReplyText, "live");
                 return { reply: retryReplyText, mode: "live", usage: retryUsage };
               } catch (retryErr: unknown) {

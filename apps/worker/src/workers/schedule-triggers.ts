@@ -9,7 +9,7 @@
  */
 
 import { eq, and, sql, lt } from "drizzle-orm";
-import { db, employees, triggers, tasks } from "@ai-employees/db";
+import { db, employees, triggers, tasks, recordTokenUsage, extractUsage } from "@ai-employees/db";
 import { networkInterfaces } from "os";
 
 /** Get all local IPv4 addresses for this machine */
@@ -209,6 +209,22 @@ export async function checkScheduleTriggers(): Promise<void> {
           console.log(`[schedule] Trigger "${trigger.name}" delivery failed: HTTP ${res.status}`);
         } else {
           console.log(`[schedule] Fired trigger "${trigger.name}" for ${employee.name}`);
+
+          // Record token usage
+          try {
+            const data = await res.json();
+            const usage = extractUsage(data);
+            if (usage) {
+              const model = (employee.modelConfig as { primary: string }).primary;
+              recordTokenUsage({
+                companyId: employee.companyId,
+                employeeId: trigger.employeeId,
+                source: "schedule",
+                model,
+                ...usage,
+              });
+            }
+          } catch { /* response body may not be JSON */ }
         }
       } catch (err) {
         console.log(`[schedule] Could not reach ${employee.name}'s container for trigger "${trigger.name}"`);

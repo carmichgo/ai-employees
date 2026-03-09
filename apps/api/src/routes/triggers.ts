@@ -14,6 +14,7 @@ import type { FastifyInstance } from "fastify";
 import crypto from "node:crypto";
 import { eq, and } from "drizzle-orm";
 import { db, employees, triggers } from "@ai-employees/db";
+import { recordTokenUsage, extractUsage } from "../usage.js";
 
 export async function triggerRoutes(fastify: FastifyInstance) {
   // ───────────────────────────────────────────────────
@@ -87,7 +88,21 @@ export async function triggerRoutes(fastify: FastifyInstance) {
 
         const data = (await res.json()) as {
           choices?: { message?: { content?: string } }[];
+          usage?: unknown;
         };
+
+        // Record token usage
+        const usageData = extractUsage(data);
+        if (usageData) {
+          const model = (employee.modelConfig as { primary: string }).primary;
+          recordTokenUsage({
+            companyId: employee.companyId,
+            employeeId: trigger.employeeId,
+            source: "webhook",
+            model,
+            ...usageData,
+          });
+        }
 
         return {
           ok: true,

@@ -8,6 +8,8 @@ import {
   bigint,
   jsonb,
   timestamp,
+  numeric,
+  index,
   unique,
 } from "drizzle-orm/pg-core";
 
@@ -231,6 +233,26 @@ export const usageRecords = pgTable("usage_records", {
   periodEnd: timestamp("period_end", { withTimezone: true }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// ── Token Usage Logs ──────────────────────────────────
+export const tokenUsageLogs = pgTable("token_usage_logs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  companyId: uuid("company_id")
+    .notNull()
+    .references(() => companies.id),
+  employeeId: uuid("employee_id")
+    .notNull()
+    .references(() => employees.id),
+  source: varchar("source", { length: 30 }).notNull(),
+  model: varchar("model", { length: 100 }).notNull(),
+  tokensInput: integer("tokens_input").notNull().default(0),
+  tokensOutput: integer("tokens_output").notNull().default(0),
+  estimatedCostUsd: numeric("estimated_cost_usd", { precision: 10, scale: 6 }).notNull().default("0"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("idx_token_usage_employee_created").on(table.employeeId, table.createdAt),
+  index("idx_token_usage_company_created").on(table.companyId, table.createdAt),
+]);
 
 // ── Spreadsheet Bases (project containers for tables) ──────
 export const spreadsheetBases = pgTable("spreadsheet_bases", {

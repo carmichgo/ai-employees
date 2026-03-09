@@ -9,6 +9,7 @@ import type { FastifyInstance } from "fastify";
 import { execSync } from "node:child_process";
 import { eq, and, ne, desc, sql } from "drizzle-orm";
 import { db, employees, tasks, taskComments, chatMessages, users, companies, spreadsheetBases, spreadsheetTables, spreadsheetColumns, spreadsheetRows } from "@ai-employees/db";
+import { recordTokenUsage, extractUsage } from "../usage.js";
 
 /** Authenticate an employee by their gateway token. Returns the employee or sends an error. */
 async function authenticateEmployee(request: { headers: { authorization?: string } }, reply: { status: (code: number) => { send: (body: unknown) => unknown } }) {
@@ -194,6 +195,19 @@ export async function employeeGatewayRoutes(fastify: FastifyInstance) {
 
       const data = await res.json() as { choices?: { message?: { content?: string } }[]; usage?: unknown };
       const responseText = data.choices?.[0]?.message?.content || "No response";
+
+      // Record token usage for the target employee (they processed the message)
+      const usageData = extractUsage(data);
+      if (usageData) {
+        const model = (target.modelConfig as { primary: string }).primary;
+        recordTokenUsage({
+          companyId: target.companyId,
+          employeeId: target.id,
+          source: "team",
+          model,
+          ...usageData,
+        });
+      }
 
       fastify.log.info(`[team-msg] ${sender.name} → ${target.name}: ${body.message.slice(0, 80)}...`);
 

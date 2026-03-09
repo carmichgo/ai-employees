@@ -20,6 +20,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { eq, and } from "drizzle-orm";
 import { db, employees, companies } from "@ai-employees/db";
+import { recordTokenUsage, extractUsage } from "../usage.js";
 
 // Types we reference — kept minimal so we don't need the Slack packages at compile time
 type SlackApp = { message: Function; event: Function; start: Function; stop: Function };
@@ -49,12 +50,14 @@ interface AuthorityConfig {
 
 interface EmployeeMapping {
   id: string;
+  companyId: string;
   name: string;
   emoji: string | null;
   jobTitle: string;
   containerHost: string | null;
   containerPort: number | null;
   gatewayToken: string | null;
+  modelConfig: unknown;
   slackChannelId: string | null;
   authorityConfig: AuthorityConfig | null;
 }
@@ -226,12 +229,14 @@ export class SlackProxy {
 
       const mapping: EmployeeMapping = {
         id: emp.id,
+        companyId: emp.companyId,
         name: emp.name,
         emoji: emp.emoji,
         jobTitle: emp.jobTitle,
         containerHost: emp.containerHost,
         containerPort: emp.containerPort,
         gatewayToken: emp.gatewayToken,
+        modelConfig: emp.modelConfig,
         slackChannelId: channelId || null,
         authorityConfig,
       };
@@ -309,12 +314,14 @@ export class SlackProxy {
       // Update local mapping
       this.channelToEmployee.set(channelId, {
         id: emp.id,
+        companyId: emp.companyId,
         name: emp.name,
         emoji: emp.emoji,
         jobTitle: emp.jobTitle,
         containerHost: emp.containerHost,
         containerPort: emp.containerPort,
         gatewayToken: emp.gatewayToken,
+        modelConfig: emp.modelConfig,
         slackChannelId: channelId,
         authorityConfig: null,
       });
@@ -336,7 +343,7 @@ export class SlackProxy {
   private async findExistingChannel(
     channelName: string,
     employeeId: string,
-    emp: { name: string; emoji: string | null; jobTitle: string; containerHost: string | null; containerPort: number | null; gatewayToken: string | null; provisionedAccounts: unknown },
+    emp: { companyId: string; name: string; emoji: string | null; jobTitle: string; containerHost: string | null; containerPort: number | null; gatewayToken: string | null; modelConfig: unknown; provisionedAccounts: unknown },
   ): Promise<string | null> {
     if (!this.webClient) return null;
 
@@ -361,12 +368,14 @@ export class SlackProxy {
 
         this.channelToEmployee.set(existing.id, {
           id: employeeId,
+          companyId: emp.companyId,
           name: emp.name,
           emoji: emp.emoji,
           jobTitle: emp.jobTitle,
           containerHost: emp.containerHost,
           containerPort: emp.containerPort,
           gatewayToken: emp.gatewayToken,
+          modelConfig: emp.modelConfig,
           slackChannelId: existing.id,
           authorityConfig: null,
         });
@@ -617,8 +626,20 @@ export class SlackProxy {
         return;
       }
 
-      const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+      const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }>; usage?: unknown };
       const reply = data.choices?.[0]?.message?.content || "I couldn't generate a response.";
+
+      // Record token usage
+      const usageData = extractUsage(data);
+      if (usageData) {
+        recordTokenUsage({
+          companyId: employee.companyId,
+          employeeId: employee.id,
+          source: "slack",
+          model: (employee.modelConfig as { primary?: string })?.primary || "anthropic/claude-sonnet-4-5-20250929",
+          ...usageData,
+        });
+      }
 
       const chunks = splitMessage(reply, 3900);
       for (const chunk of chunks) {
@@ -822,12 +843,14 @@ export class SlackProxy {
     try {
       const mapping: EmployeeMapping = {
         id: emp.id,
+        companyId: emp.companyId,
         name: emp.name,
         emoji: emp.emoji,
         jobTitle: emp.jobTitle,
         containerHost: emp.containerHost,
         containerPort: emp.containerPort,
         gatewayToken: emp.gatewayToken,
+        modelConfig: emp.modelConfig,
         slackChannelId: channelId,
         authorityConfig: null,
       };
