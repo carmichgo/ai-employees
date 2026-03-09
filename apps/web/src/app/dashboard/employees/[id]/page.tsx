@@ -1029,6 +1029,7 @@ export default function EmployeeDetailPage() {
                       employeeName: relayInfo.employeeName || employee.name,
                       wsUrl: relayInfo.wsUrl,
                       relayToken: relayInfo.relayToken,
+                      gatewayToken: relayInfo.gatewayToken,
                     },
                     (response: any) => {
                       if (chromeApi.runtime.lastError) {

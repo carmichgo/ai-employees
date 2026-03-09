@@ -7,16 +7,20 @@
     "debugger",
     "activeTab",
     "tabs",
-    "storage"
+    "storage",
+    "alarms",
+    "webNavigation"
   ],
   "host_permissions": [
     "http://*/*",
     "https://*/*"
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
   "action": {
+    "default_title": "Blitzer AI Browser Relay (click to attach/detach)",
     "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",

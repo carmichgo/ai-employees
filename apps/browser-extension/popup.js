@@ -36,7 +36,7 @@ function render(status) {
           <div>
             <div class="conn-name">${escapeHtml(c.employeeName)}</div>
             <div class="conn-status ${c.connected ? "" : "error"}">
-              ${c.connected ? "Connected" : "Reconnecting..."}
+              ${c.connected ? `Connected · ${c.tabCount || 0} tab${c.tabCount === 1 ? "" : "s"}` : "Reconnecting..."}
             </div>
           </div>
           <button class="btn-disconnect" data-id="${c.employeeId}">Disconnect</button>

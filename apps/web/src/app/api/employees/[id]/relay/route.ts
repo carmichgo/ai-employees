@@ -9,8 +9,9 @@ import { db } from "@/lib/db";
 import { employees } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
 
-/** Derive the relay auth token from the gateway token using HMAC-SHA256 */
-async function deriveRelayToken(gatewayToken: string): Promise<string> {
+/** Derive the relay auth token from the gateway token + port using HMAC-SHA256.
+ *  Matches OpenClaw's deriveRelayToken(gatewayToken, port) format. */
+async function deriveRelayToken(gatewayToken: string, port: number): Promise<string> {
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey(
     "raw",
@@ -19,7 +20,7 @@ async function deriveRelayToken(gatewayToken: string): Promise<string> {
     false,
     ["sign"],
   );
-  const sig = await crypto.subtle.sign("HMAC", key, encoder.encode("openclaw-extension-relay-v1"));
+  const sig = await crypto.subtle.sign("HMAC", key, encoder.encode(`openclaw-extension-relay-v1:${port}`));
   return Array.from(new Uint8Array(sig))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
@@ -69,12 +70,14 @@ export async function GET(
   const apiPort = 3001;
   const gatewayUrl = `http://${employee.dropletIp}:${apiPort}/gw/${employee.id}`;
 
-  // WebSocket URL for the Chrome extension relay (CDP relay on gateway+3 = 18792)
-  const wsUrl = `ws://${employee.dropletIp}:${apiPort}/gw/${employee.id}/extension`;
+  // WebSocket URL for the Chrome extension relay via the relay proxy (port 18792)
+  // The relay proxy at /relay/:id/* forwards to the container's extension relay
+  const wsUrl = `ws://${employee.dropletIp}:${apiPort}/relay/${employee.id}/extension`;
 
-  // Derive relay token so we never expose the raw gateway token to the extension
+  // Derive relay token (HMAC of gateway token + relay port) — matches OpenClaw protocol
+  const relayPort = 18792;
   const relayToken = employee.gatewayToken
-    ? await deriveRelayToken(employee.gatewayToken)
+    ? await deriveRelayToken(employee.gatewayToken, relayPort)
     : null;
 
   return NextResponse.json({
