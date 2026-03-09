@@ -80,14 +80,16 @@ const healthInterval = setInterval(async () => {
   }
 }, 60_000);
 
-// Task checking — runs every 5 minutes, nudges employees about pending tasks
+// Task checking — runs every 10 minutes as a safety net for missed heartbeats.
+// The heartbeat (30m) handles routine task-board checks; this only fires when
+// the employee hasn't been prompted in 45+ minutes AND has actionable tasks.
 const taskCheckInterval = setInterval(async () => {
   try {
     await checkPendingTasks();
   } catch (error) {
     console.error("[task-check] Task checking error:", error);
   }
-}, 5 * 60_000);
+}, 10 * 60_000);
 
 // Schedule trigger checker — runs every 60 seconds, fires cron-based triggers
 const scheduleInterval = setInterval(async () => {

@@ -35,10 +35,10 @@ function getLocalIps(): string[] {
 const lastNudge = new Map<string, number>();
 
 // Only nudge if the employee hasn't been prompted by ANY source in this window.
-// Heartbeat fires every 15 min, so 20 min means the task-check only fires as a
-// backup when heartbeat missed or the employee had no other interaction.
-const RECENTLY_PROMPTED_MS = 20 * 60 * 1000; // 20 minutes
-const STALE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes — tasks not updated in this long are stale
+// Heartbeat fires every 30 min, so 45 min means the task-check only fires as a
+// safety net when heartbeat missed or the employee had no other interaction.
+const RECENTLY_PROMPTED_MS = 45 * 60 * 1000; // 45 minutes
+const STALE_THRESHOLD_MS = 60 * 60 * 1000; // 60 minutes — tasks not updated in this long are stale
 
 export async function checkPendingTasks(): Promise<void> {
   // Only nudge employees on this droplet — each droplet runs its own worker
