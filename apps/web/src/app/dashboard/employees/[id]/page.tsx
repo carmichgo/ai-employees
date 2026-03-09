@@ -211,10 +211,12 @@ export default function EmployeeDetailPage() {
   const [skillNotice, setSkillNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   // Relay state
-  const [relayInfo, setRelayInfo] = useState<{ available: boolean; gatewayUrl?: string; gatewayToken?: string; command?: string } | null>(null);
+  const [relayInfo, setRelayInfo] = useState<{ available: boolean; employeeName?: string; gatewayUrl?: string; gatewayToken?: string; wsUrl?: string; relayToken?: string; command?: string } | null>(null);
   const [relayLoading, setRelayLoading] = useState(false);
   const [showRelayToken, setShowRelayToken] = useState(false);
   const [copiedRelay, setCopiedRelay] = useState<string | null>(null);
+  const [extensionStatus, setExtensionStatus] = useState<"idle" | "connecting" | "connected" | "not-installed" | "error">("idle");
+  const [extensionError, setExtensionError] = useState<string | null>(null);
 
   const employeeId = params.id as string;
 
@@ -989,82 +991,217 @@ export default function EmployeeDetailPage() {
               <Monitor size={14} style={{ color: "var(--text-tertiary)" }} />
               <p className="label" style={{ margin: 0 }}>Browser Extension Relay</p>
             </div>
+            {extensionStatus === "connected" && (
+              <span style={{ fontSize: 11, color: "var(--green)", display: "flex", alignItems: "center", gap: 4 }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--green)", display: "inline-block" }} />
+                Connected
+              </span>
+            )}
           </div>
 
           <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 14 }}>
             Connect your Chrome browser to {employee.name} so they can browse websites using your real browser session (bypasses bot detection, uses your logins).
           </div>
 
-          {/* Gateway URL */}
-          <div style={{ marginBottom: 10 }}>
-            <label style={{ fontSize: 12, color: "var(--text-tertiary)", display: "block", marginBottom: 4 }}>Gateway URL</label>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <code style={{
-                flex: 1, fontSize: 11, background: "var(--bg-secondary)", padding: "6px 10px",
-                borderRadius: "var(--radius-sm)", border: "1px solid var(--border)",
-                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)",
-              }}>
-                {relayInfo.gatewayUrl}
-              </code>
-              <button
-                onClick={() => copyRelayValue("url", relayInfo.gatewayUrl!)}
-                style={{ background: "none", border: "none", cursor: "pointer", color: copiedRelay === "url" ? "var(--green)" : "var(--text-tertiary)", padding: 4, flexShrink: 0 }}
-                title="Copy URL"
-              >
-                {copiedRelay === "url" ? <Check size={13} /> : <Copy size={13} />}
-              </button>
-            </div>
+          {/* One-click connect button */}
+          <div style={{ marginBottom: 16 }}>
+            <button
+              onClick={() => {
+                setExtensionStatus("connecting");
+                setExtensionError(null);
+                // The extension ID — users install from Chrome Web Store or load unpacked
+                // Try sending to extension via externally_connectable
+                const extensionId = (window as any).__BLITZER_EXTENSION_ID || localStorage.getItem("blitzer_extension_id");
+                if (!extensionId) {
+                  // Try auto-detect: send to known extension IDs
+                  setExtensionStatus("not-installed");
+                  setExtensionError("Extension not detected. Install the Blitzer AI extension, then enter its ID below.");
+                  return;
+                }
+                try {
+                  const chromeApi = (globalThis as any).chrome;
+                  if (!chromeApi?.runtime?.sendMessage) throw new Error("no chrome API");
+                  chromeApi.runtime.sendMessage(
+                    extensionId,
+                    {
+                      action: "connect",
+                      employeeId,
+                      employeeName: relayInfo.employeeName || employee.name,
+                      wsUrl: relayInfo.wsUrl,
+                      relayToken: relayInfo.relayToken,
+                    },
+                    (response: any) => {
+                      if (chromeApi.runtime.lastError) {
+                        setExtensionStatus("not-installed");
+                        setExtensionError("Could not reach extension. Make sure it's installed and the ID is correct.");
+                        return;
+                      }
+                      if (response?.ok) {
+                        setExtensionStatus("connected");
+                      } else {
+                        setExtensionStatus("error");
+                        setExtensionError(response?.error || "Connection failed");
+                      }
+                    },
+                  );
+                } catch {
+                  setExtensionStatus("not-installed");
+                  setExtensionError("Chrome extension API not available. Are you using Chrome?");
+                }
+              }}
+              disabled={extensionStatus === "connecting"}
+              style={{
+                width: "100%",
+                padding: "10px 16px",
+                background: extensionStatus === "connected" ? "var(--green)" : "var(--text)",
+                color: "#fff",
+                border: "none",
+                borderRadius: "var(--radius-md)",
+                fontSize: 13,
+                fontWeight: 500,
+                cursor: extensionStatus === "connecting" ? "wait" : "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+              }}
+            >
+              {extensionStatus === "connecting" && "Connecting..."}
+              {extensionStatus === "connected" && <><Check size={14} /> Connected to {employee.name}</>}
+              {(extensionStatus === "idle" || extensionStatus === "error" || extensionStatus === "not-installed") && (
+                <><Monitor size={14} /> Connect Chrome Extension</>
+              )}
+            </button>
+
+            {extensionStatus === "not-installed" && (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 12, color: "#ef4444", marginBottom: 8 }}>{extensionError}</div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <input
+                    type="text"
+                    placeholder="Paste extension ID here"
+                    style={{
+                      flex: 1, fontSize: 12, padding: "6px 10px",
+                      border: "1px solid var(--border)", borderRadius: "var(--radius-sm)",
+                      background: "var(--bg-secondary)", color: "var(--text)",
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        const id = (e.target as HTMLInputElement).value.trim();
+                        if (id) {
+                          localStorage.setItem("blitzer_extension_id", id);
+                          setExtensionStatus("idle");
+                          setExtensionError(null);
+                        }
+                      }
+                    }}
+                  />
+                  <button
+                    onClick={() => {
+                      const input = document.querySelector('input[placeholder="Paste extension ID here"]') as HTMLInputElement;
+                      if (input?.value.trim()) {
+                        localStorage.setItem("blitzer_extension_id", input.value.trim());
+                        setExtensionStatus("idle");
+                        setExtensionError(null);
+                      }
+                    }}
+                    style={{
+                      padding: "6px 12px", fontSize: 12, background: "var(--bg-secondary)",
+                      border: "1px solid var(--border)", borderRadius: "var(--radius-sm)",
+                      cursor: "pointer", color: "var(--text)",
+                    }}
+                  >
+                    Save
+                  </button>
+                </div>
+                <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 6 }}>
+                  Find the ID in <code style={{ fontSize: 10, background: "var(--bg-secondary)", padding: "1px 4px", borderRadius: 3 }}>chrome://extensions</code> after loading the extension.
+                </div>
+              </div>
+            )}
+
+            {extensionStatus === "error" && extensionError && (
+              <div style={{ fontSize: 12, color: "#ef4444", marginTop: 8 }}>{extensionError}</div>
+            )}
           </div>
 
-          {/* Gateway Token */}
-          <div style={{ marginBottom: 14 }}>
-            <label style={{ fontSize: 12, color: "var(--text-tertiary)", display: "block", marginBottom: 4 }}>Gateway Token</label>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <code style={{
-                flex: 1, fontSize: 11, background: "var(--bg-secondary)", padding: "6px 10px",
-                borderRadius: "var(--radius-sm)", border: "1px solid var(--border)",
-                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)",
-              }}>
-                {showRelayToken ? relayInfo.gatewayToken : "\u2022".repeat(32)}
-              </code>
-              <button
-                onClick={() => setShowRelayToken(!showRelayToken)}
-                style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", padding: 4, flexShrink: 0 }}
-                title={showRelayToken ? "Hide token" : "Show token"}
-              >
-                {showRelayToken ? <EyeOff size={13} /> : <Eye size={13} />}
-              </button>
-              <button
-                onClick={() => copyRelayValue("token", relayInfo.gatewayToken!)}
-                style={{ background: "none", border: "none", cursor: "pointer", color: copiedRelay === "token" ? "var(--green)" : "var(--text-tertiary)", padding: 4, flexShrink: 0 }}
-                title="Copy token"
-              >
-                {copiedRelay === "token" ? <Check size={13} /> : <Copy size={13} />}
-              </button>
-            </div>
-          </div>
+          {/* Collapsible manual setup */}
+          <details style={{ marginTop: 4 }}>
+            <summary style={{ fontSize: 12, color: "var(--text-tertiary)", cursor: "pointer", marginBottom: 10 }}>
+              Manual setup (CLI)
+            </summary>
 
-          {/* Quick command */}
-          <div style={{
-            background: "var(--bg-secondary)", borderRadius: "var(--radius-md)",
-            padding: 12, border: "1px solid var(--border)",
-          }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-              <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>Run this on your local machine:</span>
-              <button
-                onClick={() => copyRelayValue("cmd", relayInfo.command!)}
-                style={{ background: "none", border: "none", cursor: "pointer", color: copiedRelay === "cmd" ? "var(--green)" : "var(--text-tertiary)", padding: 2, fontSize: 11, display: "flex", alignItems: "center", gap: 4 }}
-              >
-                {copiedRelay === "cmd" ? <><Check size={11} /> Copied</> : <><Copy size={11} /> Copy</>}
-              </button>
+            {/* Gateway URL */}
+            <div style={{ marginBottom: 10 }}>
+              <label style={{ fontSize: 12, color: "var(--text-tertiary)", display: "block", marginBottom: 4 }}>Gateway URL</label>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <code style={{
+                  flex: 1, fontSize: 11, background: "var(--bg-secondary)", padding: "6px 10px",
+                  borderRadius: "var(--radius-sm)", border: "1px solid var(--border)",
+                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)",
+                }}>
+                  {relayInfo.gatewayUrl}
+                </code>
+                <button
+                  onClick={() => copyRelayValue("url", relayInfo.gatewayUrl!)}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: copiedRelay === "url" ? "var(--green)" : "var(--text-tertiary)", padding: 4, flexShrink: 0 }}
+                  title="Copy URL"
+                >
+                  {copiedRelay === "url" ? <Check size={13} /> : <Copy size={13} />}
+                </button>
+              </div>
             </div>
-            <code style={{
-              display: "block", fontSize: 11, color: "var(--text)", lineHeight: 1.6,
-              wordBreak: "break-all", fontFamily: "monospace",
+
+            {/* Gateway Token */}
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 12, color: "var(--text-tertiary)", display: "block", marginBottom: 4 }}>Gateway Token</label>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <code style={{
+                  flex: 1, fontSize: 11, background: "var(--bg-secondary)", padding: "6px 10px",
+                  borderRadius: "var(--radius-sm)", border: "1px solid var(--border)",
+                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)",
+                }}>
+                  {showRelayToken ? relayInfo.gatewayToken : "\u2022".repeat(32)}
+                </code>
+                <button
+                  onClick={() => setShowRelayToken(!showRelayToken)}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", padding: 4, flexShrink: 0 }}
+                  title={showRelayToken ? "Hide token" : "Show token"}
+                >
+                  {showRelayToken ? <EyeOff size={13} /> : <Eye size={13} />}
+                </button>
+                <button
+                  onClick={() => copyRelayValue("token", relayInfo.gatewayToken!)}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: copiedRelay === "token" ? "var(--green)" : "var(--text-tertiary)", padding: 4, flexShrink: 0 }}
+                  title="Copy token"
+                >
+                  {copiedRelay === "token" ? <Check size={13} /> : <Copy size={13} />}
+                </button>
+              </div>
+            </div>
+
+            {/* Quick command */}
+            <div style={{
+              background: "var(--bg-secondary)", borderRadius: "var(--radius-md)",
+              padding: 12, border: "1px solid var(--border)",
             }}>
-              {relayInfo.command}
-            </code>
-          </div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>Run this on your local machine:</span>
+                <button
+                  onClick={() => copyRelayValue("cmd", relayInfo.command!)}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: copiedRelay === "cmd" ? "var(--green)" : "var(--text-tertiary)", padding: 2, fontSize: 11, display: "flex", alignItems: "center", gap: 4 }}
+                >
+                  {copiedRelay === "cmd" ? <><Check size={11} /> Copied</> : <><Copy size={11} /> Copy</>}
+                </button>
+              </div>
+              <code style={{
+                display: "block", fontSize: 11, color: "var(--text)", lineHeight: 1.6,
+                wordBreak: "break-all", fontFamily: "monospace",
+              }}>
+                {relayInfo.command}
+              </code>
+            </div>
+          </details>
 
           <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 10 }}>
             After connecting, {employee.name} can use <code style={{ fontSize: 10, background: "var(--bg-secondary)", padding: "1px 4px", borderRadius: 3 }}>--browser-profile chrome</code> to control your real Chrome browser.

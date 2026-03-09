@@ -1,12 +1,29 @@
 /**
  * GET /api/employees/[id]/relay — return browser extension relay connection info
- * Returns the gateway URL and token needed to connect the OpenClaw node host.
+ * Returns the gateway URL, token, and WebSocket URL needed to connect the
+ * OpenClaw node host or the Blitzer AI Chrome extension.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { employees } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
+
+/** Derive the relay auth token from the gateway token using HMAC-SHA256 */
+async function deriveRelayToken(gatewayToken: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(gatewayToken),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, encoder.encode("openclaw-extension-relay-v1"));
+  return Array.from(new Uint8Array(sig))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
 
 export async function GET(
   request: NextRequest,
@@ -25,6 +42,7 @@ export async function GET(
   const [employee] = await db
     .select({
       id: employees.id,
+      name: employees.name,
       dropletIp: employees.dropletIp,
       dropletStatus: employees.dropletStatus,
       gatewayToken: employees.gatewayToken,
@@ -51,10 +69,22 @@ export async function GET(
   const apiPort = 3001;
   const gatewayUrl = `http://${employee.dropletIp}:${apiPort}/gw/${employee.id}`;
 
+  // WebSocket URL for the Chrome extension relay (CDP relay on gateway+3 = 18792)
+  const wsUrl = `ws://${employee.dropletIp}:${apiPort}/gw/${employee.id}/extension`;
+
+  // Derive relay token so we never expose the raw gateway token to the extension
+  const relayToken = employee.gatewayToken
+    ? await deriveRelayToken(employee.gatewayToken)
+    : null;
+
   return NextResponse.json({
     available: true,
+    employeeName: employee.name,
     gatewayUrl,
     gatewayToken: employee.gatewayToken,
+    // Chrome extension fields
+    wsUrl,
+    relayToken,
     command: `npx clawhub@latest node-host --gateway-url "${gatewayUrl}" --token "${employee.gatewayToken}"`,
   });
 }

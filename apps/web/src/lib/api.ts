@@ -442,8 +442,11 @@ class ApiClient {
     return this.request<{
       available: boolean;
       reason?: string;
+      employeeName?: string;
       gatewayUrl?: string;
       gatewayToken?: string;
+      wsUrl?: string;
+      relayToken?: string;
       command?: string;
     }>(`/api/employees/${employeeId}/relay`);
   }
