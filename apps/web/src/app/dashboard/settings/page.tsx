@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
-import { Building2, User, Link2, Unlink, CheckCircle2, ExternalLink } from "lucide-react";
+import { Building2, User, Link2, Unlink, CheckCircle2, ExternalLink, Download, Chrome } from "lucide-react";
 
 const cssVars = `
   :root {
@@ -364,6 +364,28 @@ function SettingsContent() {
             }}>
               Coming soon
             </span>
+          </div>
+
+          {/* Chrome Extension */}
+          <div style={integrationCard}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <Chrome size={22} style={{ color: "var(--text-tertiary)" }} />
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>Chrome Extension</div>
+                <div style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 2 }}>
+                  Let employees browse using your real Chrome session
+                </div>
+              </div>
+            </div>
+            <a
+              href="/api/extension/download"
+              style={{
+                ...btnPrimary,
+                textDecoration: "none",
+              }}
+            >
+              <Download size={12} /> Download
+            </a>
           </div>
         </div>
       </div>

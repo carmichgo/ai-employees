@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { ArrowRight, Check, ChevronRight } from "lucide-react";
+import { ArrowRight, Check, ChevronRight, Download, Chrome } from "lucide-react";
 
 /* ─── Scroll-reveal hook ──────────────────────────── */
 function useReveal(threshold = 0.15) {
@@ -186,6 +186,9 @@ export default function LandingPage() {
             <a href="#pricing" className="lp-nav-link">Pricing</a>
           </div>
           <div className="lp-nav-actions">
+            <a href="/api/extension/download" className="lp-nav-link" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+              <Chrome size={14} /> Extension
+            </a>
             <Link href="/login" className="lp-nav-link">Sign In</Link>
             <Link href="/register" className="lp-btn-primary">
               Get Started <ArrowRight size={14} />
@@ -521,6 +524,53 @@ export default function LandingPage() {
             </div>
           </div>
         </Reveal>
+      </section>
+
+      {/* ── Chrome Extension ──────────────────── */}
+      <section className="lp-section lp-section-alt" id="extension">
+        <div className="lp-feature-split">
+          <Reveal direction="left" className="lp-feature-text">
+            <span className="lp-section-label">Chrome Extension</span>
+            <h2 className="lp-feature-title">Connect your real browser</h2>
+            <p className="lp-feature-desc">
+              Install the Blitzer AI Chrome extension to let your AI employees browse the web
+              using your real browser session. They can bypass bot detection, use your logged-in
+              accounts, and interact with any website — just like you would.
+            </p>
+            <ul className="lp-feature-list">
+              <li><Check size={16} /> Uses your real Chrome session</li>
+              <li><Check size={16} /> Bypasses bot detection &amp; CAPTCHAs</li>
+              <li><Check size={16} /> Access sites behind your logins</li>
+              <li><Check size={16} /> One-click connect from the dashboard</li>
+            </ul>
+            <div style={{ marginTop: 24 }}>
+              <a href="/api/extension/download" className="lp-btn-primary lp-btn-lg" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                <Download size={16} /> Download Chrome Extension
+              </a>
+            </div>
+          </Reveal>
+          <Reveal direction="right" delay={0.2} className="lp-feature-visual">
+            <div className="lp-terminal">
+              <div className="lp-terminal-bar">
+                <span className="lp-terminal-dot lp-dot-red" />
+                <span className="lp-terminal-dot lp-dot-yellow" />
+                <span className="lp-terminal-dot lp-dot-green" />
+                <span className="lp-terminal-title">Chrome Extension</span>
+              </div>
+              <div className="lp-terminal-body">
+                <div className="lp-terminal-line"><span className="lp-t-prompt">1.</span> Download the extension (.zip)</div>
+                <div className="lp-terminal-line"><span className="lp-t-prompt">2.</span> Unzip and open <span className="lp-t-success">chrome://extensions</span></div>
+                <div className="lp-terminal-line"><span className="lp-t-prompt">3.</span> Enable &quot;Developer mode&quot;</div>
+                <div className="lp-terminal-line"><span className="lp-t-prompt">4.</span> Click &quot;Load unpacked&quot; → select folder</div>
+                <div className="lp-terminal-line"><span className="lp-t-prompt">5.</span> Copy the Extension ID</div>
+                <div className="lp-terminal-line lp-t-dim" style={{ marginTop: 8 }}>Then in the dashboard:</div>
+                <div className="lp-terminal-line"><span className="lp-t-prompt">6.</span> Go to employee → Browser Relay</div>
+                <div className="lp-terminal-line"><span className="lp-t-prompt">7.</span> Click &quot;Connect Chrome Extension&quot;</div>
+                <div className="lp-terminal-line lp-t-success" style={{ marginTop: 8 }}>  ✓ Connected — browsing with your session</div>
+              </div>
+            </div>
+          </Reveal>
+        </div>
       </section>
 
       {/* ── Final CTA ─────────────────────────── */}
