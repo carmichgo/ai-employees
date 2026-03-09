@@ -232,11 +232,9 @@ export function generateOpenClawConfig(
         // only works again when someone sends a message or a cron trigger fires.
         // 30m balances responsiveness with cost — the task-check worker handles
         // urgent nudges between heartbeats.
-        // Expert tier: route heartbeat to the fast (Sonnet) agent to avoid
-        // burning Opus tokens on routine task-board checks.
         heartbeat: {
           every: "30m",
-          target: isExpertTier ? `${agentId}-fast` : "none",
+          target: "none",
           ackMaxChars: 300,
           session: "main",
           activeHours: {
