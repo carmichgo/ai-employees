@@ -150,6 +150,7 @@ export async function gatewayProxyRoutes(fastify: FastifyInstance) {
         const upgradeReq = [
           `GET ${path} HTTP/1.1`,
           `Host: ${host}:${GATEWAY_PORT}`,
+          `Origin: http://${host}:${GATEWAY_PORT}`,
           `Upgrade: websocket`,
           `Connection: Upgrade`,
           `Sec-WebSocket-Version: 13`,
@@ -183,18 +184,37 @@ export async function gatewayProxyRoutes(fastify: FastifyInstance) {
     });
   });
 
-  // ── Config diagnostic: read the actual openclaw.yaml on disk ──
+  // ── Config diagnostic: read the actual openclaw.json on disk + container uptime ──
   fastify.get<{ Params: { id: string } }>("/test-config/:id", async (request, reply) => {
     const { id } = request.params;
     const configPath = `/opt/ai-employees/openclaw-configs/${id}/openclaw.json`;
     if (!existsSync(configPath)) return reply.status(404).send({ error: "Config file not found", path: configPath });
     const content = readFileSync(configPath, "utf-8");
     const config = JSON.parse(content);
+
+    // Get container uptime
+    const emp = await db.query.employees.findFirst({
+      where: eq(employees.id, id),
+      columns: { containerName: true },
+    });
+    let containerStarted: string | null = null;
+    if (emp?.containerName) {
+      try {
+        const { execSync } = await import("child_process");
+        containerStarted = execSync(
+          `docker inspect --format '{{.State.StartedAt}}' ${emp.containerName}`,
+          { timeout: 5000 }
+        ).toString().trim();
+      } catch {}
+    }
+
     return {
       path: configPath,
       gateway: config.gateway,
       hasAllowedOrigins: content.includes("allowedOrigins"),
       fullConfigLength: content.length,
+      containerName: emp?.containerName,
+      containerStarted,
     };
   });
   // ── HTTP Proxy: /gw/:id and /gw/:id/* ────────────────────────────
