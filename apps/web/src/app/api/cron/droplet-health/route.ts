@@ -110,7 +110,31 @@ export async function GET(request: NextRequest) {
       continue;
     }
 
-    // Droplet health check failed — investigate
+    // API is reachable but gateway/container isn't running — do NOT power-cycle.
+    // The droplet itself is fine; the container just needs (re)provisioning.
+    // Power-cycling would kill any in-progress provisioning job.
+    if (health.phase === "gateway_starting" || health.phase === "ready" || health.phase === "unknown") {
+      // API server is responding, just no container yet
+      if (emp.dropletStatus !== "unhealthy") {
+        await db
+          .update(employees)
+          .set({
+            dropletStatus: "unhealthy",
+            errorMessage: `API reachable but container not running (${health.phase}) at ${new Date().toISOString()}`,
+            updatedAt: new Date(),
+          })
+          .where(eq(employees.id, emp.id));
+      }
+      results.push({
+        employeeId: emp.id,
+        name: emp.name,
+        action: "api_up_no_container",
+        details: `Phase: ${health.phase} — skipping power-cycle (droplet is fine, container needs provisioning)`,
+      });
+      continue;
+    }
+
+    // Droplet health check fully failed (not even API responded) — investigate
     const dropletInfo = await getDropletInfo(emp.dropletId!);
 
     if (!dropletInfo.exists) {
