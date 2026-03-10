@@ -70,13 +70,13 @@ export async function GET(
   const apiPort = 3001;
   const gatewayUrl = `http://${employee.dropletIp}:${apiPort}/gw/${employee.id}`;
 
-  // WebSocket URL for the Chrome extension relay (port 18792 inside the container).
-  // The extension relay is enabled via extensionRelay config in openclaw.json.
-  // The API server's /relay proxy forwards to containerHost:18792.
+  // WebSocket URL for the Chrome extension — the API server's /relay proxy
+  // bridges the extension directly to the OpenClaw gateway (port 18789).
+  // The extension speaks the OpenClaw operator protocol natively.
   const wsUrl = `ws://${employee.dropletIp}:${apiPort}/relay/${employee.id}/extension`;
 
-  // Derive relay token (HMAC of gateway token + relay port) — matches OpenClaw protocol
-  const relayPort = 18792;
+  // Derive relay token (HMAC of gateway token + gateway port)
+  const relayPort = 18789;
   const relayToken = employee.gatewayToken
     ? await deriveRelayToken(employee.gatewayToken, relayPort)
     : null;

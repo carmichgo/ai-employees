@@ -157,7 +157,7 @@ export async function gatewayProxyRoutes(fastify: FastifyInstance) {
     try {
       const url = req.url || "";
 
-      // Match /relay/:id/* (extension relay, port 18792)
+      // Match /relay/:id/* (extension relay — bridged to gateway on port 18789)
       const relayMatch = url.match(/^\/relay\/([^/]+)(\/.*)?$/);
       // Match /gw/:id/* (gateway, port 18789)
       const gwMatch = url.match(/^\/gw\/([^/]+)(\/.*)?$/);
@@ -165,9 +165,13 @@ export async function gatewayProxyRoutes(fastify: FastifyInstance) {
       const match = relayMatch || gwMatch;
       if (!match) return; // Not our request — let Fastify/other handlers deal with it
 
-      const port = relayMatch ? RELAY_PORT : GATEWAY_PORT;
+      // Extension relay connections go to the gateway (18789) — the extension
+      // speaks the OpenClaw operator protocol directly. No separate relay server needed.
+      const port = GATEWAY_PORT;
       const employeeId = match[1];
-      const remainingPath = match[2] || "/";
+      // Relay connections connect to the gateway root path; gateway connections
+      // preserve the sub-path.
+      const remainingPath = relayMatch ? "/" : (match[2] || "/");
 
       const host = await getContainerHost(employeeId);
       if (!host) {
