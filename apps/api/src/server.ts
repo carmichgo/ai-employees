@@ -197,7 +197,7 @@ export async function buildServer(config: Env) {
       (${script}) >> ${logFile} 2>&1 && \
       echo "[$(date -Iseconds)] Code updated" >> ${logFile} && \
       cd ${appDir} && \
-      (CI=1 pnpm install --frozen-lockfile 2>&1 || CI=1 pnpm install 2>&1) >> ${logFile} 2>&1 && \
+      (NODE_ENV=development CI=1 pnpm install --frozen-lockfile 2>&1 || NODE_ENV=development CI=1 pnpm install 2>&1) >> ${logFile} 2>&1 && \
       echo "[$(date -Iseconds)] Dependencies installed" >> ${logFile} && \
       pnpm turbo build --filter=@ai-employees/api --filter=@ai-employees/worker >> ${logFile} 2>&1 && \
       echo "[$(date -Iseconds)] Build complete" >> ${logFile} && \

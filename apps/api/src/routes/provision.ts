@@ -582,11 +582,20 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     }
 
     // 2. Install dependencies
-    run("pnpm install", "CI=1 pnpm install --frozen-lockfile 2>&1 || CI=1 pnpm install 2>&1", 180_000);
+    run("pnpm install", "NODE_ENV=development CI=1 pnpm install --frozen-lockfile 2>&1 || NODE_ENV=development CI=1 pnpm install 2>&1", 180_000);
 
-    // 3. Build API + worker
+    // 3. Build API + worker (try turbo first, fall back to sequential tsc)
     if (!run("build", "pnpm turbo build --filter=@ai-employees/api --filter=@ai-employees/worker 2>&1", 180_000)) {
-      return reply.status(500).send({ error: "Build failed", steps, errors });
+      // Turbo may fail on resource-constrained droplets — try building packages sequentially
+      errors.pop(); // Remove the turbo error
+      const pkgs = ["packages/shared", "packages/db", "packages/openclaw-config", "apps/api", "apps/worker"];
+      let allOk = true;
+      for (const pkg of pkgs) {
+        if (!run(`build ${pkg}`, `cd ${pkg} && npx tsc 2>&1`, 60_000)) { allOk = false; break; }
+      }
+      if (!allOk) {
+        return reply.status(500).send({ error: "Build failed", steps, errors });
+      }
     }
 
     // 4. Patch package.json main fields for ESM runtime
