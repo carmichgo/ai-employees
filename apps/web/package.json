@@ -11,6 +11,8 @@
   "dependencies": {
     "@ai-employees/shared": "workspace:*",
     "@neondatabase/serverless": "^0.10.0",
+    "@types/archiver": "^7.0.0",
+    "archiver": "^7.0.1",
     "bcryptjs": "^2.4.3",
     "drizzle-orm": "^0.38.0",
     "jose": "^6.0.0",
