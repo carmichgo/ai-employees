@@ -13,6 +13,7 @@ import { createConnection, type Socket } from "net";
 import type { IncomingMessage } from "http";
 import { request as httpRequest } from "http";
 import { randomBytes } from "crypto";
+import { readFileSync, existsSync } from "fs";
 import { eq } from "drizzle-orm";
 import { db, employees } from "@ai-employees/db";
 
@@ -180,6 +181,22 @@ export async function gatewayProxyRoutes(fastify: FastifyInstance) {
       tcpConn.on("error", (err) => { results.connectionError = err.message; finish(); });
       tcpConn.on("close", () => { results.closedByServer = true; finish(); });
     });
+  });
+
+  // ── Config diagnostic: read the actual openclaw.yaml on disk ──
+  fastify.get<{ Params: { id: string } }>("/test-config/:id", async (request, reply) => {
+    const { id } = request.params;
+    const configPath = `/opt/ai-employees/openclaw-configs/${id}/openclaw.yaml`;
+    if (!existsSync(configPath)) return reply.status(404).send({ error: "Config file not found", path: configPath });
+    const content = readFileSync(configPath, "utf-8");
+    // Extract just the gateway section
+    const gatewayMatch = content.match(/^gateway:[\s\S]*?(?=\n\w|\n$)/m);
+    return {
+      path: configPath,
+      gatewaySection: gatewayMatch?.[0] || "not found",
+      hasAllowedOrigins: content.includes("allowedOrigins"),
+      fullConfigLength: content.length,
+    };
   });
   // ── HTTP Proxy: /gw/:id and /gw/:id/* ────────────────────────────
 
