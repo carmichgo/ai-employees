@@ -18,8 +18,10 @@ import { eq } from "drizzle-orm";
 import { db, employees } from "@ai-employees/db";
 
 const GATEWAY_PORT = 18789;
-// Extension relay — no separate server; relay HTTP/WS routes proxy to the gateway directly.
-const RELAY_PORT = GATEWAY_PORT;
+// Extension relay port — OpenClaw binds a dedicated relay listener at gateway + 3.
+// The relay speaks the same operator protocol but registers connecting clients as
+// CDP providers so the gateway routes browser commands to them.
+const RELAY_PORT = 18792;
 
 async function getContainerHost(employeeId: string): Promise<string | null> {
   const emp = await db.query.employees.findFirst({
@@ -352,7 +354,7 @@ export async function gatewayProxyRoutes(fastify: FastifyInstance) {
       const urlPath = qIdx >= 0 ? rawUrl.slice(0, qIdx) : rawUrl;
       const queryString = qIdx >= 0 ? rawUrl.slice(qIdx) : "";
 
-      // Match /relay/:id/* (extension relay — bridged to gateway on port 18789)
+      // Match /relay/:id/* (extension relay — bridged to relay port 18792)
       const relayMatch = urlPath.match(/^\/relay\/([^/]+)(\/.*)?$/);
       // Match /gw/:id/* (gateway, port 18789)
       const gwMatch = urlPath.match(/^\/gw\/([^/]+)(\/.*)?$/);
@@ -360,15 +362,16 @@ export async function gatewayProxyRoutes(fastify: FastifyInstance) {
       const match = relayMatch || gwMatch;
       if (!match) return; // Not our request — let Fastify/other handlers deal with it
 
-      // Both relay and gateway connections go to the OpenClaw gateway (18789).
-      // The extension speaks the gateway's operator protocol directly.
-      const port = GATEWAY_PORT;
+      // Relay connections go to the dedicated relay listener (18792) which
+      // registers the connecting client as a CDP provider. Gateway connections
+      // go to the main gateway port (18789).
+      const port = relayMatch ? RELAY_PORT : GATEWAY_PORT;
       const employeeId = match[1];
-      // For relay connections, always forward to "/" — the extension sub-path
-      // (/extension) is just for routing; the gateway only accepts WS at root.
+      // For relay connections, forward to "/extension" — the relay listener
+      // expects this path to identify browser extension clients.
       // For gateway (/gw/) connections, preserve the original sub-path.
       // Always preserve the query string (contains auth token).
-      const basePath = relayMatch ? "/" : (match[2] || "/");
+      const basePath = relayMatch ? "/extension" : (match[2] || "/");
       const remainingPath = basePath + queryString;
 
       const host = await getContainerHost(employeeId);
