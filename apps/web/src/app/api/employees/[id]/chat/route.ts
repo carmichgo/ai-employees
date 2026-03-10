@@ -472,6 +472,35 @@ export async function POST(
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: "Chat request failed" }));
+
+      // If the droplet says no container is running (503), auto-trigger reprovision
+      if (res.status === 503 && employee.dropletIp && employee.interserviceSecret) {
+        try {
+          await fetch(
+            `http://${employee.dropletIp}:3001/internal/employees/${id}/reprovision`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "x-interservice-secret": employee.interserviceSecret,
+              },
+              body: JSON.stringify({}),
+              signal: AbortSignal.timeout(15_000),
+            },
+          );
+        } catch { /* best effort */ }
+
+        const reply = `I'm still getting set up — my workspace is being provisioned. Please try again in about 2 minutes.`;
+        await db.insert(chatMessages).values({
+          employeeId: id,
+          userId: session.userId,
+          role: "assistant",
+          content: reply,
+          mode: "provisioning",
+        });
+        return NextResponse.json({ reply, mode: "provisioning" });
+      }
+
       return NextResponse.json(
         { error: err.error || "Failed to get response" },
         { status: res.status },
