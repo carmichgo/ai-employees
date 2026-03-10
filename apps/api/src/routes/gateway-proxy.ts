@@ -87,14 +87,20 @@ export async function gatewayProxyRoutes(fastify: FastifyInstance) {
                 // Try to decode WebSocket text frames
                 results.firstFrameBytes = afterHeader.length;
                 try {
-                  // Simple text frame decode: first byte=0x81, second byte=payload len
                   const buf = Buffer.from(afterHeader);
-                  if (buf[0] === 0x81 && buf.length > 2) {
-                    const payloadLen = buf[1] & 0x7f;
-                    const payload = buf.slice(2, 2 + payloadLen).toString();
+                  results.firstBytesHex = buf.slice(0, 10).toString("hex");
+                  // Simple text frame decode: first byte=0x81, second byte=payload len
+                  if ((buf[0] & 0x0f) === 0x01 && buf.length > 2) {
+                    let payloadLen = buf[1] & 0x7f;
+                    let offset = 2;
+                    if (payloadLen === 126) {
+                      payloadLen = buf.readUInt16BE(2);
+                      offset = 4;
+                    }
+                    const payload = buf.slice(offset, offset + payloadLen).toString();
                     results.firstMessage = payload;
                   }
-                } catch {}
+                } catch (e: any) { results.decodeError = e.message; }
               }
               clearTimeout(timeout);
               conn.destroy();
