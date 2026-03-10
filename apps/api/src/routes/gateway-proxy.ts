@@ -156,12 +156,16 @@ export async function gatewayProxyRoutes(fastify: FastifyInstance) {
 
   fastify.server.on("upgrade", async (req: IncomingMessage, socket: Socket, head: Buffer) => {
     try {
-      const url = req.url || "";
+      const rawUrl = req.url || "";
+      // Separate path from query string — req.url includes ?token=xxx etc.
+      const qIdx = rawUrl.indexOf("?");
+      const urlPath = qIdx >= 0 ? rawUrl.slice(0, qIdx) : rawUrl;
+      const queryString = qIdx >= 0 ? rawUrl.slice(qIdx) : "";
 
       // Match /relay/:id/* (extension relay — bridged to gateway on port 18789)
-      const relayMatch = url.match(/^\/relay\/([^/]+)(\/.*)?$/);
+      const relayMatch = urlPath.match(/^\/relay\/([^/]+)(\/.*)?$/);
       // Match /gw/:id/* (gateway, port 18789)
-      const gwMatch = url.match(/^\/gw\/([^/]+)(\/.*)?$/);
+      const gwMatch = urlPath.match(/^\/gw\/([^/]+)(\/.*)?$/);
 
       const match = relayMatch || gwMatch;
       if (!match) return; // Not our request — let Fastify/other handlers deal with it
@@ -173,7 +177,9 @@ export async function gatewayProxyRoutes(fastify: FastifyInstance) {
       // For relay connections, always forward to "/" — the extension sub-path
       // (/extension) is just for routing; the gateway only accepts WS at root.
       // For gateway (/gw/) connections, preserve the original sub-path.
-      const remainingPath = relayMatch ? "/" : (match[2] || "/");
+      // Always preserve the query string (contains auth token).
+      const basePath = relayMatch ? "/" : (match[2] || "/");
+      const remainingPath = basePath + queryString;
 
       const host = await getContainerHost(employeeId);
       if (!host) {
