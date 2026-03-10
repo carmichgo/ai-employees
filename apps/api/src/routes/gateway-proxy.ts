@@ -49,10 +49,10 @@ export async function gatewayProxyRoutes(fastify: FastifyInstance) {
 
     return new Promise((resolve) => {
       const results: Record<string, unknown> = { host, port: GATEWAY_PORT, path, tokenLength: token?.length };
-      const timeout = setTimeout(() => {
-        results.error = "timeout (5s)";
-        resolve(reply.send(results));
-      }, 5000);
+      const rawChunks: Buffer[] = [];
+      let resolved = false;
+      const finish = () => { if (!resolved) { resolved = true; clearTimeout(timeout); conn.destroy(); resolve(reply.send(results)); } };
+      const timeout = setTimeout(() => { results.error = "timeout (5s)"; finish(); }, 5000);
 
       const conn = createConnection({ host, port: GATEWAY_PORT }, () => {
         const upgradeReq = [
@@ -67,66 +67,43 @@ export async function gatewayProxyRoutes(fastify: FastifyInstance) {
         conn.write(upgradeReq);
       });
 
-      let responseData = "";
-      conn.on("data", (chunk) => {
-        responseData += chunk.toString();
-        // Once we have the upgrade response header, parse it
-        if (responseData.includes("\r\n\r\n") && !results.upgradeResponse) {
-          const headerEnd = responseData.indexOf("\r\n\r\n");
-          results.upgradeResponse = responseData.slice(0, headerEnd);
-          const statusMatch = responseData.match(/^HTTP\/[\d.]+ (\d+)/);
-          results.statusCode = statusMatch ? parseInt(statusMatch[1]) : null;
+      conn.on("data", (chunk: Buffer) => {
+        rawChunks.push(Buffer.from(chunk));
+        const all = Buffer.concat(rawChunks);
+        const headerStr = all.toString("ascii", 0, Math.min(all.length, 4096));
+        const headerEnd = headerStr.indexOf("\r\n\r\n");
+        if (headerEnd < 0) return;
 
-          if (results.statusCode === 101) {
-            // WebSocket is open — wait briefly for first message
-            results.wsOpen = true;
-            setTimeout(() => {
-              // Capture any WS frames received
-              const afterHeader = responseData.slice(headerEnd + 4);
-              if (afterHeader.length > 0) {
-                // Try to decode WebSocket text frames
-                results.firstFrameBytes = afterHeader.length;
-                try {
-                  const buf = Buffer.from(afterHeader);
-                  results.firstBytesHex = buf.slice(0, 10).toString("hex");
-                  // Simple text frame decode: first byte=0x81, second byte=payload len
-                  if ((buf[0] & 0x0f) === 0x01 && buf.length > 2) {
-                    let payloadLen = buf[1] & 0x7f;
-                    let offset = 2;
-                    if (payloadLen === 126) {
-                      payloadLen = buf.readUInt16BE(2);
-                      offset = 4;
-                    }
-                    const payload = buf.slice(offset, offset + payloadLen).toString();
-                    results.firstMessage = payload;
-                  }
-                } catch (e: any) { results.decodeError = e.message; }
-              }
-              clearTimeout(timeout);
-              conn.destroy();
-              resolve(reply.send(results));
-            }, 1000);
-          } else {
-            clearTimeout(timeout);
-            conn.destroy();
-            resolve(reply.send(results));
-          }
+        if (!results.upgradeResponse) {
+          results.upgradeResponse = headerStr.slice(0, headerEnd);
+          const m = headerStr.match(/^HTTP\/[\d.]+ (\d+)/);
+          results.statusCode = m ? parseInt(m[1]) : null;
+
+          if (results.statusCode !== 101) { finish(); return; }
+          results.wsOpen = true;
+
+          // Wait briefly for WS frame
+          setTimeout(() => {
+            const frameStart = headerEnd + 4;
+            if (all.length <= frameStart) { finish(); return; }
+            const frame = all.slice(frameStart);
+            results.firstFrameBytes = frame.length;
+            results.firstBytesHex = frame.slice(0, 10).toString("hex");
+            // Decode text frame (opcode 0x1)
+            if ((frame[0] & 0x0f) === 0x01 && frame.length > 2) {
+              let payloadLen = frame[1] & 0x7f;
+              let offset = 2;
+              if (payloadLen === 126) { payloadLen = frame.readUInt16BE(2); offset = 4; }
+              results.firstMessage = frame.slice(offset, offset + payloadLen).toString("utf-8");
+              try { results.firstMessageParsed = JSON.parse(results.firstMessage as string); } catch {}
+            }
+            finish();
+          }, 1000);
         }
       });
 
-      conn.on("error", (err) => {
-        clearTimeout(timeout);
-        results.connectionError = err.message;
-        resolve(reply.send(results));
-      });
-
-      conn.on("close", () => {
-        if (!results.upgradeResponse && !results.connectionError) {
-          clearTimeout(timeout);
-          results.error = "connection closed before response";
-          resolve(reply.send(results));
-        }
-      });
+      conn.on("error", (err) => { results.connectionError = err.message; finish(); });
+      conn.on("close", () => { if (!results.upgradeResponse) { results.error = "closed before response"; } finish(); });
     });
   });
   // ── HTTP Proxy: /gw/:id and /gw/:id/* ────────────────────────────
