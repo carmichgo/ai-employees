@@ -224,8 +224,14 @@ export async function POST(
     content: message,
   });
 
-  // Check if employee has an active droplet
-  if (employee.dropletStatus !== "active" || !employee.dropletIp || !employee.interserviceSecret) {
+  // Check if employee has an active droplet AND container
+  // dropletStatus=active means the API server is up, but the OpenClaw container
+  // may still be provisioning. Only proxy to the container when employee.status
+  // is also "active" (set by the worker after the container is confirmed running).
+  const dropletReady = employee.dropletStatus === "active" && employee.dropletIp && employee.interserviceSecret;
+  const containerReady = employee.status === "active" || employee.status === "error";
+
+  if (!dropletReady || !containerReady) {
     // If the droplet is "unhealthy" but has an IP, try a live health check —
     // it may have recovered since the last status update (e.g. after a reboot
     // where the polling window was too short).
@@ -235,23 +241,29 @@ export async function POST(
         // Droplet recovered — update status and continue to real chat
         await db
           .update(employees)
-          .set({ dropletStatus: "active", errorMessage: null, updatedAt: new Date() } as any)
+          .set({ dropletStatus: "active", status: "active", errorMessage: null, updatedAt: new Date() } as any)
           .where(eq(employees.id, id));
         employee.dropletStatus = "active";
+        employee.status = "active";
       }
     }
 
-    // Still not active after the live check — return demo reply
-    if (employee.dropletStatus !== "active" || !employee.dropletIp || !employee.interserviceSecret) {
-      const reply = generateDemoReply(employee, message);
+    // Still not ready — return demo reply
+    const stillNotReady =
+      employee.dropletStatus !== "active" || !employee.dropletIp || !employee.interserviceSecret ||
+      (employee.status !== "active" && employee.status !== "error");
+    if (stillNotReady) {
+      const reply = employee.status === "provisioning"
+        ? `I'm still getting set up — my workspace is being provisioned. This usually takes 2-3 minutes. Please try again shortly!`
+        : generateDemoReply(employee, message);
       await db.insert(chatMessages).values({
         employeeId: id,
         userId: session.userId,
         role: "assistant",
         content: reply,
-        mode: "demo",
+        mode: employee.status === "provisioning" ? "provisioning" : "demo",
       });
-      return NextResponse.json({ reply, mode: "demo" });
+      return NextResponse.json({ reply, mode: employee.status === "provisioning" ? "provisioning" : "demo" });
     }
   }
 
