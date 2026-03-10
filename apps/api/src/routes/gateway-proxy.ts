@@ -82,11 +82,12 @@ export async function gatewayProxyRoutes(fastify: FastifyInstance) {
           if (results.statusCode !== 101) { finish(); return; }
           results.wsOpen = true;
 
-          // Wait briefly for WS frame
+          // Wait briefly for WS frame (re-read rawChunks since more data may arrive)
           setTimeout(() => {
+            const latest = Buffer.concat(rawChunks);
             const frameStart = headerEnd + 4;
-            if (all.length <= frameStart) { finish(); return; }
-            const frame = all.slice(frameStart);
+            if (latest.length <= frameStart) { finish(); return; }
+            const frame = latest.slice(frameStart);
             results.firstFrameBytes = frame.length;
             results.firstBytesHex = frame.slice(0, 10).toString("hex");
             // Decode text frame (opcode 0x1)
