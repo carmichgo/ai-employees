@@ -311,7 +311,7 @@ function ensureGatewayHandshakeStarted(conn, payload) {
       },
       role: "operator",
       scopes: ["operator.read", "operator.write"],
-      caps: [],
+      caps: ["cdp"],
       commands: [],
       auth: conn.gatewayToken ? { token: conn.gatewayToken } : undefined,
     },

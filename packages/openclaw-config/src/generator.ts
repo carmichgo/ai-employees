@@ -403,7 +403,8 @@ export function generateToolsMd(employee: EmployeeInput): string {
   parts.push("");
 
   parts.push("## Browser");
-  parts.push("Built-in headless Chromium (profile: `openclaw`). Navigates sites, fills forms, clicks, screenshots. Extension relay available via `--browser-profile chrome` if manager connects their Chrome.");
+  parts.push("Built-in headless Chromium (profile: `openclaw`). Navigates sites, fills forms, clicks, screenshots.");
+  parts.push("When your manager connects their Chrome browser via the extension, a `Target.attachedToTarget` event arrives. Switch to `--browser-profile chrome` to use their real Chrome browser instead of headless. This gives you access to their logged-in sessions and avoids anti-bot blocks.");
   parts.push("");
   parts.push("**Anti-bot:** Add 1-3s delays between clicks, type character-by-character (50-150ms), scroll gradually, wait for network idle, use 1280x800+ viewport. If blocked, wait 30-60s before retry. Space navigations 2-5s apart.");
   parts.push("");
