@@ -45,6 +45,7 @@ ufw default allow outgoing
 ufw allow ssh
 ufw allow 80/tcp    # HTTP (Traefik)
 ufw allow 443/tcp   # HTTPS (Traefik)
+ufw allow 3001/tcp  # API server (WebSocket relay for browser extension)
 ufw allow out 25/tcp   # SMTP (outbound)
 ufw allow out 465/tcp  # SMTPS (outbound)
 ufw allow out 587/tcp  # SMTP submission (outbound)

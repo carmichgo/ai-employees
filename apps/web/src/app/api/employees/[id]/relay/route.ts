@@ -70,14 +70,9 @@ export async function GET(
   const apiPort = 3001;
   const gatewayUrl = `http://${employee.dropletIp}:${apiPort}/gw/${employee.id}`;
 
-  // WebSocket URL for the Chrome extension relay.
-  // If API_DOMAIN is set, route through Traefik (port 443 with TLS) so the
-  // connection works even when port 3001 is firewalled.
-  // Falls back to direct IP:3001 for local dev.
-  const apiDomain = process.env.API_DOMAIN;
-  const wsUrl = apiDomain
-    ? `wss://${apiDomain}/relay/${employee.id}/extension`
-    : `ws://${employee.dropletIp}:${apiPort}/relay/${employee.id}/extension`;
+  // WebSocket URL for the Chrome extension relay via the API server proxy.
+  // Port 3001 must be open in both UFW and any cloud firewall.
+  const wsUrl = `ws://${employee.dropletIp}:${apiPort}/relay/${employee.id}/extension`;
 
   // Derive relay token (HMAC of gateway token + relay port) — matches OpenClaw protocol
   const relayPort = 18792;
