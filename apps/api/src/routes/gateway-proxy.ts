@@ -15,7 +15,8 @@ import { eq } from "drizzle-orm";
 import { db, employees } from "@ai-employees/db";
 
 const GATEWAY_PORT = 18789;
-const RELAY_PORT = 18792; // Extension relay = gateway port + 3
+// Extension relay — no separate server; relay HTTP/WS routes proxy to the gateway directly.
+const RELAY_PORT = GATEWAY_PORT;
 
 async function getContainerHost(employeeId: string): Promise<string | null> {
   const emp = await db.query.employees.findFirst({
@@ -90,7 +91,7 @@ export async function gatewayProxyRoutes(fastify: FastifyInstance) {
     handler: httpHandler,
   });
 
-  // ── HTTP Proxy for extension relay: /relay/:id/* → port 18792 ────
+  // ── HTTP Proxy for extension relay: /relay/:id/* → gateway (18789) ────
 
   const relayHttpHandler = async (request: any, reply: any) => {
     const { id } = request.params;
@@ -169,8 +170,10 @@ export async function gatewayProxyRoutes(fastify: FastifyInstance) {
       // The extension speaks the gateway's operator protocol directly.
       const port = GATEWAY_PORT;
       const employeeId = match[1];
-      // Preserve the sub-path for both relay and gateway connections.
-      const remainingPath = match[2] || "/";
+      // For relay connections, always forward to "/" — the extension sub-path
+      // (/extension) is just for routing; the gateway only accepts WS at root.
+      // For gateway (/gw/) connections, preserve the original sub-path.
+      const remainingPath = relayMatch ? "/" : (match[2] || "/");
 
       const host = await getContainerHost(employeeId);
       if (!host) {

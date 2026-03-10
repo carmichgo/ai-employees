@@ -185,11 +185,14 @@ async function ensureRelayConnection(employeeId, conn) {
   if (conn.connectPromise) return await conn.connectPromise;
 
   conn.connectPromise = (async () => {
-    // Build WS URL with relay token as query param (OpenClaw protocol)
+    // Build WS URL with gateway token as query param (connects directly to gateway).
+    // Prefer gatewayToken over relayToken — the relay server no longer exists,
+    // so the HMAC-derived relayToken is not accepted by the gateway.
     let url = conn.wsUrl;
-    if (conn.relayToken && !url.includes("token=")) {
+    const authToken = conn.gatewayToken || conn.relayToken;
+    if (authToken && !url.includes("token=")) {
       const sep = url.includes("?") ? "&" : "?";
-      url += `${sep}token=${encodeURIComponent(conn.relayToken)}`;
+      url += `${sep}token=${encodeURIComponent(authToken)}`;
     }
 
     const ws = new WebSocket(url);

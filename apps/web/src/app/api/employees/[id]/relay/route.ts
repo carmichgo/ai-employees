@@ -9,22 +9,6 @@ import { db } from "@/lib/db";
 import { employees } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
 
-/** Derive the relay auth token from the gateway token + port using HMAC-SHA256.
- *  Matches OpenClaw's deriveRelayToken(gatewayToken, port) format. */
-async function deriveRelayToken(gatewayToken: string, port: number): Promise<string> {
-  const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    "raw",
-    encoder.encode(gatewayToken),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const sig = await crypto.subtle.sign("HMAC", key, encoder.encode(`openclaw-extension-relay-v1:${port}`));
-  return Array.from(new Uint8Array(sig))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
 
 export async function GET(
   request: NextRequest,
@@ -75,18 +59,18 @@ export async function GET(
   // The extension speaks the OpenClaw operator protocol natively.
   const wsUrl = `ws://${employee.dropletIp}:${apiPort}/relay/${employee.id}/extension`;
 
-  // Derive relay token (HMAC of gateway token + gateway port)
-  const relayPort = 18789;
-  const relayToken = employee.gatewayToken
-    ? await deriveRelayToken(employee.gatewayToken, relayPort)
-    : null;
+  // Use the gateway token directly — the extension connects to the gateway
+  // (not a separate relay server), so the derived HMAC relay token is wrong.
+  // The gateway validates the token in the operator protocol handshake, but
+  // some versions also check the ?token= query param on the WebSocket URL.
+  const relayToken = employee.gatewayToken;
 
   return NextResponse.json({
     available: true,
     employeeName: employee.name,
     gatewayUrl,
     gatewayToken: employee.gatewayToken,
-    // Chrome extension fields
+    // Chrome extension fields — relayToken === gatewayToken since we connect directly
     wsUrl,
     relayToken,
     command: `npx clawhub@latest node-host --gateway-url "${gatewayUrl}" --token "${employee.gatewayToken}"`,
