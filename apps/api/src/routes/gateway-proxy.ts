@@ -186,14 +186,13 @@ export async function gatewayProxyRoutes(fastify: FastifyInstance) {
   // ── Config diagnostic: read the actual openclaw.yaml on disk ──
   fastify.get<{ Params: { id: string } }>("/test-config/:id", async (request, reply) => {
     const { id } = request.params;
-    const configPath = `/opt/ai-employees/openclaw-configs/${id}/openclaw.yaml`;
+    const configPath = `/opt/ai-employees/openclaw-configs/${id}/openclaw.json`;
     if (!existsSync(configPath)) return reply.status(404).send({ error: "Config file not found", path: configPath });
     const content = readFileSync(configPath, "utf-8");
-    // Extract just the gateway section
-    const gatewayMatch = content.match(/^gateway:[\s\S]*?(?=\n\w|\n$)/m);
+    const config = JSON.parse(content);
     return {
       path: configPath,
-      gatewaySection: gatewayMatch?.[0] || "not found",
+      gateway: config.gateway,
       hasAllowedOrigins: content.includes("allowedOrigins"),
       fullConfigLength: content.length,
     };
