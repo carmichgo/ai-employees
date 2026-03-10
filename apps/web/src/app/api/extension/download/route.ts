@@ -54,7 +54,7 @@ export async function GET() {
 
     const zipBuffer = await zipDirectory(resolvedDir);
 
-    return new NextResponse(zipBuffer, {
+    return new NextResponse(new Uint8Array(zipBuffer), {
       headers: {
         "Content-Type": "application/zip",
         "Content-Disposition": 'attachment; filename="blitzer-chrome-extension.zip"',
