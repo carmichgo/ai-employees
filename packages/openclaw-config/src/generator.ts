@@ -133,6 +133,7 @@ export function generateOpenClawConfig(
       auth: { token: gatewayToken },
       controlUi: {
         dangerouslyAllowHostHeaderOriginFallback: true,
+        allowedOrigins: ["*"],
       },
       http: {
         endpoints: {
