@@ -33,6 +33,18 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.blitzerai.com/*",
+        "https://blitzerai.com/*",
+        "http://localhost:3000/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    }
+  ],
   "externally_connectable": {
     "matches": [
       "https://www.blitzerai.com/*",

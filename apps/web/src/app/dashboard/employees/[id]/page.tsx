@@ -1006,14 +1006,29 @@ export default function EmployeeDetailPage() {
           {/* One-click connect button */}
           <div style={{ marginBottom: 16 }}>
             <button
-              onClick={() => {
+              onClick={async () => {
                 setExtensionStatus("connecting");
                 setExtensionError(null);
-                // The extension ID — users install from Chrome Web Store or load unpacked
-                // Try sending to extension via externally_connectable
-                const extensionId = (window as any).__BLITZER_EXTENSION_ID || localStorage.getItem("blitzer_extension_id");
+                // The extension ID — auto-detected via content script or manually saved
+                let extensionId = (window as any).__BLITZER_EXTENSION_ID || localStorage.getItem("blitzer_extension_id");
                 if (!extensionId) {
-                  // Try auto-detect: send to known extension IDs
+                  // Try ping/pong detection — the content script may not have set the global yet
+                  const detected = await new Promise<string | null>((resolve) => {
+                    const timeout = setTimeout(() => resolve(null), 1500);
+                    const handler = (e: Event) => {
+                      clearTimeout(timeout);
+                      window.removeEventListener("blitzer-extension-pong", handler);
+                      resolve((e as CustomEvent).detail?.extensionId || null);
+                    };
+                    window.addEventListener("blitzer-extension-pong", handler);
+                    window.dispatchEvent(new Event("blitzer-extension-ping"));
+                  });
+                  if (detected) {
+                    extensionId = detected;
+                    localStorage.setItem("blitzer_extension_id", detected);
+                  }
+                }
+                if (!extensionId) {
                   setExtensionStatus("not-installed");
                   setExtensionError("Extension not detected. Install the Blitzer AI extension, then enter its ID below.");
                   return;
