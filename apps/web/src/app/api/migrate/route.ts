@@ -561,6 +561,25 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Admin action: fix-droplet-state — restore droplet status when cron incorrectly marks it destroyed
+    if (action === "fix-droplet-state") {
+      const empId = request.nextUrl.searchParams.get("employeeId");
+      if (!empId) {
+        return NextResponse.json({ error: "employeeId required" }, { status: 400 });
+      }
+      const [emp] = await sql`SELECT id, name, droplet_ip, status, droplet_status FROM employees WHERE id = ${empId}`;
+      if (!emp) {
+        results.push(`fix-droplet-state: employee not found`);
+      } else {
+        await sql`
+          UPDATE employees
+          SET status = 'active', droplet_status = 'active', error_message = NULL, updated_at = NOW()
+          WHERE id = ${empId}
+        `;
+        results.push(`fix-droplet-state: ${emp.name} restored to active (was ${emp.status}/${emp.droplet_status})`);
+      }
+    }
+
     // Admin action: reboot-droplet — power-cycle a droplet via DigitalOcean API
     if (action === "reboot-droplet") {
       const empId = request.nextUrl.searchParams.get("employeeId");
