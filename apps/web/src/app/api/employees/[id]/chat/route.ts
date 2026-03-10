@@ -475,6 +475,14 @@ export async function POST(
 
       // If the droplet says no container is running (503), auto-trigger reprovision
       if (res.status === 503 && employee.dropletIp && employee.interserviceSecret) {
+        // Reset status to provisioning so the droplet's reprovision endpoint accepts it
+        try {
+          await db
+            .update(employees)
+            .set({ status: "provisioning", errorMessage: null, updatedAt: new Date() })
+            .where(eq(employees.id, id));
+        } catch { /* best effort */ }
+
         try {
           await fetch(
             `http://${employee.dropletIp}:3001/internal/employees/${id}/reprovision`,
