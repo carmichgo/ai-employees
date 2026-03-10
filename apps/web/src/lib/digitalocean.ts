@@ -438,7 +438,7 @@ echo "PHASE2_FAILED" > /opt/ai-employees/status
 
 /** Droplet size mapping based on plan tier */
 const PLAN_DROPLET_SIZES: Record<string, string> = {
-  starter: "s-2vcpu-4gb",
+  starter: "s-2vcpu-4gb-intel",
   professional: "s-4vcpu-8gb-intel",
   enterprise: "s-4vcpu-8gb-intel",
 };
