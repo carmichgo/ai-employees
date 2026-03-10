@@ -467,7 +467,7 @@ export async function POST(
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "x-interservice-secret": employee.interserviceSecret,
+            "x-interservice-secret": employee.interserviceSecret || "",
           },
           body: JSON.stringify({ messages, userId: session.userId }),
           signal: controller.signal,
@@ -502,7 +502,7 @@ export async function POST(
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
-                "x-interservice-secret": employee.interserviceSecret,
+                "x-interservice-secret": employee.interserviceSecret || "",
               },
               body: JSON.stringify({}),
               signal: AbortSignal.timeout(15_000),
@@ -595,7 +595,7 @@ export async function POST(
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              "x-interservice-secret": employee.interserviceSecret,
+              "x-interservice-secret": employee.interserviceSecret || "",
             },
             body: JSON.stringify({}),
             signal: AbortSignal.timeout(30_000),
