@@ -292,7 +292,6 @@ function sendToRelay(conn, payload) {
 // ── OpenClaw Gateway Handshake ───────────────────────────────────────
 function ensureGatewayHandshakeStarted(conn, payload) {
   if (conn.connectRequestId) return;
-  const nonce = typeof payload?.nonce === "string" ? payload.nonce.trim() : "";
   conn.connectRequestId = `ext-connect-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
   sendToRelay(conn, {
     type: "req",
@@ -302,7 +301,7 @@ function ensureGatewayHandshakeStarted(conn, payload) {
       minProtocol: 3,
       maxProtocol: 3,
       client: {
-        id: "blitzer-browser-relay",
+        id: "node-host",
         version: "1.0.0",
         platform: "chrome-extension",
         mode: "webchat",
@@ -311,7 +310,6 @@ function ensureGatewayHandshakeStarted(conn, payload) {
       scopes: ["operator.read", "operator.write"],
       caps: [],
       commands: [],
-      nonce: nonce || undefined,
       auth: conn.gatewayToken ? { token: conn.gatewayToken } : undefined,
     },
   });
