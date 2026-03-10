@@ -57,7 +57,8 @@ export async function GET(
   // WebSocket URL for the Chrome extension — the API server's /relay proxy
   // bridges the extension directly to the OpenClaw gateway (port 18789).
   // The extension speaks the OpenClaw operator protocol natively.
-  const wsUrl = `ws://${employee.dropletIp}:${apiPort}/relay/${employee.id}/extension`;
+  // Use /relay/:id (no sub-path) so both old and new droplet code forward to "/".
+  const wsUrl = `ws://${employee.dropletIp}:${apiPort}/relay/${employee.id}`;
 
   // Use the gateway token directly — the extension connects to the gateway
   // (not a separate relay server), so the derived HMAC relay token is wrong.
