@@ -37,7 +37,7 @@ async function getEmployeeGatewayToken(employeeId: string): Promise<string | nul
 }
 
 export async function gatewayProxyRoutes(fastify: FastifyInstance) {
-  // ── WebSocket diagnostic: test gateway WS handshake from API server ──
+  // ── WebSocket diagnostic: full gateway handshake test ──
   fastify.get<{ Params: { id: string } }>("/test-ws/:id", async (request, reply) => {
     const { id } = request.params;
     const host = await getContainerHost(id);
@@ -50,11 +50,102 @@ export async function gatewayProxyRoutes(fastify: FastifyInstance) {
     return new Promise((resolve) => {
       const results: Record<string, unknown> = { host, port: GATEWAY_PORT, path, tokenLength: token?.length };
       const rawChunks: Buffer[] = [];
+      const messages: unknown[] = [];
       let resolved = false;
-      const finish = () => { if (!resolved) { resolved = true; clearTimeout(timeout); conn.destroy(); resolve(reply.send(results)); } };
-      const timeout = setTimeout(() => { results.error = "timeout (5s)"; finish(); }, 5000);
+      let headerEnd = -1;
+      let handshakeSent = false;
 
-      const conn = createConnection({ host, port: GATEWAY_PORT }, () => {
+      const finish = () => { if (!resolved) { resolved = true; clearTimeout(timeout); tcpConn.destroy(); results.messages = messages; resolve(reply.send(results)); } };
+      const timeout = setTimeout(() => { results.error = "timeout (8s)"; finish(); }, 8000);
+
+      // Encode a WebSocket text frame (server→client frames are unmasked, but client→server must be masked)
+      function encodeWsFrame(payload: string): Buffer {
+        const data = Buffer.from(payload, "utf-8");
+        const mask = randomBytes(4);
+        let header: Buffer;
+        if (data.length < 126) {
+          header = Buffer.alloc(2);
+          header[0] = 0x81; // FIN + text
+          header[1] = 0x80 | data.length; // masked
+        } else {
+          header = Buffer.alloc(4);
+          header[0] = 0x81;
+          header[1] = 0x80 | 126;
+          header.writeUInt16BE(data.length, 2);
+        }
+        const masked = Buffer.alloc(data.length);
+        for (let i = 0; i < data.length; i++) masked[i] = data[i] ^ mask[i % 4];
+        return Buffer.concat([header, mask, masked]);
+      }
+
+      // Decode WebSocket frames from raw buffer (unmasked, from server)
+      function decodeFrames(buf: Buffer): { msg: string; end: number }[] {
+        const frames: { msg: string; end: number }[] = [];
+        let pos = 0;
+        while (pos < buf.length) {
+          if (pos + 2 > buf.length) break;
+          const opcode = buf[pos] & 0x0f;
+          let payloadLen = buf[pos + 1] & 0x7f;
+          let offset = pos + 2;
+          if (payloadLen === 126) {
+            if (offset + 2 > buf.length) break;
+            payloadLen = buf.readUInt16BE(offset);
+            offset += 2;
+          } else if (payloadLen === 127) {
+            break; // too large, skip
+          }
+          if (offset + payloadLen > buf.length) break;
+          if (opcode === 0x01) { // text
+            frames.push({ msg: buf.slice(offset, offset + payloadLen).toString("utf-8"), end: offset + payloadLen });
+          }
+          pos = offset + payloadLen;
+        }
+        return frames;
+      }
+
+      function processFrames() {
+        const all = Buffer.concat(rawChunks);
+        if (headerEnd < 0) return;
+        const frameData = all.slice(headerEnd + 4);
+        const frames = decodeFrames(frameData);
+
+        for (const f of frames) {
+          if (messages.find((m: any) => m?.raw === f.msg)) continue;
+          let parsed: any;
+          try { parsed = JSON.parse(f.msg); } catch { parsed = f.msg; }
+          messages.push({ raw: f.msg, parsed });
+
+          // If this is connect.challenge, send connect request
+          if (!handshakeSent && parsed?.type === "event" && parsed?.event === "connect.challenge") {
+            handshakeSent = true;
+            const connectReq = {
+              type: "req",
+              id: `test-connect-${Date.now()}`,
+              method: "connect",
+              params: {
+                minProtocol: 3,
+                maxProtocol: 3,
+                client: { id: "node-host", version: "1.0.0", platform: "test", mode: "webchat" },
+                role: "operator",
+                scopes: ["operator.read", "operator.write"],
+                caps: [],
+                commands: [],
+                auth: token ? { token } : undefined,
+              },
+            };
+            results.connectRequestSent = connectReq;
+            tcpConn.write(encodeWsFrame(JSON.stringify(connectReq)));
+          }
+
+          // If this is a response to our connect, capture and finish
+          if (parsed?.type === "res") {
+            results.connectResponse = parsed;
+            setTimeout(finish, 200); // brief delay to capture any follow-up
+          }
+        }
+      }
+
+      const tcpConn = createConnection({ host, port: GATEWAY_PORT }, () => {
         const upgradeReq = [
           `GET ${path} HTTP/1.1`,
           `Host: ${host}:${GATEWAY_PORT}`,
@@ -64,47 +155,30 @@ export async function gatewayProxyRoutes(fastify: FastifyInstance) {
           `Sec-WebSocket-Key: ${wsKey}`,
           ``, ``
         ].join("\r\n");
-        conn.write(upgradeReq);
+        tcpConn.write(upgradeReq);
       });
 
-      conn.on("data", (chunk: Buffer) => {
+      tcpConn.on("data", (chunk: Buffer) => {
         rawChunks.push(Buffer.from(chunk));
         const all = Buffer.concat(rawChunks);
-        const headerStr = all.toString("ascii", 0, Math.min(all.length, 4096));
-        const headerEnd = headerStr.indexOf("\r\n\r\n");
-        if (headerEnd < 0) return;
+        const hdrStr = all.toString("ascii", 0, Math.min(all.length, 4096));
+        const hEnd = hdrStr.indexOf("\r\n\r\n");
+        if (hEnd < 0) return;
 
-        if (!results.upgradeResponse) {
-          results.upgradeResponse = headerStr.slice(0, headerEnd);
-          const m = headerStr.match(/^HTTP\/[\d.]+ (\d+)/);
+        if (headerEnd < 0) {
+          headerEnd = hEnd;
+          results.upgradeResponse = hdrStr.slice(0, hEnd);
+          const m = hdrStr.match(/^HTTP\/[\d.]+ (\d+)/);
           results.statusCode = m ? parseInt(m[1]) : null;
-
           if (results.statusCode !== 101) { finish(); return; }
           results.wsOpen = true;
-
-          // Wait briefly for WS frame (re-read rawChunks since more data may arrive)
-          setTimeout(() => {
-            const latest = Buffer.concat(rawChunks);
-            const frameStart = headerEnd + 4;
-            if (latest.length <= frameStart) { finish(); return; }
-            const frame = latest.slice(frameStart);
-            results.firstFrameBytes = frame.length;
-            results.firstBytesHex = frame.slice(0, 10).toString("hex");
-            // Decode text frame (opcode 0x1)
-            if ((frame[0] & 0x0f) === 0x01 && frame.length > 2) {
-              let payloadLen = frame[1] & 0x7f;
-              let offset = 2;
-              if (payloadLen === 126) { payloadLen = frame.readUInt16BE(2); offset = 4; }
-              results.firstMessage = frame.slice(offset, offset + payloadLen).toString("utf-8");
-              try { results.firstMessageParsed = JSON.parse(results.firstMessage as string); } catch {}
-            }
-            finish();
-          }, 1000);
         }
+
+        processFrames();
       });
 
-      conn.on("error", (err) => { results.connectionError = err.message; finish(); });
-      conn.on("close", () => { if (!results.upgradeResponse) { results.error = "closed before response"; } finish(); });
+      tcpConn.on("error", (err) => { results.connectionError = err.message; finish(); });
+      tcpConn.on("close", () => { results.closedByServer = true; finish(); });
     });
   });
   // ── HTTP Proxy: /gw/:id and /gw/:id/* ────────────────────────────
