@@ -847,6 +847,12 @@ chrome.alarms.create("relay-keepalive", { periodInMinutes: 0.5 });
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name !== "relay-keepalive") return;
 
+  // If connections map is empty but storage has saved connections, restore them
+  // (happens after service worker restart due to idle timeout)
+  if (connections.size === 0) {
+    await restorePersistedConnections();
+  }
+
   for (const [employeeId, conn] of connections) {
     // Refresh badges
     for (const [tabId, tab] of conn.tabs) {
@@ -866,15 +872,23 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   }
 });
 
-// ── Reconnect persisted connections on startup ───────────────────────
-chrome.runtime.onStartup.addListener(async () => {
+// ── Restore connections when service worker restarts ──────────────────
+// onStartup only fires on browser launch — NOT when Chrome terminates and
+// restarts the Manifest V3 service worker (which happens every ~30 s of idle).
+// Restore from storage at module level so connections survive SW restarts.
+async function restorePersistedConnections() {
   const stored = await chrome.storage.local.get(null);
   for (const [key, value] of Object.entries(stored)) {
-    if (key.startsWith("conn_") && value.wsUrl) {
+    if (key.startsWith("conn_") && value.wsUrl && !connections.has(value.employeeId)) {
       handleDashboardConnect(value);
     }
   }
-});
+}
+
+chrome.runtime.onStartup.addListener(() => restorePersistedConnections());
+
+// Also restore immediately on script load (handles SW restart after idle kill)
+restorePersistedConnections();
 
 // ── Badge refresh on navigation/activation ───────────────────────────
 chrome.webNavigation.onCompleted.addListener(({ tabId, frameId }) => {
