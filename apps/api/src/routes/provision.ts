@@ -152,14 +152,21 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       where: eq(employees.id, id),
     });
     if (!employee) return reply.status(404).send({ error: "Employee not found" });
-    if (employee.status !== "provisioning") {
-      return reply.status(400).send({ error: `Employee is ${employee.status}, not provisioning` });
+    const reprovisionableStatuses = ["provisioning", "error", "onboarding"];
+    if (!reprovisionableStatuses.includes(employee.status)) {
+      return reply.status(400).send({ error: `Employee is ${employee.status}, cannot reprovision` });
     }
 
     // Check if a container already exists for this employee
     if (employee.containerHost && employee.containerPort) {
       return reply.status(400).send({ error: "Employee already has a container" });
     }
+
+    // Reset status to provisioning so the provision worker can proceed
+    await db
+      .update(employees)
+      .set({ status: "provisioning", errorMessage: null, updatedAt: new Date() })
+      .where(eq(employees.id, id));
 
     // Queue the provision job
     const queue = getProvisionQueue();
