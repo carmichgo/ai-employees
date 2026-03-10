@@ -141,15 +141,6 @@ export function generateOpenClawConfig(
       },
     },
 
-    // Extension relay — starts a WebSocket relay server inside the container
-    // that the Chrome extension can connect to (via the API server's /relay proxy).
-    // Binds to 0.0.0.0 so the API server can reach it from the Docker network.
-    extensionRelay: {
-      enabled: true,
-      port: 18792,
-      bind: "0.0.0.0",
-    },
-
     // Browser config — headless Chromium as default, with extension relay profile available.
     // The "openclaw" profile uses the container's built-in headless Chromium (always available).
     // The "chrome" profile uses the browser extension relay — only works when a user connects
