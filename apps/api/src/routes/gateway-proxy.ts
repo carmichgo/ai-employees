@@ -11,6 +11,8 @@
 import type { FastifyInstance } from "fastify";
 import { createConnection, type Socket } from "net";
 import type { IncomingMessage } from "http";
+import { request as httpRequest } from "http";
+import { randomBytes } from "crypto";
 import { eq } from "drizzle-orm";
 import { db, employees } from "@ai-employees/db";
 
@@ -26,7 +28,101 @@ async function getContainerHost(employeeId: string): Promise<string | null> {
   return emp?.containerHost || null;
 }
 
+async function getEmployeeGatewayToken(employeeId: string): Promise<string | null> {
+  const emp = await db.query.employees.findFirst({
+    where: eq(employees.id, employeeId),
+    columns: { gatewayToken: true },
+  });
+  return emp?.gatewayToken || null;
+}
+
 export async function gatewayProxyRoutes(fastify: FastifyInstance) {
+  // ── WebSocket diagnostic: test gateway WS handshake from API server ──
+  fastify.get<{ Params: { id: string } }>("/test-ws/:id", async (request, reply) => {
+    const { id } = request.params;
+    const host = await getContainerHost(id);
+    if (!host) return reply.status(404).send({ error: "No container host" });
+
+    const token = await getEmployeeGatewayToken(id);
+    const wsKey = randomBytes(16).toString("base64");
+    const path = token ? `/?token=${encodeURIComponent(token)}` : "/";
+
+    return new Promise((resolve) => {
+      const results: Record<string, unknown> = { host, port: GATEWAY_PORT, path, tokenLength: token?.length };
+      const timeout = setTimeout(() => {
+        results.error = "timeout (5s)";
+        resolve(reply.send(results));
+      }, 5000);
+
+      const conn = createConnection({ host, port: GATEWAY_PORT }, () => {
+        const upgradeReq = [
+          `GET ${path} HTTP/1.1`,
+          `Host: ${host}:${GATEWAY_PORT}`,
+          `Upgrade: websocket`,
+          `Connection: Upgrade`,
+          `Sec-WebSocket-Version: 13`,
+          `Sec-WebSocket-Key: ${wsKey}`,
+          ``, ``
+        ].join("\r\n");
+        conn.write(upgradeReq);
+      });
+
+      let responseData = "";
+      conn.on("data", (chunk) => {
+        responseData += chunk.toString();
+        // Once we have the upgrade response header, parse it
+        if (responseData.includes("\r\n\r\n") && !results.upgradeResponse) {
+          const headerEnd = responseData.indexOf("\r\n\r\n");
+          results.upgradeResponse = responseData.slice(0, headerEnd);
+          const statusMatch = responseData.match(/^HTTP\/[\d.]+ (\d+)/);
+          results.statusCode = statusMatch ? parseInt(statusMatch[1]) : null;
+
+          if (results.statusCode === 101) {
+            // WebSocket is open — wait briefly for first message
+            results.wsOpen = true;
+            setTimeout(() => {
+              // Capture any WS frames received
+              const afterHeader = responseData.slice(headerEnd + 4);
+              if (afterHeader.length > 0) {
+                // Try to decode WebSocket text frames
+                results.firstFrameBytes = afterHeader.length;
+                try {
+                  // Simple text frame decode: first byte=0x81, second byte=payload len
+                  const buf = Buffer.from(afterHeader);
+                  if (buf[0] === 0x81 && buf.length > 2) {
+                    const payloadLen = buf[1] & 0x7f;
+                    const payload = buf.slice(2, 2 + payloadLen).toString();
+                    results.firstMessage = payload;
+                  }
+                } catch {}
+              }
+              clearTimeout(timeout);
+              conn.destroy();
+              resolve(reply.send(results));
+            }, 1000);
+          } else {
+            clearTimeout(timeout);
+            conn.destroy();
+            resolve(reply.send(results));
+          }
+        }
+      });
+
+      conn.on("error", (err) => {
+        clearTimeout(timeout);
+        results.connectionError = err.message;
+        resolve(reply.send(results));
+      });
+
+      conn.on("close", () => {
+        if (!results.upgradeResponse && !results.connectionError) {
+          clearTimeout(timeout);
+          results.error = "connection closed before response";
+          resolve(reply.send(results));
+        }
+      });
+    });
+  });
   // ── HTTP Proxy: /gw/:id and /gw/:id/* ────────────────────────────
 
   const httpHandler = async (request: any, reply: any) => {
@@ -183,10 +279,13 @@ export async function gatewayProxyRoutes(fastify: FastifyInstance) {
 
       const host = await getContainerHost(employeeId);
       if (!host) {
+        fastify.log.warn(`[proxy] WS upgrade: no container host for ${employeeId}`);
         socket.write("HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/plain\r\n\r\nEmployee container not available");
         socket.destroy();
         return;
       }
+
+      fastify.log.info(`[proxy] WS upgrade: ${relayMatch ? "relay" : "gw"} employee=${employeeId} → ${host}:${port}${remainingPath}`);
 
       // Connect to the container via TCP
       const upstream = createConnection({ host, port }, () => {
