@@ -70,6 +70,7 @@ export async function GET(request: NextRequest) {
         not(eq(employees.dropletStatus, "off")),
         not(eq(employees.status, "terminated")),
         not(eq(employees.status, "paused")),
+        not(eq(employees.status, "provisioning")),
       ),
     );
 

@@ -414,7 +414,23 @@ ${params.employeeId ? `
       -H "X-INTERSERVICE-SECRET: ${params.interserviceSecret}" \\
       -d '{}' 2>&1) || true
     echo "Provision result: \$PROVISION_RESULT"
-    report "ready" "ok"
+
+    # Wait for container to actually be running before reporting ready
+    # (prevents the health cron from power-cycling during provisioning)
+    echo "Waiting for container to start..."
+    for j in \$(seq 1 60); do
+      HEALTH=\$(curl -sf http://localhost:3001/health 2>/dev/null || echo '{}')
+      if echo "\$HEALTH" | grep -q '"gatewayRunning":true'; then
+        echo "Container is running at \$(date)"
+        report "ready" "ok"
+        break
+      fi
+      if [ \$j -eq 60 ]; then
+        echo "Container did not start within 5 minutes"
+        report "ready" "ok"
+      fi
+      sleep 5
+    done
 ` : '    report "ready" "ok"'}
     echo "Cloud-init complete at \$(date)"
     exit 0
