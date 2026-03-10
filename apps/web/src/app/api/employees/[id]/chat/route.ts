@@ -395,7 +395,7 @@ export async function POST(
           const fileRes = await fetch(
             `http://${employee.dropletIp}:3001/internal/employees/${id}/workspace/workspace/uploads/${encodeURIComponent(sanitized)}`,
             {
-              headers: { "x-interservice-secret": employee.interserviceSecret },
+              headers: { "x-interservice-secret": employee.interserviceSecret || "" },
               signal: AbortSignal.timeout(10_000),
             },
           );
