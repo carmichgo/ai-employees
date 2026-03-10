@@ -7,16 +7,17 @@ settings:
 importers:
 
   .:
-    devDependencies:
-      next:
-        specifier: ^15.2.0
-        version: 15.5.12(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+    dependencies:
       turbo:
         specifier: ^2.4.0
         version: 2.8.3
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
+    devDependencies:
+      next:
+        specifier: ^15.2.0
+        version: 15.5.12(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
 
   apps/api:
     dependencies:
