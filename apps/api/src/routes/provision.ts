@@ -582,7 +582,7 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     }
 
     // 2. Install dependencies
-    run("pnpm install", "pnpm install --frozen-lockfile 2>&1 || pnpm install 2>&1", 180_000);
+    run("pnpm install", "CI=1 pnpm install --frozen-lockfile 2>&1 || CI=1 pnpm install 2>&1", 180_000);
 
     // 3. Build API + worker
     if (!run("build", "pnpm turbo build --filter=@ai-employees/api --filter=@ai-employees/worker 2>&1", 180_000)) {
