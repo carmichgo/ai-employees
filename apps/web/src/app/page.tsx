@@ -186,7 +186,7 @@ export default function LandingPage() {
             <a href="#pricing" className="lp-nav-link">Pricing</a>
           </div>
           <div className="lp-nav-actions">
-            <a href="/api/extension/download" className="lp-nav-link" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <a href="/blitzer-chrome-extension.zip" download className="lp-nav-link" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
               <Chrome size={14} /> Extension
             </a>
             <Link href="/login" className="lp-nav-link">Sign In</Link>
@@ -544,7 +544,7 @@ export default function LandingPage() {
               <li><Check size={16} /> One-click connect from the dashboard</li>
             </ul>
             <div style={{ marginTop: 24 }}>
-              <a href="/api/extension/download" className="lp-btn-primary lp-btn-lg" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+              <a href="/blitzer-chrome-extension.zip" download className="lp-btn-primary lp-btn-lg" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                 <Download size={16} /> Download Chrome Extension
               </a>
             </div>

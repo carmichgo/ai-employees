@@ -378,7 +378,8 @@ function SettingsContent() {
               </div>
             </div>
             <a
-              href="/api/extension/download"
+              href="/blitzer-chrome-extension.zip"
+              download
               style={{
                 ...btnPrimary,
                 textDecoration: "none",
