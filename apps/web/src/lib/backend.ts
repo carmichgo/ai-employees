@@ -270,13 +270,14 @@ export function createBackendClient(config: BackendConfig) {
       }
     },
 
-    async approveNode(employeeId: string) {
+    async approveNode(employeeId: string, requestId?: string) {
       const res = await fetch(`${config.url}/internal/employees/${employeeId}/approve-node`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "x-interservice-secret": config.secret,
         },
+        body: JSON.stringify({ requestId }),
         signal: AbortSignal.timeout(30000),
       });
       if (!res.ok) {

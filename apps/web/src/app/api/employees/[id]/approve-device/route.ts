@@ -46,7 +46,7 @@ export async function POST(
 
   try {
     const backend = createBackendClient(backendConfig);
-    const result = await backend.approveNode(id);
+    const result = await backend.approveNode(id, body.requestId);
     return NextResponse.json(result);
   } catch (err: any) {
     console.error("[approve-device] error:", err.message);

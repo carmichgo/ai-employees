@@ -367,9 +367,9 @@ async function signDevicePayload(identity, nonce, role, scopes, clientId, client
 // When the gateway rejects our connection with PAIRING_REQUIRED, call the
 // Blitzer AI dashboard API to approve the pending device inside the container,
 // then trigger a reconnect so the next handshake succeeds.
-async function requestDeviceApproval(employeeId, conn) {
+async function requestDeviceApproval(employeeId, conn, requestId) {
   const url = `${conn.apiBaseUrl}/api/employees/${employeeId}/approve-device`;
-  console.log("[device] Requesting approval via:", url);
+  console.log("[device] Requesting approval via:", url, "requestId:", requestId);
 
   const res = await fetch(url, {
     method: "POST",
@@ -377,6 +377,7 @@ async function requestDeviceApproval(employeeId, conn) {
       "Content-Type": "application/json",
       Authorization: `Bearer ${conn.authToken}`,
     },
+    body: JSON.stringify({ requestId: requestId || undefined }),
   });
 
   if (!res.ok) {
@@ -486,8 +487,9 @@ function onRelayMessage(employeeId, conn, text) {
       // Auto-approve device pairing if PAIRING_REQUIRED and we have API access
       if ((errorCode === "NOT_PAIRED" || errorCode === "PAIRING_REQUIRED") && conn.apiBaseUrl && conn.authToken && !conn.pairingApprovalInFlight) {
         conn.pairingApprovalInFlight = true;
-        console.log("[relay] PAIRING_REQUIRED detected — requesting auto-approval from dashboard API...");
-        requestDeviceApproval(employeeId, conn).catch((err) => {
+        const pairingRequestId = msg?.error?.details?.requestId || "";
+        console.log("[relay] PAIRING_REQUIRED detected — requesting auto-approval from dashboard API...", { requestId: pairingRequestId });
+        requestDeviceApproval(employeeId, conn, pairingRequestId).catch((err) => {
           console.error("[relay] Device approval failed:", err.message);
         }).finally(() => {
           conn.pairingApprovalInFlight = false;

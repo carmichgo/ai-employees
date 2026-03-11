@@ -549,44 +549,64 @@ export async function provisionRoutes(fastify: FastifyInstance) {
 
   // POST /internal/employees/:id/approve-node — auto-approve a pending OpenClaw node pairing request
   // Called by the Vercel frontend when the browser extension receives PAIRING_REQUIRED from the gateway.
-  // Runs `openclaw doctor --fix` inside the container to approve all pending device pairing requests.
+  // Strategy: if a specific requestId is provided, approve it directly. Otherwise list pending and approve all.
   fastify.post<{ Params: { id: string } }>("/internal/employees/:id/approve-node", async (request, reply) => {
     const { id } = request.params;
+    const body = request.body as { requestId?: string } | undefined;
+    const requestId = body?.requestId;
     const employee = await db.query.employees.findFirst({ where: eq(employees.id, id) });
     if (!employee) return reply.status(404).send({ error: "Employee not found" });
     if (!employee.containerName) return reply.status(400).send({ error: "No container" });
 
+    const container = employee.containerName;
+    const results: string[] = [];
+
+    const exec = (label: string, cmd: string, timeout = 15_000): string => {
+      try {
+        const out = execSync(`docker exec ${container} ${cmd} 2>&1`, { timeout }).toString().trim();
+        results.push(`✓ ${label}: ${out.slice(0, 300)}`);
+        return out;
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message.slice(0, 200) : String(err).slice(0, 200);
+        results.push(`✗ ${label}: ${msg}`);
+        return "";
+      }
+    };
+
     try {
-      // First try `openclaw doctor --fix` which auto-approves pending devices
-      const output = execSync(
-        `docker exec ${employee.containerName} node openclaw.mjs doctor --fix 2>&1 || true`,
-        { timeout: 30000 },
-      ).toString().trim();
+      // If we have a specific requestId from the PAIRING_REQUIRED error, approve it directly
+      if (requestId) {
+        exec("approve-by-id", `node openclaw.mjs nodes approve ${requestId}`);
+        // Also try the "devices approve" command variant (different OpenClaw versions)
+        exec("devices-approve-by-id", `node openclaw.mjs devices approve ${requestId}`);
+      }
 
-      // Also try direct CLI approval of pending nodes
-      let pendingOutput = "";
-      try {
-        pendingOutput = execSync(
-          `docker exec ${employee.containerName} node openclaw.mjs nodes pending 2>&1 || true`,
-          { timeout: 10000 },
-        ).toString().trim();
-      } catch {}
+      // List pending nodes and approve each one
+      const pendingRaw = exec("list-pending", "node openclaw.mjs nodes pending");
+      // Parse pending node IDs from output (each line may contain an ID)
+      const pendingIds = (pendingRaw.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi) || [])
+        .filter((pid: string) => pid !== requestId); // skip already-approved one
+      for (const pid of pendingIds) {
+        exec(`approve-${pid.slice(0, 8)}`, `node openclaw.mjs nodes approve ${pid}`);
+      }
 
-      // Approve all pending nodes
-      let approveOutput = "";
-      try {
-        approveOutput = execSync(
-          `docker exec ${employee.containerName} node openclaw.mjs nodes approve --all 2>&1 || true`,
-          { timeout: 10000 },
-        ).toString().trim();
-      } catch {}
+      // Also try "devices" variants for broader compatibility
+      const devicesRaw = exec("list-devices", "node openclaw.mjs devices list");
+      const deviceIds = (devicesRaw.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi) || [])
+        .filter((did: string) => !pendingIds.includes(did) && did !== requestId);
+      for (const did of deviceIds) {
+        exec(`device-approve-${did.slice(0, 8)}`, `node openclaw.mjs devices approve ${did}`);
+      }
 
-      fastify.log.info(`[approve-node] Employee ${employee.name}: doctor=${output.slice(0, 200)}, pending=${pendingOutput.slice(0, 200)}, approve=${approveOutput.slice(0, 200)}`);
-      return { success: true, doctor: output.slice(0, 500), pending: pendingOutput.slice(0, 500), approve: approveOutput.slice(0, 500) };
+      // Fallback: run doctor --fix as last resort
+      exec("doctor-fix", "node openclaw.mjs doctor --fix", 30_000);
+
+      fastify.log.info(`[approve-node] Employee ${employee.name}: ${results.join(" | ")}`);
+      return { success: true, results };
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       fastify.log.error(`[approve-node] Failed for ${employee.name}: ${message}`);
-      return reply.status(500).send({ error: `Approve node failed: ${message.slice(0, 300)}` });
+      return reply.status(500).send({ error: `Approve node failed: ${message.slice(0, 300)}`, results });
     }
   });
 
