@@ -258,7 +258,8 @@ export function createBackendClient(config: BackendConfig) {
         });
         if (!res.ok) {
           const body = await res.json().catch(() => ({ error: res.statusText }));
-          throw new Error(body.error || `Hot update failed: ${res.status}`);
+          const detail = body.errors?.length ? ` | ${body.errors.join("; ")}` : "";
+          throw new Error((body.error || `Hot update failed: ${res.status}`) + detail);
         }
         return res.json();
       } catch (err: any) {
