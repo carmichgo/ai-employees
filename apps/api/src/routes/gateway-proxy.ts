@@ -14,7 +14,6 @@ import type { IncomingMessage } from "http";
 import { request as httpRequest } from "http";
 import { randomBytes } from "crypto";
 import { readFileSync, existsSync } from "fs";
-import { spawn } from "child_process";
 import { eq } from "drizzle-orm";
 import { db, employees } from "@ai-employees/db";
 
@@ -504,61 +503,47 @@ export async function gatewayProxyRoutes(fastify: FastifyInstance) {
       const employeeId = match[1];
 
       if (relayMatch) {
-        // ── Relay WebSocket: docker exec bridge to 127.0.0.1:18792 inside container ──
-        // The CDP relay only binds to localhost inside the container.
-        // Use docker exec to spawn a TCP bridge that pipes stdin/stdout to the relay.
-        const containerName = await getContainerName(employeeId);
-        if (!containerName) {
-          fastify.log.warn(`[proxy] WS relay: no container for ${employeeId}`);
+        // ── Relay WebSocket: direct TCP to gateway at containerHost:18789 ──
+        // The Chrome extension speaks the OpenClaw operator protocol and connects
+        // to the gateway (same as /gw), not the internal CDP relay at 18792.
+        // The /relay path exists as a separate route for the extension to use.
+        const host = await getContainerHost(employeeId);
+        if (!host) {
+          fastify.log.warn(`[proxy] WS relay: no container host for ${employeeId}`);
           socket.write("HTTP/1.1 502 Bad Gateway\r\n\r\nNo container");
           socket.destroy();
           return;
         }
 
         const remainingPath = "/" + queryString;
-        fastify.log.info(`[proxy] WS relay: employee=${employeeId} → docker exec ${containerName} → 127.0.0.1:18792${remainingPath}`);
+        fastify.log.info(`[proxy] WS relay: employee=${employeeId} → ${host}:${GATEWAY_PORT}${remainingPath}`);
 
-        // Spawn docker exec with a Node.js TCP bridge to 127.0.0.1:18792
-        const bridge = spawn("docker", [
-          "exec", "-i", containerName,
-          "node", "-e",
-          `const s=require('net').connect(18792,'127.0.0.1',()=>{process.stdin.pipe(s);s.pipe(process.stdout)});s.on('error',e=>{process.stderr.write('relay-err:'+e.message+'\\n');process.exit(1)});process.stdin.on('end',()=>s.end());s.on('end',()=>process.exit(0));`,
-        ], { stdio: ["pipe", "pipe", "pipe"] });
+        const upstream = createConnection({ host, port: GATEWAY_PORT }, () => {
+          let rawRequest = `GET ${remainingPath} HTTP/1.1\r\n`;
+          rawRequest += `Host: ${host}:${GATEWAY_PORT}\r\n`;
+          for (let i = 0; i < req.rawHeaders.length; i += 2) {
+            const key = req.rawHeaders[i];
+            if (key.toLowerCase() === "host") continue;
+            rawRequest += `${req.rawHeaders[i]}: ${req.rawHeaders[i + 1]}\r\n`;
+          }
+          rawRequest += "\r\n";
 
-        bridge.on("error", (err) => {
-          fastify.log.error(`[proxy] docker exec spawn error: ${err.message}`);
+          upstream.write(rawRequest);
+          if (head.length) upstream.write(head);
+
+          upstream.pipe(socket);
+          socket.pipe(upstream);
+        });
+
+        upstream.on("error", (err) => {
+          fastify.log.error(`[proxy] WS relay upstream error for ${employeeId}: ${err.message}`);
           try { socket.write("HTTP/1.1 502 Bad Gateway\r\n\r\n"); } catch {}
           socket.destroy();
         });
 
-        bridge.stderr?.on("data", (chunk: Buffer) => {
-          fastify.log.warn(`[proxy] relay bridge stderr: ${chunk.toString().trim()}`);
-        });
-
-        bridge.on("close", (code) => {
-          fastify.log.info(`[proxy] relay bridge exited code=${code}`);
-          socket.destroy();
-        });
-
-        // Build the HTTP upgrade request to send to the relay inside the container
-        let rawRequest = `GET ${remainingPath} HTTP/1.1\r\n`;
-        rawRequest += `Host: 127.0.0.1:18792\r\n`;
-        for (let i = 0; i < req.rawHeaders.length; i += 2) {
-          const key = req.rawHeaders[i];
-          if (key.toLowerCase() === "host") continue;
-          rawRequest += `${req.rawHeaders[i]}: ${req.rawHeaders[i + 1]}\r\n`;
-        }
-        rawRequest += "\r\n";
-
-        bridge.stdin!.write(rawRequest);
-        if (head.length) bridge.stdin!.write(head);
-
-        // Pipe: client socket ↔ docker exec stdin/stdout ↔ relay at 18792
-        bridge.stdout!.pipe(socket);
-        socket.pipe(bridge.stdin!);
-
-        socket.on("error", () => bridge.kill());
-        socket.on("close", () => bridge.kill());
+        socket.on("error", () => upstream.destroy());
+        socket.on("close", () => upstream.destroy());
+        upstream.on("close", () => socket.destroy());
 
       } else {
         // ── Gateway WebSocket: direct TCP to containerHost:18789 ──
