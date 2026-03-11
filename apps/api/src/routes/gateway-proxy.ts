@@ -503,10 +503,10 @@ export async function gatewayProxyRoutes(fastify: FastifyInstance) {
       const employeeId = match[1];
 
       if (relayMatch) {
-        // ── Relay WebSocket: direct TCP to containerHost:18793 (tunnel → 18792) ──
-        // The Chrome extension connects to the extension relay at 18792 (CDP bridge).
-        // Port 18792 only binds to localhost inside the container, so the TCP tunnel
-        // at 18793 (0.0.0.0) forwards to it over the Docker network.
+        // ── Relay WebSocket: direct TCP to gateway at containerHost:18789 ──
+        // The Chrome extension speaks the OpenClaw operator protocol (connect.challenge,
+        // forwardCDPCommand, forwardCDPEvent) and connects to the gateway — NOT the
+        // CDP relay at 18792 (which is an internal CDP endpoint for the agent).
         const host = await getContainerHost(employeeId);
         if (!host) {
           fastify.log.warn(`[proxy] WS relay: no container host for ${employeeId}`);
@@ -516,11 +516,11 @@ export async function gatewayProxyRoutes(fastify: FastifyInstance) {
         }
 
         const remainingPath = "/" + queryString;
-        fastify.log.info(`[proxy] WS relay: employee=${employeeId} → ${host}:${RELAY_PORT}${remainingPath}`);
+        fastify.log.info(`[proxy] WS relay: employee=${employeeId} → ${host}:${GATEWAY_PORT}${remainingPath}`);
 
-        const upstream = createConnection({ host, port: RELAY_PORT }, () => {
+        const upstream = createConnection({ host, port: GATEWAY_PORT }, () => {
           let rawRequest = `GET ${remainingPath} HTTP/1.1\r\n`;
-          rawRequest += `Host: 127.0.0.1:18792\r\n`;
+          rawRequest += `Host: ${host}:${GATEWAY_PORT}\r\n`;
           for (let i = 0; i < req.rawHeaders.length; i += 2) {
             const key = req.rawHeaders[i];
             if (key.toLowerCase() === "host") continue;

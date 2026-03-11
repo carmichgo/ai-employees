@@ -4,7 +4,6 @@
  * OpenClaw node host or the Blitzer AI Chrome extension.
  */
 import { NextRequest, NextResponse } from "next/server";
-import { createHmac } from "crypto";
 import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { employees } from "@/lib/schema";
@@ -56,14 +55,13 @@ export async function GET(
   const gatewayUrl = `http://${employee.dropletIp}:${apiPort}/gw/${employee.id}`;
 
   // WebSocket URL for the Chrome extension — the API server's /relay proxy
-  // bridges to the extension relay at 18792 (via tunnel at 18793) inside the container.
+  // forwards to the gateway at 18789. The extension speaks the OpenClaw operator
+  // protocol (connect.challenge, forwardCDPCommand, forwardCDPEvent).
   const wsUrl = `ws://${employee.dropletIp}:${apiPort}/relay/${employee.id}`;
 
-  // Derive the HMAC relay token — the extension relay at 18792 expects this format.
-  // The extension may do this derivation itself, but we provide it pre-derived too.
-  const hmac = createHmac("sha256", employee.gatewayToken || "");
-  hmac.update("openclaw-extension-relay-v1:18792");
-  const relayToken = hmac.digest("hex");
+  // The extension uses the raw gateway token for auth — it sends it both in the
+  // ?token= query param and in the connect handshake auth payload.
+  const relayToken = employee.gatewayToken;
 
   return NextResponse.json({
     available: true,
