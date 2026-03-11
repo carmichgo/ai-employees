@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq, and, isNotNull } from "drizzle-orm";
+import { eq, and, isNotNull, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { employees } from "@/lib/schema";
 import { getEmployeeBackend, createBackendClient } from "@/lib/backend";
@@ -27,12 +27,13 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
   const branch = body.branch || "main";
 
+  // Include unhealthy droplets too — they may still be reachable and need updating
   const activeEmployees = await db
     .select({ id: employees.id, name: employees.name })
     .from(employees)
     .where(
       and(
-        eq(employees.dropletStatus, "active"),
+        inArray(employees.dropletStatus, ["active", "unhealthy"]),
         isNotNull(employees.dropletIp),
       ),
     );
