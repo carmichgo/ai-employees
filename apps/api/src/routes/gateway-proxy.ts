@@ -14,6 +14,7 @@ import type { IncomingMessage } from "http";
 import { request as httpRequest } from "http";
 import { randomBytes } from "crypto";
 import { readFileSync, existsSync } from "fs";
+import { spawn } from "child_process";
 import { eq } from "drizzle-orm";
 import { db, employees } from "@ai-employees/db";
 
@@ -29,6 +30,14 @@ async function getContainerHost(employeeId: string): Promise<string | null> {
     columns: { containerHost: true, containerPort: true },
   });
   return emp?.containerHost || null;
+}
+
+async function getContainerName(employeeId: string): Promise<string | null> {
+  const emp = await db.query.employees.findFirst({
+    where: eq(employees.id, employeeId),
+    columns: { containerName: true },
+  });
+  return emp?.containerName || null;
 }
 
 async function getEmployeeGatewayToken(employeeId: string): Promise<string | null> {
@@ -479,80 +488,137 @@ export async function gatewayProxyRoutes(fastify: FastifyInstance) {
   fastify.server.on("upgrade", async (req: IncomingMessage, socket: Socket, head: Buffer) => {
     try {
       const rawUrl = req.url || "";
-      // Separate path from query string — req.url includes ?token=xxx etc.
       const qIdx = rawUrl.indexOf("?");
       const urlPath = qIdx >= 0 ? rawUrl.slice(0, qIdx) : rawUrl;
       const queryString = qIdx >= 0 ? rawUrl.slice(qIdx) : "";
 
-      // Match /relay/:id/* (extension relay — bridged to gateway port 18789)
       const relayMatch = urlPath.match(/^\/relay\/([^/]+)(\/.*)?$/);
-      // Match /gw/:id/* (gateway, port 18789)
       const gwMatch = urlPath.match(/^\/gw\/([^/]+)(\/.*)?$/);
 
       const match = relayMatch || gwMatch;
-      if (!match) return; // Not our request — let Fastify/other handlers deal with it
+      if (!match) return;
 
-      // Both relay and gateway connections go to the OpenClaw gateway (18789).
-      // The relay port (18792) is internal-only inside the container.
-      const port = relayMatch ? RELAY_PORT : GATEWAY_PORT;
       const employeeId = match[1];
-      // For relay connections, forward to "/" — the gateway accepts relay
-      // WebSocket connections at the root path.
-      // For gateway (/gw/) connections, preserve the original sub-path.
-      // Always preserve the query string (contains auth token).
-      const basePath = relayMatch ? "/" : (match[2] || "/");
-      const remainingPath = basePath + queryString;
 
-      const host = await getContainerHost(employeeId);
-      if (!host) {
-        fastify.log.warn(`[proxy] WS upgrade: no container host for ${employeeId}`);
-        socket.write("HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/plain\r\n\r\nEmployee container not available");
-        socket.destroy();
-        return;
-      }
+      if (relayMatch) {
+        // ── Relay WebSocket: use docker exec to reach 127.0.0.1:18792 inside container ──
+        // The relay only binds to localhost inside the container, so we can't reach it
+        // via the Docker network. Instead, spawn a socat-like bridge via docker exec.
+        const containerName = await getContainerName(employeeId);
+        if (!containerName) {
+          fastify.log.warn(`[proxy] WS relay upgrade: no container for ${employeeId}`);
+          socket.write("HTTP/1.1 502 Bad Gateway\r\n\r\nNo container");
+          socket.destroy();
+          return;
+        }
 
-      fastify.log.info(`[proxy] WS upgrade: ${relayMatch ? "relay" : "gw"} employee=${employeeId} → ${host}:${port}${remainingPath}`);
+        const remainingPath = "/" + queryString;
+        fastify.log.info(`[proxy] WS relay upgrade: employee=${employeeId} → docker exec ${containerName} → 127.0.0.1:${RELAY_PORT}${remainingPath}`);
 
-      // Connect to the container via TCP
-      const upstream = createConnection({ host, port }, () => {
-        // Reconstruct the HTTP upgrade request to forward to the container
-        let rawRequest = `${req.method} ${remainingPath} HTTP/1.1\r\n`;
+        // Spawn docker exec with a Node.js one-liner that:
+        // 1. Connects to 127.0.0.1:18792 (relay) via TCP
+        // 2. Pipes stdin/stdout bidirectionally
+        const bridge = spawn("docker", [
+          "exec", "-i", containerName,
+          "node", "-e",
+          `const s=require('net').connect(18792,'127.0.0.1',()=>{process.stdin.pipe(s);s.pipe(process.stdout)});s.on('error',e=>{process.stderr.write('relay-err:'+e.message+'\\n');process.exit(1)});process.stdin.on('end',()=>s.end());s.on('end',()=>process.exit(0));`,
+        ], { stdio: ["pipe", "pipe", "pipe"] });
+
+        let bridgeReady = false;
+
+        bridge.on("error", (err) => {
+          fastify.log.error(`[proxy] docker exec spawn error: ${err.message}`);
+          if (!bridgeReady) {
+            socket.write("HTTP/1.1 502 Bad Gateway\r\n\r\n");
+            socket.destroy();
+          }
+        });
+
+        bridge.stderr?.on("data", (chunk: Buffer) => {
+          fastify.log.warn(`[proxy] relay bridge stderr: ${chunk.toString().trim()}`);
+        });
+
+        bridge.on("close", (code) => {
+          fastify.log.info(`[proxy] relay bridge exited code=${code}`);
+          socket.destroy();
+        });
+
+        // Once docker exec connects, the bridge's stdin/stdout IS the TCP stream
+        // to the relay. We need to send the HTTP upgrade request through it.
+
+        // Small delay to let docker exec + node start up and connect
+        // We'll detect readiness by writing the upgrade request and checking for response
+        bridgeReady = true;
+
+        // Build the HTTP upgrade request to send to the relay
+        let rawRequest = `GET ${remainingPath} HTTP/1.1\r\n`;
+        rawRequest += `Host: 127.0.0.1:18792\r\n`;
         for (let i = 0; i < req.rawHeaders.length; i += 2) {
           const key = req.rawHeaders[i];
-          const val = req.rawHeaders[i + 1];
-          // Replace Host header with the container host
-          if (key.toLowerCase() === "host") {
-            rawRequest += `Host: ${host}:${port}\r\n`;
-          } else {
-            rawRequest += `${key}: ${val}\r\n`;
-          }
+          if (key.toLowerCase() === "host") continue;
+          rawRequest += `${req.rawHeaders[i]}: ${req.rawHeaders[i + 1]}\r\n`;
         }
         rawRequest += "\r\n";
 
-        upstream.write(rawRequest);
-        if (head.length) upstream.write(head);
+        bridge.stdin!.write(rawRequest);
+        if (head.length) bridge.stdin!.write(head);
 
-        // Pipe both directions — full duplex TCP relay
-        upstream.pipe(socket);
-        socket.pipe(upstream);
-      });
+        // Pipe: client socket ↔ docker exec stdin/stdout ↔ relay
+        bridge.stdout!.pipe(socket);
+        socket.pipe(bridge.stdin!);
 
-      upstream.on("error", (err) => {
-        fastify.log.error(`[proxy] WS upstream error for ${employeeId}: ${err.message}`);
-        try {
-          socket.write("HTTP/1.1 502 Bad Gateway\r\n\r\n");
-        } catch {}
-        socket.destroy();
-      });
+        socket.on("error", () => bridge.kill());
+        socket.on("close", () => bridge.kill());
 
-      socket.on("error", () => upstream.destroy());
-      socket.on("close", () => upstream.destroy());
-      upstream.on("close", () => socket.destroy());
+      } else {
+        // ── Gateway WebSocket: direct TCP to containerHost:18789 ──
+        const port = GATEWAY_PORT;
+        const basePath = match[2] || "/";
+        const remainingPath = basePath + queryString;
+
+        const host = await getContainerHost(employeeId);
+        if (!host) {
+          fastify.log.warn(`[proxy] WS upgrade: no container host for ${employeeId}`);
+          socket.write("HTTP/1.1 502 Bad Gateway\r\n\r\nEmployee container not available");
+          socket.destroy();
+          return;
+        }
+
+        fastify.log.info(`[proxy] WS upgrade: gw employee=${employeeId} → ${host}:${port}${remainingPath}`);
+
+        const upstream = createConnection({ host, port }, () => {
+          let rawRequest = `${req.method} ${remainingPath} HTTP/1.1\r\n`;
+          for (let i = 0; i < req.rawHeaders.length; i += 2) {
+            const key = req.rawHeaders[i];
+            const val = req.rawHeaders[i + 1];
+            if (key.toLowerCase() === "host") {
+              rawRequest += `Host: ${host}:${port}\r\n`;
+            } else {
+              rawRequest += `${key}: ${val}\r\n`;
+            }
+          }
+          rawRequest += "\r\n";
+
+          upstream.write(rawRequest);
+          if (head.length) upstream.write(head);
+
+          upstream.pipe(socket);
+          socket.pipe(upstream);
+        });
+
+        upstream.on("error", (err) => {
+          fastify.log.error(`[proxy] WS upstream error for ${employeeId}: ${err.message}`);
+          try { socket.write("HTTP/1.1 502 Bad Gateway\r\n\r\n"); } catch {}
+          socket.destroy();
+        });
+
+        socket.on("error", () => upstream.destroy());
+        socket.on("close", () => upstream.destroy());
+        upstream.on("close", () => socket.destroy());
+      }
     } catch (err: any) {
       fastify.log.error(`[proxy] WS handler error: ${err.message}`);
-      try {
-        socket.write("HTTP/1.1 500 Internal Server Error\r\n\r\n");
-      } catch {}
+      try { socket.write("HTTP/1.1 500 Internal Server Error\r\n\r\n"); } catch {}
       socket.destroy();
     }
   });
