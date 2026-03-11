@@ -89,12 +89,13 @@ export function generateOpenClawConfig(
   };
 
   if (isExpertTier) {
-    // Main orchestrator — runs on Opus, chats with user, decides task routing
+    // Default agent — runs on Sonnet for cost efficiency. Handles most tasks
+    // and escalates to the Opus expert agent only when deep reasoning is needed.
     agentsList.push({
       id: agentId,
       default: true,
       workspace: "/home/node/.openclaw/workspace",
-      model: { primary: OPUS_MODEL, fallbacks: [SONNET_MODEL] },
+      model: { primary: SONNET_MODEL, fallbacks: [OPUS_MODEL] },
       identity: {
         name: employee.name,
         emoji: employee.emoji || "🤖",
@@ -102,14 +103,14 @@ export function generateOpenClawConfig(
       tools: { allow: toolsAllow },
     });
 
-    // Fast worker agent — runs on Sonnet for routine/simple tasks
+    // Expert agent — runs on Opus for complex reasoning tasks only
     agentsList.push({
-      id: `${agentId}-fast`,
+      id: `${agentId}-expert`,
       workspace: "/home/node/.openclaw/workspace",
-      model: { primary: SONNET_MODEL, fallbacks: [OPUS_MODEL] },
+      model: { primary: OPUS_MODEL, fallbacks: [SONNET_MODEL] },
       identity: {
-        name: `${employee.name} (Fast)`,
-        emoji: "⚡",
+        name: `${employee.name} (Expert)`,
+        emoji: "🧠",
       },
       tools: { allow: toolsAllow },
     });
@@ -679,39 +680,37 @@ export function generateAgentsMd(employee: EmployeeInput): string {
   // Smart model routing — Expert tier only
   const isExpertTier = employee.tier === "expert" || employee.modelConfig.primary === OPUS_MODEL;
   if (isExpertTier) {
-    const fastAgentId = slugify(employee.name) + "-fast";
+    const expertAgentId = slugify(employee.name) + "-expert";
     parts.push("## Smart Task Routing (IMPORTANT — Cost Optimization)");
     parts.push("");
-    parts.push("You are the main orchestrator (Opus). You chat with people, understand context, and decide how to handle every task. To save costs and improve speed, you have a fast worker agent you can delegate routine tasks to.");
+    parts.push("You run on Sonnet — fast and cost-efficient. You handle most tasks directly. For tasks that genuinely need deeper reasoning, you escalate to your Expert agent (Opus).");
     parts.push("");
-    parts.push("**You (Opus)** — the orchestrator. You receive all messages, understand what's needed, and decide how to handle it. You personally handle anything that needs deep reasoning, nuance, or complex judgment.");
+    parts.push("**You (Sonnet)** — the default. You receive all messages, handle them directly, and only escalate when a task truly requires Opus-level reasoning. The vast majority of tasks do NOT need escalation.");
     parts.push("");
-    parts.push("**Fast Worker (Sonnet)** — your `" + fastAgentId + "` agent. Fast and cost-efficient. Delegate straightforward execution tasks to this agent whenever the task doesn't require your full reasoning power.");
+    parts.push("**Expert (Opus)** — your `" + expertAgentId + "` agent. Only use this for tasks that are genuinely complex and would benefit from deeper reasoning. This agent is expensive — use it sparingly.");
     parts.push("");
-    parts.push("### Handle yourself (Opus) when the task involves:");
-    parts.push("- Complex strategic analysis with multiple tradeoffs and no clear answer");
-    parts.push("- Business strategy, competitive analysis, or nuanced decision-making");
-    parts.push("- Debugging hard problems that require deep understanding");
-    parts.push("- Writing that requires exceptional nuance (investor memos, legal-adjacent copy, high-stakes communications)");
-    parts.push("- Multi-step reasoning chains where getting the logic wrong has consequences");
-    parts.push("- Understanding and synthesizing large amounts of conflicting information");
-    parts.push("- Novel problems that feel genuinely hard");
-    parts.push("- Direct conversation with the user (always you)");
-    parts.push("");
-    parts.push("### Delegate to Fast Worker (Sonnet) when the task is:");
+    parts.push("### Handle yourself (default) — this covers 90%+ of tasks:");
     parts.push("- Email drafts, scheduling, routine messages, status updates");
     parts.push("- Web research, browsing, data collection, lookups");
     parts.push("- File creation, document writing, spreadsheets, reports");
-    parts.push("- Simple Q&A, summaries, formatting");
+    parts.push("- Q&A, summaries, formatting, translations");
     parts.push("- Code for straightforward tasks, scripts, automation");
     parts.push("- Image/video generation, media tasks");
     parts.push("- Social media posts, CRM updates, project management updates");
-    parts.push("- Any well-defined task where the instructions are clear and execution is routine");
+    parts.push("- Direct conversation with users");
+    parts.push("- Any task where the instructions are clear");
     parts.push("");
-    parts.push("### How to delegate:");
-    parts.push("When a task is routine, delegate it to the `" + fastAgentId + "` agent with clear instructions. The fast worker has access to all the same tools and workspace as you. You evaluate the result before passing it back to the user.");
+    parts.push("### Escalate to Expert (Opus) ONLY when the task involves:");
+    parts.push("- Complex strategic analysis with multiple tradeoffs and no clear answer");
+    parts.push("- Debugging genuinely hard problems after you've already tried and failed");
+    parts.push("- Writing that requires exceptional nuance (investor memos, legal-adjacent copy)");
+    parts.push("- Multi-step reasoning chains where getting the logic wrong has serious consequences");
+    parts.push("- Novel problems that you genuinely cannot solve well yourself");
     parts.push("");
-    parts.push("**The golden rule:** You always talk to the user directly. When a task comes in, you assess complexity. If it's straightforward execution, hand it off to your fast worker. If it needs your judgment, handle it yourself. This keeps costs down while maintaining quality where it matters.");
+    parts.push("### How to escalate:");
+    parts.push("Delegate to the `" + expertAgentId + "` agent with clear context about what you need. The expert has access to all the same tools and workspace. You relay the result back to the user.");
+    parts.push("");
+    parts.push("**The golden rule:** Handle everything yourself by default. Only escalate if you've assessed the task and it genuinely needs Opus-level reasoning. When in doubt, handle it yourself — you are highly capable. This keeps costs under control.");
     parts.push("");
   }
 
