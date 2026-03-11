@@ -37,7 +37,6 @@ const BADGE = {
  *   authToken: string,
  *   connectPromise: Promise<void>|null,
  *   connectRequestId: string|null,
- *   pairingApprovalInFlight: boolean,
  *   reconnectAttempt: number,
  *   reconnectTimer: number|null,
  *   tabs: Map<number, TabState>,
@@ -124,7 +123,6 @@ async function handleDashboardConnect({ employeeId, employeeName, wsUrl, relayTo
     authToken: authToken || "",
     connectPromise: null,
     connectRequestId: null,
-    pairingApprovalInFlight: false,
     reconnectAttempt: 0,
     reconnectTimer: null,
     tabs: new Map(),
@@ -302,132 +300,13 @@ function sendToRelay(conn, payload) {
   ws.send(JSON.stringify(payload));
 }
 
-// ── Ed25519 Device Identity ──────────────────────────────────────────
-// Generate or load a persistent Ed25519 keypair for device pairing.
-// The private key never leaves the extension; only the public key + signature are sent.
-
-let _deviceIdentityPromise = null;
-
-function getDeviceIdentity() {
-  if (_deviceIdentityPromise) return _deviceIdentityPromise;
-  _deviceIdentityPromise = (async () => {
-    const stored = await chrome.storage.local.get("deviceIdentity");
-    // v2: deviceId must be hex SHA-256 (64 chars). Regenerate if old format.
-    if (stored.deviceIdentity && stored.deviceIdentity.deviceId?.length === 64) {
-      return stored.deviceIdentity;
-    }
-    // Generate new Ed25519 keypair
-    const keyPair = await crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"]);
-    const publicKeyRaw = await crypto.subtle.exportKey("raw", keyPair.publicKey);
-    const privateKeyPkcs8 = await crypto.subtle.exportKey("pkcs8", keyPair.privateKey);
-    const publicKeyB64 = base64url(publicKeyRaw);
-    const deviceId = await deriveDeviceId(publicKeyRaw);
-    const identity = {
-      deviceId,
-      publicKeyB64,
-      privateKeyPkcs8: Array.from(new Uint8Array(privateKeyPkcs8)),
-      publicKeyRaw: Array.from(new Uint8Array(publicKeyRaw)),
-    };
-    await chrome.storage.local.set({ deviceIdentity: identity });
-    console.log("[device] Generated new Ed25519 device identity:", deviceId);
-    return identity;
-  })();
-  return _deviceIdentityPromise;
-}
-
-function base64url(buffer) {
-  const bytes = new Uint8Array(buffer);
-  let binary = "";
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-async function deriveDeviceId(publicKeyRaw) {
-  // OpenClaw: deriveDeviceIdFromPublicKey = SHA-256(rawPublicKey).hex()
-  const hash = await crypto.subtle.digest("SHA-256", publicKeyRaw);
-  return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-async function signDevicePayload(identity, nonce, role, scopes, clientId, clientMode, token) {
-  // Reconstruct the private key from stored PKCS8
-  const pkcs8 = new Uint8Array(identity.privateKeyPkcs8).buffer;
-  const privateKey = await crypto.subtle.importKey("pkcs8", pkcs8, "Ed25519", false, ["sign"]);
-  // OpenClaw buildDeviceAuthPayload (v2): pipe-delimited, nonce always present
-  // "v2|deviceId|clientId|clientMode|role|scopes|signedAtMs|token|nonce"
-  const signedAt = Date.now();
-  const scopesStr = (scopes || []).join(",");
-  const payload = `v2|${identity.deviceId}|${clientId}|${clientMode}|${role}|${scopesStr}|${signedAt}|${token ?? ""}|${nonce}`;
-  console.log("[device] Signing payload:", payload);
-  const payloadBytes = new TextEncoder().encode(payload);
-  const signature = await crypto.subtle.sign("Ed25519", privateKey, payloadBytes);
-  return { signature: base64url(signature), signedAt };
-}
-
-// ── Device Pairing Auto-Approval ─────────────────────────────────────
-// When the gateway rejects our connection with PAIRING_REQUIRED, call the
-// Blitzer AI dashboard API to approve the pending device inside the container,
-// then trigger a reconnect so the next handshake succeeds.
-async function requestDeviceApproval(employeeId, conn, requestId) {
-  const url = `${conn.apiBaseUrl}/api/employees/${employeeId}/approve-device`;
-  console.log("[device] Requesting approval via:", url, "requestId:", requestId);
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${conn.authToken}`,
-    },
-    body: JSON.stringify({ requestId: requestId || undefined }),
-  });
-
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(`Approval request failed (${res.status}): ${body.error || res.statusText}`);
-  }
-
-  const result = await res.json();
-  console.log("[device] Approval response:", JSON.stringify(result).slice(0, 300));
-
-  // Wait briefly for the gateway to process the approval, then trigger reconnect
-  await new Promise((r) => setTimeout(r, 2000));
-
-  // Force a reconnect attempt
-  if (connections.has(employeeId)) {
-    const currentConn = connections.get(employeeId);
-    currentConn.reconnectAttempt = 0; // Reset backoff so we reconnect quickly
-    scheduleReconnect(employeeId, currentConn);
-  }
-}
-
 // ── OpenClaw Gateway Handshake ───────────────────────────────────────
 async function ensureGatewayHandshakeStarted(conn, challengePayload) {
   if (conn.connectRequestId) return;
 
-  const nonce = challengePayload?.nonce || "";
-  const role = "node";
-  const scopes = [];
-  const clientId = "node-host";
-  const clientMode = "node";
-
-  // Build device identity for the handshake
-  let device;
-  try {
-    const identity = await getDeviceIdentity();
-    const { signature, signedAt } = await signDevicePayload(
-      identity, nonce, role, scopes, clientId, clientMode, conn.gatewayToken || ""
-    );
-    device = {
-      id: identity.deviceId,
-      publicKey: identity.publicKeyB64,
-      signature,
-      signedAt,
-      nonce,
-    };
-    console.log("[device] Signed handshake with device:", identity.deviceId);
-  } catch (err) {
-    console.warn("[device] Ed25519 not available, connecting without device identity:", err.message);
-  }
-
+  // Connect as "node" role with token auth only — no device identity.
+  // Device identity triggers OpenClaw's pairing flow (PAIRING_REQUIRED error).
+  // Since our containers have dangerouslyDisableDeviceAuth: true, token auth suffices.
   conn.connectRequestId = `ext-connect-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
   sendToRelay(conn, {
     type: "req",
@@ -442,12 +321,11 @@ async function ensureGatewayHandshakeStarted(conn, challengePayload) {
         platform: "chrome-extension",
         mode: "node",
       },
-      role,
-      scopes,
+      role: "node",
+      scopes: [],
       caps: ["canvas"],
       commands: ["canvas.navigate"],
       auth: conn.gatewayToken ? { token: conn.gatewayToken } : undefined,
-      ...(device ? { device } : {}),
     },
   });
 }
@@ -480,27 +358,8 @@ function onRelayMessage(employeeId, conn, text) {
   if (msg && msg.type === "res" && conn.connectRequestId && msg.id === conn.connectRequestId) {
     conn.connectRequestId = null;
     if (!msg.ok) {
-      const errorCode = msg?.error?.code || msg?.error?.details?.code || "";
       const detail = msg?.error?.message || msg?.error || "gateway connect failed";
       console.error("[relay] gateway connect REJECTED:", detail, "full response:", JSON.stringify(msg));
-
-      // Auto-approve device pairing if PAIRING_REQUIRED and we have API access
-      if ((errorCode === "NOT_PAIRED" || errorCode === "PAIRING_REQUIRED") && conn.apiBaseUrl && conn.authToken && !conn.pairingApprovalInFlight) {
-        conn.pairingApprovalInFlight = true;
-        const pairingRequestId = msg?.error?.details?.requestId || "";
-        console.log("[relay] PAIRING_REQUIRED detected — requesting auto-approval from dashboard API...", { requestId: pairingRequestId });
-        requestDeviceApproval(employeeId, conn, pairingRequestId).catch((err) => {
-          console.error("[relay] Device approval failed:", err.message);
-        }).finally(() => {
-          conn.pairingApprovalInFlight = false;
-        });
-        // Close the WS — the approval + reconnect flow will handle retry
-        if (conn.ws && conn.ws.readyState === WebSocket.OPEN) {
-          conn.ws.close(1008, "pairing required — requesting approval");
-        }
-        return;
-      }
-
       if (conn.ws && conn.ws.readyState === WebSocket.OPEN) {
         conn.ws.close(1008, "gateway connect failed");
       }
