@@ -40,6 +40,136 @@ async function getEmployeeGatewayToken(employeeId: string): Promise<string | nul
 }
 
 export async function gatewayProxyRoutes(fastify: FastifyInstance) {
+  // ── Relay diagnostic: test TCP + WebSocket to relay port (18793) ──
+  fastify.get<{ Params: { id: string } }>("/test-relay/:id", async (request, reply) => {
+    const { id } = request.params;
+    const host = await getContainerHost(id);
+    if (!host) return reply.status(404).send({ error: "No container host" });
+
+    const token = await getEmployeeGatewayToken(id);
+    const results: Record<string, unknown> = { host, relayPort: RELAY_PORT, gatewayPort: GATEWAY_PORT };
+
+    // 1. Test raw TCP connect to relay port (18793 — tunnel)
+    const tcpTest = await new Promise<{ ok: boolean; error?: string; ms: number }>((resolve) => {
+      const start = Date.now();
+      const t = setTimeout(() => resolve({ ok: false, error: "timeout (5s)", ms: Date.now() - start }), 5000);
+      const sock = createConnection({ host, port: RELAY_PORT }, () => {
+        clearTimeout(t);
+        sock.destroy();
+        resolve({ ok: true, ms: Date.now() - start });
+      });
+      sock.on("error", (err) => {
+        clearTimeout(t);
+        resolve({ ok: false, error: err.message, ms: Date.now() - start });
+      });
+    });
+    results.tcpConnectToRelay = tcpTest;
+
+    // 2. If TCP works, try a WebSocket upgrade
+    if (tcpTest.ok) {
+      const wsKey = randomBytes(16).toString("base64");
+      // Derive HMAC token the same way the extension does
+      const crypto2 = await import("crypto");
+      const hmac = crypto2.createHmac("sha256", token || "");
+      hmac.update(`openclaw-extension-relay-v1:18792`);
+      const derivedToken = hmac.digest("hex");
+      const path = `/?token=${encodeURIComponent(derivedToken)}`;
+
+      const wsTest = await new Promise<Record<string, unknown>>((resolve) => {
+        const r: Record<string, unknown> = { path, derivedTokenLength: derivedToken.length };
+        const t = setTimeout(() => { r.error = "timeout (5s)"; resolve(r); }, 5000);
+        const sock = createConnection({ host, port: RELAY_PORT }, () => {
+          const upgradeReq = [
+            `GET ${path} HTTP/1.1`,
+            `Host: ${host}:${RELAY_PORT}`,
+            `Upgrade: websocket`,
+            `Connection: Upgrade`,
+            `Sec-WebSocket-Version: 13`,
+            `Sec-WebSocket-Key: ${wsKey}`,
+            ``, ``
+          ].join("\r\n");
+          sock.write(upgradeReq);
+        });
+        const chunks: Buffer[] = [];
+        sock.on("data", (chunk: Buffer) => {
+          chunks.push(Buffer.from(chunk));
+          const all = Buffer.concat(chunks);
+          const hdr = all.toString("ascii", 0, Math.min(all.length, 4096));
+          const hEnd = hdr.indexOf("\r\n\r\n");
+          if (hEnd >= 0) {
+            clearTimeout(t);
+            r.response = hdr.slice(0, hEnd);
+            const m = hdr.match(/^HTTP\/[\d.]+ (\d+)/);
+            r.statusCode = m ? parseInt(m[1]) : null;
+            r.wsUpgraded = r.statusCode === 101;
+            // Read a bit more data for any WS frames
+            setTimeout(() => {
+              if (all.length > hEnd + 4) {
+                r.extraBytes = all.length - hEnd - 4;
+              }
+              sock.destroy();
+              resolve(r);
+            }, 500);
+          }
+        });
+        sock.on("error", (err) => { clearTimeout(t); r.tcpError = err.message; resolve(r); });
+        sock.on("close", () => { clearTimeout(t); resolve(r); });
+      });
+      results.wsUpgradeToRelay = wsTest;
+    }
+
+    // 3. Also test TCP to gateway port for comparison
+    const gwTcpTest = await new Promise<{ ok: boolean; error?: string; ms: number }>((resolve) => {
+      const start = Date.now();
+      const t = setTimeout(() => resolve({ ok: false, error: "timeout (5s)", ms: Date.now() - start }), 5000);
+      const sock = createConnection({ host, port: GATEWAY_PORT }, () => {
+        clearTimeout(t);
+        sock.destroy();
+        resolve({ ok: true, ms: Date.now() - start });
+      });
+      sock.on("error", (err) => {
+        clearTimeout(t);
+        resolve({ ok: false, error: err.message, ms: Date.now() - start });
+      });
+    });
+    results.tcpConnectToGateway = gwTcpTest;
+
+    // 4. Check if relay-tunnel.cjs is on disk
+    const emp = await db.query.employees.findFirst({
+      where: eq(employees.id, id),
+      columns: { containerName: true },
+    });
+    if (emp?.containerName) {
+      try {
+        const { execSync: ex } = await import("child_process");
+        // Check if tunnel process is running
+        const ps = ex(
+          `docker exec ${emp.containerName} sh -c "ps aux 2>/dev/null | grep relay-tunnel || echo NO_MATCH"`,
+          { timeout: 5000 }
+        ).toString().trim();
+        results.tunnelProcess = ps;
+
+        // Check if relay-tunnel.cjs exists
+        const fileCheck = ex(
+          `docker exec ${emp.containerName} sh -c "ls -la /home/node/.openclaw/relay-tunnel.cjs 2>&1 || echo NOT_FOUND"`,
+          { timeout: 5000 }
+        ).toString().trim();
+        results.tunnelFile = fileCheck;
+
+        // Check what's listening on 18792 and 18793
+        const ports = ex(
+          `docker exec ${emp.containerName} sh -c "ss -tlnp 2>/dev/null || netstat -tlnp 2>/dev/null || echo NO_SS_OR_NETSTAT"`,
+          { timeout: 5000 }
+        ).toString().trim();
+        results.listeningPorts = ports;
+      } catch (err: any) {
+        results.dockerExecError = err.message;
+      }
+    }
+
+    return results;
+  });
+
   // ── WebSocket diagnostic: full gateway handshake test ──
   fastify.get<{ Params: { id: string } }>("/test-ws/:id", async (request, reply) => {
     const { id } = request.params;
