@@ -672,29 +672,46 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     run("patch package.json", `sed -i 's|"main": "src/index.ts"|"main": "dist/index.js"|g' packages/*/package.json`, 5_000);
 
     // 4b. Refresh container IPs from Docker — fixes stale/invalid container_host values
+    // Only process employees with containers on THIS droplet (check configDir exists)
     const allEmployees = await db.query.employees.findMany({
       where: inArray(employees.status, ["active", "error"]),
     });
     const ipRegex = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
     for (const emp of allEmployees) {
       if (!emp.containerName || !/^[a-zA-Z0-9_.-]+$/.test(emp.containerName)) continue;
+      const empConfigDir = `/opt/ai-employees/openclaw-configs/${emp.id}`;
+      if (!existsSync(empConfigDir)) continue; // Not on this droplet
       try {
-        const freshIp = execSync(
-          `docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' '${emp.containerName}'`,
+        // Use JSON format for debugging — more reliable than Go template
+        const rawJson = execSync(
+          `docker inspect --format '{{json .NetworkSettings.Networks}}' '${emp.containerName}'`,
           { timeout: 5000 },
         ).toString().trim();
-        if (freshIp && ipRegex.test(freshIp) && freshIp !== emp.containerHost) {
+        steps.push(`  [debug] ${emp.name} networks: ${rawJson.slice(0, 200)}`);
+
+        // Extract first valid IP from the networks JSON
+        let freshIp = "";
+        try {
+          const networks = JSON.parse(rawJson);
+          for (const [netName, netInfo] of Object.entries(networks)) {
+            const ip = (netInfo as any)?.IPAddress;
+            if (ip && ipRegex.test(ip)) {
+              freshIp = ip;
+              break;
+            }
+          }
+        } catch { /* JSON parse failed */ }
+
+        if (freshIp && freshIp !== emp.containerHost) {
           await db.update(employees).set({ containerHost: freshIp, updatedAt: new Date() }).where(eq(employees.id, emp.id));
           steps.push(`✓ Refreshed container IP for ${emp.name}: ${emp.containerHost} → ${freshIp}`);
-        }
-        // Also fix current invalid container_host if it doesn't look like an IP
-        if (emp.containerHost && !ipRegex.test(emp.containerHost) && freshIp && ipRegex.test(freshIp)) {
-          // Already handled above
         } else if (emp.containerHost && !ipRegex.test(emp.containerHost)) {
-          // Container host is invalid and we couldn't get a fresh IP — clear it
-          steps.push(`⚠ Invalid container_host for ${emp.name}: "${emp.containerHost}" (docker inspect returned: "${freshIp}")`);
+          steps.push(`⚠ Invalid container_host for ${emp.name}: "${emp.containerHost}" — no valid IP from docker inspect`);
         }
-      } catch { /* container may not exist on this droplet */ }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message.slice(0, 100) : String(err).slice(0, 100);
+        steps.push(`  [debug] ${emp.name} docker inspect failed: ${msg}`);
+      }
     }
 
     // 5. Regenerate OpenClaw configs for all employees with containers on this droplet
