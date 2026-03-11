@@ -773,10 +773,10 @@ server.on('error', (err) => {
 server.listen(18793, '0.0.0.0', () => console.log('relay tunnel listening on 18793'));
 `;
           const configDir = `/opt/ai-employees/openclaw-configs/${emp.id}`;
-          writeFileSync(`${configDir}/relay-tunnel.mjs`, tunnelScript, { mode: 0o755 });
+          writeFileSync(`${configDir}/relay-tunnel.cjs`, tunnelScript, { mode: 0o755 });
           try {
             execSync(
-              `docker exec -d ${emp.containerName} node /home/node/.openclaw/relay-tunnel.mjs`,
+              `docker exec -d ${emp.containerName} node /home/node/.openclaw/relay-tunnel.cjs`,
               { timeout: 10_000 },
             );
             steps.push(`✓ Relay tunnel started for ${emp.name}`);
