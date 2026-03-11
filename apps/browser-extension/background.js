@@ -346,13 +346,11 @@ async function signDevicePayload(identity, nonce, role, scopes, clientId, client
   // Reconstruct the private key from stored PKCS8
   const pkcs8 = new Uint8Array(identity.privateKeyPkcs8).buffer;
   const privateKey = await crypto.subtle.importKey("pkcs8", pkcs8, "Ed25519", false, ["sign"]);
-  // OpenClaw buildDeviceAuthPayload: pipe-delimited string
-  // v1: "v1|deviceId|clientId|clientMode|role|scopes|signedAtMs|token"
-  // v2: appends "|nonce" for remote clients
+  // OpenClaw buildDeviceAuthPayload (v2): pipe-delimited, nonce always present
+  // "v2|deviceId|clientId|clientMode|role|scopes|signedAtMs|token|nonce"
   const signedAt = Date.now();
   const scopesStr = (scopes || []).join(",");
-  const v1Payload = `v1|${identity.deviceId}|${clientId}|${clientMode}|${role}|${scopesStr}|${signedAt}|${token || ""}`;
-  const payload = nonce ? `${v1Payload}|${nonce}` : v1Payload;
+  const payload = `v2|${identity.deviceId}|${clientId}|${clientMode}|${role}|${scopesStr}|${signedAt}|${token ?? ""}|${nonce}`;
   console.log("[device] Signing payload:", payload);
   const payloadBytes = new TextEncoder().encode(payload);
   const signature = await crypto.subtle.sign("Ed25519", privateKey, payloadBytes);
