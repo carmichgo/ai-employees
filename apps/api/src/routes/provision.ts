@@ -784,7 +784,9 @@ server.listen(18793, '0.0.0.0', () => console.log('relay tunnel listening on 187
             const tunMsg = tunErr instanceof Error ? tunErr.message : String(tunErr);
             errors.push(`✗ Relay tunnel for ${emp.name}: ${tunMsg.slice(0, 200)}`);
           }
-          // Diagnostic: check what ports are listening inside the container
+          // Diagnostic: wait for gateway to start, then check ports
+          // The gateway needs ~5-10s to fully start after container restart.
+          await new Promise((r) => setTimeout(r, 8000));
           try {
             const portsCheck = execSync(
               `docker exec ${emp.containerName} node -e "` +
@@ -793,10 +795,10 @@ server.listen(18793, '0.0.0.0', () => console.log('relay tunnel listening on 187
               `Promise.all([test(18789),test(18792),test(18793)]).then(([gw,relay,tunnel])=>console.log(JSON.stringify({gw_18789:gw,relay_18792:relay,tunnel_18793:tunnel})))"`,
               { timeout: 15_000 },
             ).toString().trim();
-            steps.push(`  Ports for ${emp.name}: ${portsCheck}`);
+            steps.push(`  Ports (after 11s): ${portsCheck}`);
           } catch (portErr: unknown) {
             const portMsg = portErr instanceof Error ? portErr.message : String(portErr);
-            steps.push(`  Port check failed for ${emp.name}: ${portMsg.slice(0, 200)}`);
+            steps.push(`  Port check failed: ${portMsg.slice(0, 200)}`);
           }
           try {
             const newIp = execSync(
