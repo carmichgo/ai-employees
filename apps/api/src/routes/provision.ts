@@ -800,15 +800,56 @@ server.listen(18793, '0.0.0.0', () => console.log('relay tunnel listening on 187
             const portMsg = portErr instanceof Error ? portErr.message : String(portErr);
             steps.push(`  Port check failed: ${portMsg.slice(0, 200)}`);
           }
+          // Test WebSocket upgrade to relay (18793 tunnel → 18792) with both token types
           try {
-            const newIp = execSync(
+            const { createConnection } = await import("net");
+            const { createHmac, randomBytes } = await import("crypto");
+            const newIpRaw = execSync(
               `docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ${emp.containerName}`,
               { timeout: 5000 },
             ).toString().trim();
-            if (newIp) {
-              await db.update(employees).set({ containerHost: newIp, updatedAt: new Date() }).where(eq(employees.id, emp.id));
+            if (newIpRaw) {
+              await db.update(employees).set({ containerHost: newIpRaw, updatedAt: new Date() }).where(eq(employees.id, emp.id));
+
+              const gwToken = emp.gatewayToken || "";
+              const hmac = createHmac("sha256", gwToken);
+              hmac.update("openclaw-extension-relay-v1:18792");
+              const hmacToken = hmac.digest("hex");
+
+              // Try HMAC token first, then raw token
+              for (const [label, tok] of [["hmac", hmacToken], ["raw", gwToken]]) {
+                const wsResult = await new Promise<string>((resolve) => {
+                  const t = setTimeout(() => resolve("timeout"), 5000);
+                  const wsKey = randomBytes(16).toString("base64");
+                  const path = `/?token=${encodeURIComponent(tok)}`;
+                  const sock = createConnection({ host: newIpRaw, port: 18793 }, () => {
+                    sock.write(
+                      `GET ${path} HTTP/1.1\r\nHost: 127.0.0.1:18792\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: ${wsKey}\r\n\r\n`
+                    );
+                  });
+                  const chunks: Buffer[] = [];
+                  sock.on("data", (chunk: Buffer) => {
+                    chunks.push(Buffer.from(chunk));
+                    const all = Buffer.concat(chunks);
+                    const hdr = all.toString("ascii", 0, Math.min(all.length, 2048));
+                    const hEnd = hdr.indexOf("\r\n\r\n");
+                    if (hEnd >= 0) {
+                      clearTimeout(t);
+                      const m = hdr.match(/^HTTP\/[\d.]+ (\d+)/);
+                      const status = m ? m[1] : "?";
+                      const firstLine = hdr.split("\r\n")[0];
+                      setTimeout(() => { sock.destroy(); resolve(`${status} ${firstLine.slice(0, 80)}`); }, 200);
+                    }
+                  });
+                  sock.on("error", (err) => { clearTimeout(t); resolve(`err:${err.message}`); });
+                });
+                steps.push(`  WS ${label} → ${wsResult}`);
+              }
             }
-          } catch { /* non-fatal */ }
+          } catch (ipErr: unknown) {
+            const ipMsg = ipErr instanceof Error ? ipErr.message : String(ipErr);
+            steps.push(`  WS test failed: ${ipMsg.slice(0, 150)}`);
+          }
         }
 
         steps.push(`✓ Updated config for ${emp.name}`);
