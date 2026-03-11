@@ -306,7 +306,8 @@ function getDeviceIdentity() {
   if (_deviceIdentityPromise) return _deviceIdentityPromise;
   _deviceIdentityPromise = (async () => {
     const stored = await chrome.storage.local.get("deviceIdentity");
-    if (stored.deviceIdentity) {
+    // v2: deviceId must be hex SHA-256 (64 chars). Regenerate if old format.
+    if (stored.deviceIdentity && stored.deviceIdentity.deviceId?.length === 64) {
       return stored.deviceIdentity;
     }
     // Generate new Ed25519 keypair
@@ -336,17 +337,23 @@ function base64url(buffer) {
 }
 
 async function deriveDeviceId(publicKeyRaw) {
+  // OpenClaw: deriveDeviceIdFromPublicKey = SHA-256(rawPublicKey).hex()
   const hash = await crypto.subtle.digest("SHA-256", publicKeyRaw);
-  return base64url(hash).slice(0, 16);
+  return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-async function signDevicePayload(identity, nonce, role, scopes) {
+async function signDevicePayload(identity, nonce, role, scopes, clientId, clientMode, token) {
   // Reconstruct the private key from stored PKCS8
   const pkcs8 = new Uint8Array(identity.privateKeyPkcs8).buffer;
   const privateKey = await crypto.subtle.importKey("pkcs8", pkcs8, "Ed25519", false, ["sign"]);
-  // Build the payload to sign: JSON of { nonce, role, scopes, signedAt }
+  // OpenClaw buildDeviceAuthPayload: pipe-delimited string
+  // v1: "v1|deviceId|clientId|clientMode|role|scopes|signedAtMs|token"
+  // v2: appends "|nonce" for remote clients
   const signedAt = Date.now();
-  const payload = JSON.stringify({ nonce, role, scopes, signedAt });
+  const scopesStr = (scopes || []).join(",");
+  const v1Payload = `v1|${identity.deviceId}|${clientId}|${clientMode}|${role}|${scopesStr}|${signedAt}|${token || ""}`;
+  const payload = nonce ? `${v1Payload}|${nonce}` : v1Payload;
+  console.log("[device] Signing payload:", payload);
   const payloadBytes = new TextEncoder().encode(payload);
   const signature = await crypto.subtle.sign("Ed25519", privateKey, payloadBytes);
   return { signature: base64url(signature), signedAt };
@@ -359,12 +366,16 @@ async function ensureGatewayHandshakeStarted(conn, challengePayload) {
   const nonce = challengePayload?.nonce || "";
   const role = "node";
   const scopes = [];
+  const clientId = "node-host";
+  const clientMode = "node";
 
   // Build device identity for the handshake
   let device;
   try {
     const identity = await getDeviceIdentity();
-    const { signature, signedAt } = await signDevicePayload(identity, nonce, role, scopes);
+    const { signature, signedAt } = await signDevicePayload(
+      identity, nonce, role, scopes, clientId, clientMode, conn.gatewayToken || ""
+    );
     device = {
       id: identity.deviceId,
       publicKey: identity.publicKeyB64,
