@@ -268,5 +268,21 @@ export function createBackendClient(config: BackendConfig) {
         clearTimeout(timeout);
       }
     },
+
+    async approveNode(employeeId: string) {
+      const res = await fetch(`${config.url}/internal/employees/${employeeId}/approve-node`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-interservice-secret": config.secret,
+        },
+        signal: AbortSignal.timeout(30000),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(body.error || `Approve node failed: ${res.status}`);
+      }
+      return res.json();
+    },
   };
 }

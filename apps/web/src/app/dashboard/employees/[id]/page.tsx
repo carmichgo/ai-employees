@@ -1045,6 +1045,8 @@ export default function EmployeeDetailPage() {
                       wsUrl: relayInfo.wsUrl,
                       relayToken: relayInfo.relayToken,
                       gatewayToken: relayInfo.gatewayToken,
+                      apiBaseUrl: window.location.origin,
+                      authToken: localStorage.getItem("token") || "",
                     },
                     (response: any) => {
                       if (chromeApi.runtime.lastError) {

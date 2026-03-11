@@ -33,8 +33,11 @@ const BADGE = {
  *   relayToken: string,
  *   gatewayToken: string,
  *   employeeName: string,
+ *   apiBaseUrl: string,
+ *   authToken: string,
  *   connectPromise: Promise<void>|null,
  *   connectRequestId: string|null,
+ *   pairingApprovalInFlight: boolean,
  *   reconnectAttempt: number,
  *   reconnectTimer: number|null,
  *   tabs: Map<number, TabState>,
@@ -104,7 +107,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 // ── Dashboard connect: create per-employee relay connection ──────────
-async function handleDashboardConnect({ employeeId, employeeName, wsUrl, relayToken, gatewayToken }) {
+async function handleDashboardConnect({ employeeId, employeeName, wsUrl, relayToken, gatewayToken, apiBaseUrl, authToken }) {
   // Disconnect existing connection for this employee
   if (connections.has(employeeId)) {
     handleDashboardDisconnect(employeeId);
@@ -117,8 +120,11 @@ async function handleDashboardConnect({ employeeId, employeeName, wsUrl, relayTo
     relayToken: relayToken || "",
     gatewayToken: gatewayToken || "",
     employeeName: employeeName || "Employee",
+    apiBaseUrl: apiBaseUrl || "",
+    authToken: authToken || "",
     connectPromise: null,
     connectRequestId: null,
+    pairingApprovalInFlight: false,
     reconnectAttempt: 0,
     reconnectTimer: null,
     tabs: new Map(),
@@ -135,7 +141,7 @@ async function handleDashboardConnect({ employeeId, employeeName, wsUrl, relayTo
     await ensureRelayConnection(employeeId, conn);
     // Persist connection info for reconnection on browser restart
     chrome.storage.local.set({
-      [`conn_${employeeId}`]: { employeeId, employeeName, wsUrl, relayToken, gatewayToken },
+      [`conn_${employeeId}`]: { employeeId, employeeName, wsUrl, relayToken, gatewayToken, apiBaseUrl, authToken },
     });
     updateGlobalBadge();
     return { ok: true, message: `Connected to ${employeeName}` };
@@ -357,6 +363,41 @@ async function signDevicePayload(identity, nonce, role, scopes, clientId, client
   return { signature: base64url(signature), signedAt };
 }
 
+// ── Device Pairing Auto-Approval ─────────────────────────────────────
+// When the gateway rejects our connection with PAIRING_REQUIRED, call the
+// Blitzer AI dashboard API to approve the pending device inside the container,
+// then trigger a reconnect so the next handshake succeeds.
+async function requestDeviceApproval(employeeId, conn) {
+  const url = `${conn.apiBaseUrl}/api/employees/${employeeId}/approve-device`;
+  console.log("[device] Requesting approval via:", url);
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${conn.authToken}`,
+    },
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(`Approval request failed (${res.status}): ${body.error || res.statusText}`);
+  }
+
+  const result = await res.json();
+  console.log("[device] Approval response:", JSON.stringify(result).slice(0, 300));
+
+  // Wait briefly for the gateway to process the approval, then trigger reconnect
+  await new Promise((r) => setTimeout(r, 2000));
+
+  // Force a reconnect attempt
+  if (connections.has(employeeId)) {
+    const currentConn = connections.get(employeeId);
+    currentConn.reconnectAttempt = 0; // Reset backoff so we reconnect quickly
+    scheduleReconnect(employeeId, currentConn);
+  }
+}
+
 // ── OpenClaw Gateway Handshake ───────────────────────────────────────
 async function ensureGatewayHandshakeStarted(conn, challengePayload) {
   if (conn.connectRequestId) return;
@@ -438,8 +479,26 @@ function onRelayMessage(employeeId, conn, text) {
   if (msg && msg.type === "res" && conn.connectRequestId && msg.id === conn.connectRequestId) {
     conn.connectRequestId = null;
     if (!msg.ok) {
+      const errorCode = msg?.error?.code || msg?.error?.details?.code || "";
       const detail = msg?.error?.message || msg?.error || "gateway connect failed";
       console.error("[relay] gateway connect REJECTED:", detail, "full response:", JSON.stringify(msg));
+
+      // Auto-approve device pairing if PAIRING_REQUIRED and we have API access
+      if ((errorCode === "NOT_PAIRED" || errorCode === "PAIRING_REQUIRED") && conn.apiBaseUrl && conn.authToken && !conn.pairingApprovalInFlight) {
+        conn.pairingApprovalInFlight = true;
+        console.log("[relay] PAIRING_REQUIRED detected — requesting auto-approval from dashboard API...");
+        requestDeviceApproval(employeeId, conn).catch((err) => {
+          console.error("[relay] Device approval failed:", err.message);
+        }).finally(() => {
+          conn.pairingApprovalInFlight = false;
+        });
+        // Close the WS — the approval + reconnect flow will handle retry
+        if (conn.ws && conn.ws.readyState === WebSocket.OPEN) {
+          conn.ws.close(1008, "pairing required — requesting approval");
+        }
+        return;
+      }
+
       if (conn.ws && conn.ws.readyState === WebSocket.OPEN) {
         conn.ws.close(1008, "gateway connect failed");
       }

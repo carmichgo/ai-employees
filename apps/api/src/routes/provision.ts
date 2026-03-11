@@ -547,6 +547,49 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     }
   });
 
+  // POST /internal/employees/:id/approve-node — auto-approve a pending OpenClaw node pairing request
+  // Called by the Vercel frontend when the browser extension receives PAIRING_REQUIRED from the gateway.
+  // Runs `openclaw doctor --fix` inside the container to approve all pending device pairing requests.
+  fastify.post<{ Params: { id: string } }>("/internal/employees/:id/approve-node", async (request, reply) => {
+    const { id } = request.params;
+    const employee = await db.query.employees.findFirst({ where: eq(employees.id, id) });
+    if (!employee) return reply.status(404).send({ error: "Employee not found" });
+    if (!employee.containerName) return reply.status(400).send({ error: "No container" });
+
+    try {
+      // First try `openclaw doctor --fix` which auto-approves pending devices
+      const output = execSync(
+        `docker exec ${employee.containerName} node openclaw.mjs doctor --fix 2>&1 || true`,
+        { timeout: 30000 },
+      ).toString().trim();
+
+      // Also try direct CLI approval of pending nodes
+      let pendingOutput = "";
+      try {
+        pendingOutput = execSync(
+          `docker exec ${employee.containerName} node openclaw.mjs nodes pending 2>&1 || true`,
+          { timeout: 10000 },
+        ).toString().trim();
+      } catch {}
+
+      // Approve all pending nodes
+      let approveOutput = "";
+      try {
+        approveOutput = execSync(
+          `docker exec ${employee.containerName} node openclaw.mjs nodes approve --all 2>&1 || true`,
+          { timeout: 10000 },
+        ).toString().trim();
+      } catch {}
+
+      fastify.log.info(`[approve-node] Employee ${employee.name}: doctor=${output.slice(0, 200)}, pending=${pendingOutput.slice(0, 200)}, approve=${approveOutput.slice(0, 200)}`);
+      return { success: true, doctor: output.slice(0, 500), pending: pendingOutput.slice(0, 500), approve: approveOutput.slice(0, 500) };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      fastify.log.error(`[approve-node] Failed for ${employee.name}: ${message}`);
+      return reply.status(500).send({ error: `Approve node failed: ${message.slice(0, 300)}` });
+    }
+  });
+
   // POST /internal/hot-update — pull latest code, rebuild, restart services + regenerate employee configs
   fastify.post("/internal/hot-update", async (request, reply) => {
     const body = request.body as { branch?: string } | undefined;
