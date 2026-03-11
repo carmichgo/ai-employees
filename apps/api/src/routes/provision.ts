@@ -860,15 +860,16 @@ export async function provisionRoutes(fastify: FastifyInstance) {
           // Wait for container and update IP
           await new Promise((r) => setTimeout(r, 3000));
 
-          // Debug: check container status and recent logs
+          // Debug: check container status, network, and recent logs
           try {
-            const status = execSync(`docker inspect --format '{{.State.Status}} exit={{.State.ExitCode}}' '${emp.containerName}'`, { timeout: 5000 }).toString().trim();
-            steps.push(`  [debug] ${emp.name} container status: ${status}`);
-            if (status.includes("exited") || status.includes("dead")) {
-              const logs = execSync(`docker logs --tail 30 '${emp.containerName}' 2>&1`, { timeout: 10000 }).toString().trim();
-              steps.push(`  [debug] ${emp.name} last logs: ${logs.slice(-500)}`);
-            }
-          } catch {}
+            const status = execSync(`docker inspect --format '{{.State.Status}} exit={{.State.ExitCode}} pid={{.State.Pid}}' '${emp.containerName}'`, { timeout: 5000 }).toString().trim();
+            steps.push(`  [debug] ${emp.name} container: ${status}`);
+            // Always show last few log lines for debugging
+            const logs = execSync(`docker logs --tail 15 '${emp.containerName}' 2>&1`, { timeout: 10000 }).toString().trim();
+            steps.push(`  [debug] ${emp.name} logs: ${logs.slice(-400)}`);
+          } catch (e: unknown) {
+            steps.push(`  [debug] ${emp.name} inspect/logs error: ${(e instanceof Error ? e.message : String(e)).slice(0, 200)}`);
+          }
 
           // Start TCP tunnel (0.0.0.0:18793 → 127.0.0.1:18792) so the API proxy
           // can reach the relay listener which only binds to localhost.
