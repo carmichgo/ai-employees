@@ -131,10 +131,11 @@ export function generateOpenClawConfig(
 
   const config: OpenClawConfig = {
     gateway: {
-      auth: { token: gatewayToken, allowInsecureAuth: true },
+      auth: { token: gatewayToken },
       controlUi: {
         dangerouslyAllowHostHeaderOriginFallback: true,
         dangerouslyDisableDeviceAuth: true,
+        allowInsecureAuth: true,
         allowedOrigins: ["*"],
       },
       http: {
