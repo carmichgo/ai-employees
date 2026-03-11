@@ -386,7 +386,7 @@ async function ensureGatewayHandshakeStarted(conn, challengePayload) {
       minProtocol: 3,
       maxProtocol: 3,
       client: {
-        id: "blitzer-extension",
+        id: "node-host",
         version: "1.0.0",
         platform: "chrome-extension",
         mode: "node",
@@ -908,6 +908,20 @@ async function handleAttachActiveTab() {
     return { ok: true, message: "Tab already shared" };
   }
 
+  // Debug: log connection states
+  console.log("[attachTab] connections.size:", connections.size);
+  for (const [eid, c] of connections) {
+    console.log("[attachTab] employee:", eid, "ws:", c.ws?.readyState, "WebSocket.OPEN:", WebSocket.OPEN, "employeeName:", c.employeeName);
+  }
+
+  // If no connections in memory, try restoring from storage first
+  if (connections.size === 0) {
+    console.log("[attachTab] No connections in memory, restoring from storage...");
+    await restorePersistedConnections();
+    // Wait a moment for WS to connect
+    await sleep(2000);
+  }
+
   // Attach to first connected employee
   for (const [employeeId, conn] of connections) {
     if (conn.ws?.readyState === WebSocket.OPEN) {
@@ -928,7 +942,15 @@ async function handleAttachActiveTab() {
     }
   }
 
-  return { ok: false, error: "No connected employees" };
+  // More detailed error
+  if (connections.size === 0) {
+    return { ok: false, error: "No connected employees — open Dashboard to connect" };
+  }
+  const states = [];
+  for (const [eid, c] of connections) {
+    states.push(`${c.employeeName}: ws=${c.ws?.readyState ?? "null"}`);
+  }
+  return { ok: false, error: `Employees reconnecting: ${states.join(", ")}` };
 }
 
 // ── Toolbar click: attach/detach active tab for first connected employee ─
