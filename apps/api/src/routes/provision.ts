@@ -671,6 +671,24 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     // 4. Patch package.json main fields for ESM runtime
     run("patch package.json", `sed -i 's|"main": "src/index.ts"|"main": "dist/index.js"|g' packages/*/package.json`, 5_000);
 
+    // 4b. Refresh container IPs from Docker — fixes stale/invalid container_host values
+    const allEmployees = await db.query.employees.findMany({
+      where: inArray(employees.status, ["active", "error"]),
+    });
+    for (const emp of allEmployees) {
+      if (!emp.containerName) continue;
+      try {
+        const freshIp = execSync(
+          `docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ${emp.containerName}`,
+          { timeout: 5000 },
+        ).toString().trim();
+        if (freshIp && freshIp !== emp.containerHost) {
+          await db.update(employees).set({ containerHost: freshIp, updatedAt: new Date() }).where(eq(employees.id, emp.id));
+          steps.push(`✓ Refreshed container IP for ${emp.name}: ${emp.containerHost} → ${freshIp}`);
+        }
+      } catch { /* container may not exist on this droplet */ }
+    }
+
     // 5. Regenerate OpenClaw configs for all employees with containers on this droplet
     // Include "error" status too — employees may be in error state but still have running containers
     const activeEmployees = await db.query.employees.findMany({
