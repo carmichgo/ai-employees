@@ -328,14 +328,18 @@ function onRelayMessage(employeeId, conn, text) {
   try {
     msg = JSON.parse(text);
   } catch {
+    console.warn("[relay] non-JSON message:", text?.slice?.(0, 200));
     return;
   }
+  console.log("[relay] ← message:", msg.type || msg.method || "unknown", msg.event || msg.id || "");
 
   // Gateway connect challenge
   if (msg && msg.type === "event" && msg.event === "connect.challenge") {
+    console.log("[relay] received connect.challenge, sending handshake...", { hasToken: !!conn.gatewayToken, tokenLen: (conn.gatewayToken || "").length });
     try {
       ensureGatewayHandshakeStarted(conn, msg.payload);
-    } catch {
+    } catch (err) {
+      console.error("[relay] handshake send failed:", err);
       conn.connectRequestId = null;
       if (conn.ws && conn.ws.readyState === WebSocket.OPEN) {
         conn.ws.close(1008, "gateway connect failed");
@@ -349,10 +353,12 @@ function onRelayMessage(employeeId, conn, text) {
     conn.connectRequestId = null;
     if (!msg.ok) {
       const detail = msg?.error?.message || msg?.error || "gateway connect failed";
-      console.warn("[relay] gateway connect rejected:", detail);
+      console.error("[relay] gateway connect REJECTED:", detail, "full response:", JSON.stringify(msg));
       if (conn.ws && conn.ws.readyState === WebSocket.OPEN) {
         conn.ws.close(1008, "gateway connect failed");
       }
+    } else {
+      console.log("[relay] gateway connect ACCEPTED — handshake complete");
     }
     return;
   }
