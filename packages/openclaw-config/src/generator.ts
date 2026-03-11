@@ -160,7 +160,7 @@ export function generateOpenClawConfig(
         },
         chrome: {
           driver: "extension",
-          cdpUrl: "http://0.0.0.0:18792",
+          cdpUrl: "http://127.0.0.1:18792",
           color: "#0066CC",
         },
       },

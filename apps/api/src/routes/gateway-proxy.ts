@@ -18,13 +18,10 @@ import { eq } from "drizzle-orm";
 import { db, employees } from "@ai-employees/db";
 
 const GATEWAY_PORT = 18789;
-// Extension relay listener — the OpenClaw "extension" browser driver starts a
-// WebSocket relay server on port 18792 inside the container.  The Chrome
-// extension must connect here (not to the gateway at 18789) so the relay
-// listener sees the CDP connection and sets cdpReady = true.
-// The cdpUrl in openclaw.json must be 0.0.0.0:18792 (not 127.0.0.1) so
-// the relay binds to all interfaces and is reachable over the Docker network.
-const RELAY_PORT = 18792;
+// Port 18792 (relay listener) only binds to 127.0.0.1 inside the container,
+// so the extension must connect through the gateway at 18789 instead.
+// The gateway bridges operator CDP to the agent via the operator protocol.
+const RELAY_PORT = GATEWAY_PORT;
 
 async function getContainerHost(employeeId: string): Promise<string | null> {
   const emp = await db.query.employees.findFirst({
