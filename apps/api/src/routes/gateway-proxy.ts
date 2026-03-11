@@ -18,10 +18,11 @@ import { eq } from "drizzle-orm";
 import { db, employees } from "@ai-employees/db";
 
 const GATEWAY_PORT = 18789;
-// Extension relay also goes to the gateway — the relay listener (port 18792)
-// is internal-only inside the container. The gateway at 18789 handles both
-// regular operator and extension relay connections.
-const RELAY_PORT = GATEWAY_PORT;
+// Extension relay listener — the OpenClaw "extension" browser driver starts a
+// WebSocket relay server on port 18792 inside the container.  The Chrome
+// extension must connect here (not to the gateway at 18789) so the relay
+// listener sees the CDP connection and sets cdpReady = true.
+const RELAY_PORT = 18792;
 
 async function getContainerHost(employeeId: string): Promise<string | null> {
   const emp = await db.query.employees.findFirst({
