@@ -675,16 +675,24 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     const allEmployees = await db.query.employees.findMany({
       where: inArray(employees.status, ["active", "error"]),
     });
+    const ipRegex = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
     for (const emp of allEmployees) {
-      if (!emp.containerName) continue;
+      if (!emp.containerName || !/^[a-zA-Z0-9_.-]+$/.test(emp.containerName)) continue;
       try {
         const freshIp = execSync(
-          `docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ${emp.containerName}`,
+          `docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' '${emp.containerName}'`,
           { timeout: 5000 },
         ).toString().trim();
-        if (freshIp && freshIp !== emp.containerHost) {
+        if (freshIp && ipRegex.test(freshIp) && freshIp !== emp.containerHost) {
           await db.update(employees).set({ containerHost: freshIp, updatedAt: new Date() }).where(eq(employees.id, emp.id));
           steps.push(`✓ Refreshed container IP for ${emp.name}: ${emp.containerHost} → ${freshIp}`);
+        }
+        // Also fix current invalid container_host if it doesn't look like an IP
+        if (emp.containerHost && !ipRegex.test(emp.containerHost) && freshIp && ipRegex.test(freshIp)) {
+          // Already handled above
+        } else if (emp.containerHost && !ipRegex.test(emp.containerHost)) {
+          // Container host is invalid and we couldn't get a fresh IP — clear it
+          steps.push(`⚠ Invalid container_host for ${emp.name}: "${emp.containerHost}" (docker inspect returned: "${freshIp}")`);
         }
       } catch { /* container may not exist on this droplet */ }
     }
@@ -886,10 +894,11 @@ server.listen(18793, '0.0.0.0', () => console.log('relay tunnel listening on 187
           try {
             const { createConnection } = await import("net");
             const newIpRaw = execSync(
-              `docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ${emp.containerName}`,
+              `docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' '${emp.containerName}'`,
               { timeout: 5000 },
             ).toString().trim();
-            if (newIpRaw) {
+            const ipRe = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
+            if (newIpRaw && ipRe.test(newIpRaw)) {
               await db.update(employees).set({ containerHost: newIpRaw, updatedAt: new Date() }).where(eq(employees.id, emp.id));
 
               // Probe different HTTP paths to discover what the relay serves
