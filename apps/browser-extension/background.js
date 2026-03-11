@@ -296,9 +296,87 @@ function sendToRelay(conn, payload) {
   ws.send(JSON.stringify(payload));
 }
 
+// ── Ed25519 Device Identity ──────────────────────────────────────────
+// Generate or load a persistent Ed25519 keypair for device pairing.
+// The private key never leaves the extension; only the public key + signature are sent.
+
+let _deviceIdentityPromise = null;
+
+function getDeviceIdentity() {
+  if (_deviceIdentityPromise) return _deviceIdentityPromise;
+  _deviceIdentityPromise = (async () => {
+    const stored = await chrome.storage.local.get("deviceIdentity");
+    if (stored.deviceIdentity) {
+      return stored.deviceIdentity;
+    }
+    // Generate new Ed25519 keypair
+    const keyPair = await crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"]);
+    const publicKeyRaw = await crypto.subtle.exportKey("raw", keyPair.publicKey);
+    const privateKeyPkcs8 = await crypto.subtle.exportKey("pkcs8", keyPair.privateKey);
+    const publicKeyB64 = base64url(publicKeyRaw);
+    const deviceId = await deriveDeviceId(publicKeyRaw);
+    const identity = {
+      deviceId,
+      publicKeyB64,
+      privateKeyPkcs8: Array.from(new Uint8Array(privateKeyPkcs8)),
+      publicKeyRaw: Array.from(new Uint8Array(publicKeyRaw)),
+    };
+    await chrome.storage.local.set({ deviceIdentity: identity });
+    console.log("[device] Generated new Ed25519 device identity:", deviceId);
+    return identity;
+  })();
+  return _deviceIdentityPromise;
+}
+
+function base64url(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+async function deriveDeviceId(publicKeyRaw) {
+  const hash = await crypto.subtle.digest("SHA-256", publicKeyRaw);
+  return base64url(hash).slice(0, 16);
+}
+
+async function signDevicePayload(identity, nonce, role, scopes) {
+  // Reconstruct the private key from stored PKCS8
+  const pkcs8 = new Uint8Array(identity.privateKeyPkcs8).buffer;
+  const privateKey = await crypto.subtle.importKey("pkcs8", pkcs8, "Ed25519", false, ["sign"]);
+  // Build the payload to sign: JSON of { nonce, role, scopes, signedAt }
+  const signedAt = Date.now();
+  const payload = JSON.stringify({ nonce, role, scopes, signedAt });
+  const payloadBytes = new TextEncoder().encode(payload);
+  const signature = await crypto.subtle.sign("Ed25519", privateKey, payloadBytes);
+  return { signature: base64url(signature), signedAt };
+}
+
 // ── OpenClaw Gateway Handshake ───────────────────────────────────────
-function ensureGatewayHandshakeStarted(conn, payload) {
+async function ensureGatewayHandshakeStarted(conn, challengePayload) {
   if (conn.connectRequestId) return;
+
+  const nonce = challengePayload?.nonce || "";
+  const role = "node";
+  const scopes = [];
+
+  // Build device identity for the handshake
+  let device;
+  try {
+    const identity = await getDeviceIdentity();
+    const { signature, signedAt } = await signDevicePayload(identity, nonce, role, scopes);
+    device = {
+      id: identity.deviceId,
+      publicKey: identity.publicKeyB64,
+      signature,
+      signedAt,
+      nonce,
+    };
+    console.log("[device] Signed handshake with device:", identity.deviceId);
+  } catch (err) {
+    console.warn("[device] Ed25519 not available, connecting without device identity:", err.message);
+  }
+
   conn.connectRequestId = `ext-connect-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
   sendToRelay(conn, {
     type: "req",
@@ -311,13 +389,14 @@ function ensureGatewayHandshakeStarted(conn, payload) {
         id: "blitzer-extension",
         version: "1.0.0",
         platform: "chrome-extension",
-        mode: "webchat",
+        mode: "node",
       },
-      role: "operator",
-      scopes: ["operator.read", "operator.write"],
+      role,
+      scopes,
       caps: ["canvas"],
       commands: ["canvas.navigate"],
       auth: conn.gatewayToken ? { token: conn.gatewayToken } : undefined,
+      ...(device ? { device } : {}),
     },
   });
 }
@@ -335,16 +414,14 @@ function onRelayMessage(employeeId, conn, text) {
 
   // Gateway connect challenge
   if (msg && msg.type === "event" && msg.event === "connect.challenge") {
-    console.log("[relay] received connect.challenge, sending handshake...", { hasToken: !!conn.gatewayToken, tokenLen: (conn.gatewayToken || "").length });
-    try {
-      ensureGatewayHandshakeStarted(conn, msg.payload);
-    } catch (err) {
+    console.log("[relay] received connect.challenge, sending handshake...", { hasToken: !!conn.gatewayToken, tokenLen: (conn.gatewayToken || "").length, nonce: msg.payload?.nonce });
+    ensureGatewayHandshakeStarted(conn, msg.payload).catch((err) => {
       console.error("[relay] handshake send failed:", err);
       conn.connectRequestId = null;
       if (conn.ws && conn.ws.readyState === WebSocket.OPEN) {
         conn.ws.close(1008, "gateway connect failed");
       }
-    }
+    });
     return;
   }
 
