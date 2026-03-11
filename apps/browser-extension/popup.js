@@ -7,6 +7,16 @@ function render(status) {
   const footer = document.getElementById("footer");
   const statusDot = document.getElementById("statusDot");
   const statusText = document.getElementById("statusText");
+  const shareBar = document.getElementById("shareBar");
+  const shareStatus = document.getElementById("shareStatus");
+
+  // Show share button when at least one employee is connected
+  const hasConnected = status && status.active && status.active.some((c) => c.connected);
+  shareBar.style.display = hasConnected ? "block" : "none";
+  shareStatus.textContent = "";
+  const shareBtn = document.getElementById("shareTab");
+  shareBtn.innerHTML = '<span class="icon">+</span> Share this tab';
+  shareBtn.disabled = false;
 
   if (!status || status.count === 0) {
     statusDot.className = "dot gray";
@@ -76,6 +86,28 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("disconnectAll").addEventListener("click", () => {
     chrome.runtime.sendMessage({ action: "disconnectAll" }, () => {
       refresh();
+    });
+  });
+
+  document.getElementById("shareTab").addEventListener("click", async () => {
+    const btn = document.getElementById("shareTab");
+    const status = document.getElementById("shareStatus");
+    btn.disabled = true;
+    btn.textContent = "Attaching...";
+    status.textContent = "";
+
+    chrome.runtime.sendMessage({ action: "attachActiveTab" }, (res) => {
+      if (res && res.ok) {
+        status.textContent = "Tab shared successfully";
+        status.style.color = "#22c55e";
+        btn.innerHTML = '<span class="icon">✓</span> Tab shared';
+        setTimeout(() => refresh(), 1000);
+      } else {
+        status.textContent = res?.error || "Failed to attach tab";
+        status.style.color = "#ef4444";
+        btn.innerHTML = '<span class="icon">+</span> Share this tab';
+        btn.disabled = false;
+      }
     });
   });
 });

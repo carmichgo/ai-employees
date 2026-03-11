@@ -97,6 +97,35 @@
       color: #3b82f6;
       text-decoration: none;
     }
+
+    .share-bar {
+      padding: 10px 16px;
+      border-bottom: 1px solid #eee;
+    }
+    .btn-share {
+      width: 100%;
+      padding: 8px 12px;
+      background: linear-gradient(135deg, #1a1a2e, #16213e);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    .btn-share:hover { opacity: 0.9; }
+    .btn-share:disabled { opacity: 0.5; cursor: default; }
+    .btn-share .icon { font-size: 15px; }
+    .share-status {
+      font-size: 11px;
+      color: #666;
+      text-align: center;
+      margin-top: 6px;
+    }
   </style>
 </head>
 <body>
@@ -109,6 +138,13 @@
 
   <div class="status-bar" id="statusBar">
     <span><span class="dot gray" id="statusDot"></span><span id="statusText">No connections</span></span>
+  </div>
+
+  <div id="shareBar" class="share-bar" style="display: none;">
+    <button class="btn-share" id="shareTab">
+      <span class="icon">+</span> Share this tab
+    </button>
+    <div class="share-status" id="shareStatus"></div>
   </div>
 
   <div id="content"></div>

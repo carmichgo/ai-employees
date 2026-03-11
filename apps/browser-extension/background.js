@@ -97,6 +97,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     for (const id of connections.keys()) handleDashboardDisconnect(id);
     sendResponse({ ok: true });
   }
+  if (message.action === "attachActiveTab") {
+    handleAttachActiveTab().then(sendResponse);
+    return true; // async response
+  }
 });
 
 // ── Dashboard connect: create per-employee relay connection ──────────
@@ -808,6 +812,41 @@ chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
   }
   setBadge(addedTabId, "on");
 });
+
+// ── Attach active tab (called from popup or toolbar click) ───────────
+async function handleAttachActiveTab() {
+  const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const tabId = active?.id;
+  if (!tabId) return { ok: false, error: "No active tab" };
+
+  // Check if already attached
+  const found = findConnForTab(tabId);
+  if (found) {
+    return { ok: true, message: "Tab already shared" };
+  }
+
+  // Attach to first connected employee
+  for (const [employeeId, conn] of connections) {
+    if (conn.ws?.readyState === WebSocket.OPEN) {
+      if (conn.tabOperationLocks.has(tabId)) {
+        return { ok: false, error: "Tab operation in progress" };
+      }
+      conn.tabOperationLocks.add(tabId);
+      try {
+        setBadge(tabId, "connecting");
+        await attachTab(conn, tabId);
+        return { ok: true, message: `Tab shared with ${conn.employeeName}` };
+      } catch (err) {
+        setBadge(tabId, "error");
+        return { ok: false, error: err.message };
+      } finally {
+        conn.tabOperationLocks.delete(tabId);
+      }
+    }
+  }
+
+  return { ok: false, error: "No connected employees" };
+}
 
 // ── Toolbar click: attach/detach active tab for first connected employee ─
 chrome.action.onClicked.addListener(async () => {
