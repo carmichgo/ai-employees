@@ -561,6 +561,21 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Admin action: fix-container-ips — reset invalid container_host values to default bridge IP
+    if (action === "fix-container-ips") {
+      const fixed = await sql`
+        UPDATE employees
+        SET container_host = '172.18.0.2', updated_at = NOW()
+        WHERE container_host IS NOT NULL
+          AND container_host !~ '^[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}$'
+        RETURNING id, name, container_host
+      `;
+      results.push(`fix-container-ips: fixed ${fixed.length} employees with invalid container_host`);
+      for (const r of fixed) {
+        results.push(`  ${r.name}: reset to 172.18.0.2`);
+      }
+    }
+
     // Admin action: fix-droplet-state — restore droplet status when cron incorrectly marks it destroyed
     if (action === "fix-droplet-state") {
       const empId = request.nextUrl.searchParams.get("employeeId");
