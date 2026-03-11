@@ -752,6 +752,15 @@ export async function provisionRoutes(fastify: FastifyInstance) {
           execSync(`docker restart ${emp.containerName}`, { timeout: 30_000 });
           // Wait for container and update IP
           await new Promise((r) => setTimeout(r, 3000));
+
+          // Start TCP tunnel (0.0.0.0:18793 → 127.0.0.1:18792) so the API proxy
+          // can reach the relay listener which only binds to localhost.
+          try {
+            execSync(
+              `docker exec -d ${emp.containerName} node -e "require('net').createServer(c=>{const s=require('net').connect(18792,'127.0.0.1',()=>{c.pipe(s);s.pipe(c)});s.on('error',()=>c.destroy());c.on('error',()=>s.destroy())}).listen(18793,'0.0.0.0')"`,
+              { timeout: 10_000 },
+            );
+          } catch { /* non-fatal — tunnel may already be running from container entrypoint */ }
           try {
             const newIp = execSync(
               `docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ${emp.containerName}`,

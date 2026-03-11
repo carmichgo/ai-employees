@@ -18,10 +18,10 @@ import { eq } from "drizzle-orm";
 import { db, employees } from "@ai-employees/db";
 
 const GATEWAY_PORT = 18789;
-// Port 18792 (relay listener) only binds to 127.0.0.1 inside the container,
-// so the extension must connect through the gateway at 18789 instead.
-// The gateway bridges operator CDP to the agent via the operator protocol.
-const RELAY_PORT = GATEWAY_PORT;
+// The relay listener (port 18792) only binds to 127.0.0.1 inside the container.
+// A TCP tunnel inside the container forwards 0.0.0.0:18793 → 127.0.0.1:18792,
+// making the relay accessible over the Docker network.
+const RELAY_PORT = 18793;
 
 async function getContainerHost(employeeId: string): Promise<string | null> {
   const emp = await db.query.employees.findFirst({
