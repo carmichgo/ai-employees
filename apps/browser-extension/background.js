@@ -11,7 +11,6 @@
 
 import {
   reconnectDelayMs,
-  deriveRelayToken,
   isRetryableReconnectError,
   isMissingTabError,
   isLastRemainingTab,
@@ -190,12 +189,11 @@ async function ensureRelayConnection(employeeId, conn) {
   if (conn.connectPromise) return await conn.connectPromise;
 
   conn.connectPromise = (async () => {
-    // Build WS URL with the HMAC-derived relay token as query param.
-    // The relay listener (port 18792) expects a token derived via
-    // HMAC-SHA256(gatewayToken, "openclaw-extension-relay-v1:<port>").
+    // Build WS URL with the raw gateway token as query param.
+    // The extension connects directly to the OpenClaw gateway (port 18789)
+    // via the API server's /relay proxy. The gateway validates the raw token.
     let url = conn.wsUrl;
-    const rawToken = conn.gatewayToken || conn.relayToken;
-    const authToken = rawToken ? await deriveRelayToken(rawToken, 18792) : "";
+    const authToken = conn.gatewayToken || conn.relayToken || "";
     if (authToken && !url.includes("token=")) {
       const sep = url.includes("?") ? "&" : "?";
       url += `${sep}token=${encodeURIComponent(authToken)}`;
