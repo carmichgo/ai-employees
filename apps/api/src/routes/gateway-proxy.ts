@@ -22,6 +22,8 @@ const GATEWAY_PORT = 18789;
 // WebSocket relay server on port 18792 inside the container.  The Chrome
 // extension must connect here (not to the gateway at 18789) so the relay
 // listener sees the CDP connection and sets cdpReady = true.
+// The cdpUrl in openclaw.json must be 0.0.0.0:18792 (not 127.0.0.1) so
+// the relay binds to all interfaces and is reachable over the Docker network.
 const RELAY_PORT = 18792;
 
 async function getContainerHost(employeeId: string): Promise<string | null> {
