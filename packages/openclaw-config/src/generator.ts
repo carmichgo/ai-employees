@@ -134,6 +134,7 @@ export function generateOpenClawConfig(
       auth: { token: gatewayToken, allowInsecureAuth: true },
       controlUi: {
         dangerouslyAllowHostHeaderOriginFallback: true,
+        dangerouslyDisableDeviceAuth: true,
         allowedOrigins: ["*"],
       },
       http: {
