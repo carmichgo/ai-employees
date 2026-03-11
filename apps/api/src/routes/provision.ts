@@ -755,12 +755,35 @@ export async function provisionRoutes(fastify: FastifyInstance) {
 
           // Start TCP tunnel (0.0.0.0:18793 → 127.0.0.1:18792) so the API proxy
           // can reach the relay listener which only binds to localhost.
+          // Write the tunnel script to the bind-mounted config dir so it persists.
+          const tunnelScript = `#!/usr/bin/env node
+const net = require('net');
+const server = net.createServer(client => {
+  const upstream = net.connect(18792, '127.0.0.1', () => {
+    client.pipe(upstream);
+    upstream.pipe(client);
+  });
+  upstream.on('error', () => client.destroy());
+  client.on('error', () => upstream.destroy());
+});
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') process.exit(0); // already running
+  console.error('tunnel error:', err.message);
+});
+server.listen(18793, '0.0.0.0', () => console.log('relay tunnel listening on 18793'));
+`;
+          const configDir = `/opt/ai-employees/openclaw-configs/${emp.id}`;
+          writeFileSync(`${configDir}/relay-tunnel.mjs`, tunnelScript, { mode: 0o755 });
           try {
             execSync(
-              `docker exec -d ${emp.containerName} node -e "require('net').createServer(c=>{const s=require('net').connect(18792,'127.0.0.1',()=>{c.pipe(s);s.pipe(c)});s.on('error',()=>c.destroy());c.on('error',()=>s.destroy())}).listen(18793,'0.0.0.0')"`,
+              `docker exec -d ${emp.containerName} node /home/node/.openclaw/relay-tunnel.mjs`,
               { timeout: 10_000 },
             );
-          } catch { /* non-fatal — tunnel may already be running from container entrypoint */ }
+            steps.push(`✓ Relay tunnel started for ${emp.name}`);
+          } catch (tunErr: unknown) {
+            const tunMsg = tunErr instanceof Error ? tunErr.message : String(tunErr);
+            errors.push(`✗ Relay tunnel for ${emp.name}: ${tunMsg.slice(0, 200)}`);
+          }
           try {
             const newIp = execSync(
               `docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ${emp.containerName}`,

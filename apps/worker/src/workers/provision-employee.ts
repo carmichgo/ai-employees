@@ -249,8 +249,9 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
       name: employee.containerName!,
       // Start a TCP tunnel (0.0.0.0:18793 → 127.0.0.1:18792) so the API server
       // proxy can reach the relay listener (which only binds to localhost).
+      // The relay-tunnel.mjs script is written to the config dir during provisioning.
       // Then start the OpenClaw gateway as the main process.
-      Cmd: ["bash", "-c", `node -e "require('net').createServer(c=>{const s=require('net').connect(18792,'127.0.0.1',()=>{c.pipe(s);s.pipe(c)});s.on('error',()=>c.destroy());c.on('error',()=>s.destroy())}).listen(18793,'0.0.0.0')" & exec node openclaw.mjs gateway --bind lan --allow-unconfigured`],
+      Cmd: ["bash", "-c", "node /home/node/.openclaw/relay-tunnel.mjs & exec node openclaw.mjs gateway --bind lan --allow-unconfigured"],
       Env: [
         `HOME=/home/node`,
         `NODE_OPTIONS=--max-old-space-size=${getNodeHeapForTier(tier)}`,
