@@ -671,9 +671,10 @@ export async function provisionRoutes(fastify: FastifyInstance) {
     // 4. Patch package.json main fields for ESM runtime
     run("patch package.json", `sed -i 's|"main": "src/index.ts"|"main": "dist/index.js"|g' packages/*/package.json`, 5_000);
 
-    // 5. Regenerate OpenClaw configs for all active employees
+    // 5. Regenerate OpenClaw configs for all employees with containers on this droplet
+    // Include "error" status too — employees may be in error state but still have running containers
     const activeEmployees = await db.query.employees.findMany({
-      where: eq(employees.status, "active"),
+      where: inArray(employees.status, ["active", "error"]),
     });
 
     for (const emp of activeEmployees) {
