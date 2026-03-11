@@ -44,6 +44,8 @@ export async function POST(
     );
   }
 
+  const body = await request.json().catch(() => ({}));
+
   try {
     const backend = createBackendClient(backendConfig);
     const result = await backend.approveNode(id, body.requestId);
