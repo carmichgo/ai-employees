@@ -61,7 +61,7 @@ export async function triggerRoutes(fastify: FastifyInstance) {
             Authorization: `Bearer ${employee.gatewayToken}`,
           },
           body: JSON.stringify({
-            model: (employee.modelConfig as { primary: string }).primary,
+            model: "default",
             messages: [
               {
                 role: "user",

@@ -156,7 +156,7 @@ export async function employeeGatewayRoutes(fastify: FastifyInstance) {
           Authorization: `Bearer ${target.gatewayToken}`,
         },
         body: JSON.stringify({
-          model: (target.modelConfig as { primary: string }).primary,
+          model: "default",
           messages: [{ role: "user", content: framedMessage }],
         }),
       });

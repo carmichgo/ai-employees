@@ -1177,7 +1177,10 @@ server.listen(18793, '0.0.0.0', () => console.log('relay tunnel listening on 187
         }
       }
 
-      const chatModel = (employee.modelConfig as { primary?: string })?.primary || "anthropic/claude-sonnet-4-5-20250929";
+      // Use "default" to let OpenClaw's dual-agent routing handle model selection.
+      // For expert tier, the default agent is Sonnet (cost-efficient) and it escalates
+      // to the Opus expert agent only when needed — instead of forcing Opus on every request.
+      const chatModel = "default";
       const sendToContainer = async (host: string) => {
         const containerUrl = `http://${host}:${containerPort}/v1/chat/completions`;
         const model = chatModel;
