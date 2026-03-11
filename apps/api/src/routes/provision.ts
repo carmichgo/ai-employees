@@ -856,9 +856,19 @@ export async function provisionRoutes(fastify: FastifyInstance) {
 
         // Restart the OpenClaw container
         if (emp.containerName) {
-          execSync(`docker restart ${emp.containerName}`, { timeout: 30_000 });
+          execSync(`docker restart '${emp.containerName}'`, { timeout: 30_000 });
           // Wait for container and update IP
           await new Promise((r) => setTimeout(r, 3000));
+
+          // Debug: check container status and recent logs
+          try {
+            const status = execSync(`docker inspect --format '{{.State.Status}} exit={{.State.ExitCode}}' '${emp.containerName}'`, { timeout: 5000 }).toString().trim();
+            steps.push(`  [debug] ${emp.name} container status: ${status}`);
+            if (status.includes("exited") || status.includes("dead")) {
+              const logs = execSync(`docker logs --tail 30 '${emp.containerName}' 2>&1`, { timeout: 10000 }).toString().trim();
+              steps.push(`  [debug] ${emp.name} last logs: ${logs.slice(-500)}`);
+            }
+          } catch {}
 
           // Start TCP tunnel (0.0.0.0:18793 → 127.0.0.1:18792) so the API proxy
           // can reach the relay listener which only binds to localhost.
