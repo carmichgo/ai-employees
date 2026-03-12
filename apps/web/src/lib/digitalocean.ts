@@ -532,8 +532,8 @@ PYEOF
 mkdir -p /opt/ai-employees
 
 python3 /opt/health-server.py &
-HEALTH_PID=\\$!
-echo "Placeholder health server started on :3001 (PID \\$HEALTH_PID)"
+HEALTH_PID=\$!
+echo "Placeholder health server started on :3001 (PID \$HEALTH_PID)"
 echo "PHASE1_READY" > /opt/ai-employees/status
 
 # ============================================================
@@ -575,18 +575,18 @@ ENVEOF
 
 # Download repo
 TARBALL_URL="https://github.com/carmichgo/ai-employees/archive/refs/heads/${params.repoBranch}.tar.gz"
-echo "Downloading from: \\$TARBALL_URL"
+echo "Downloading from: \$TARBALL_URL"
 
 mkdir -p /opt/ai-employees/app
 DOWNLOAD_OK=false
 
-HTTP_CODE=\\$(curl -sL -w "%{http_code}" "\\$TARBALL_URL" -o /tmp/repo.tar.gz 2>/dev/null)
-if [ "\\$HTTP_CODE" = "200" ] && [ -s /tmp/repo.tar.gz ]; then
+HTTP_CODE=\$(curl -sL -w "%{http_code}" "\$TARBALL_URL" -o /tmp/repo.tar.gz 2>/dev/null)
+if [ "\$HTTP_CODE" = "200" ] && [ -s /tmp/repo.tar.gz ]; then
   tar xzf /tmp/repo.tar.gz --strip-components=1 -C /opt/ai-employees/app && DOWNLOAD_OK=true
   rm -f /tmp/repo.tar.gz
 fi
 
-if [ "\\$DOWNLOAD_OK" = "false" ]; then
+if [ "\$DOWNLOAD_OK" = "false" ]; then
   echo "Tarball failed, trying git clone..."
   rm -f /tmp/repo.tar.gz
   if git clone --depth 1 --branch "${params.repoBranch}" "https://github.com/carmichgo/ai-employees.git" /tmp/repo-clone 2>&1; then
@@ -597,7 +597,7 @@ if [ "\\$DOWNLOAD_OK" = "false" ]; then
   fi
 fi
 
-if [ "\\$DOWNLOAD_OK" = "false" ]; then
+if [ "\$DOWNLOAD_OK" = "false" ]; then
   echo "PHASE2_FAILED_DOWNLOAD" > /opt/ai-employees/status
   exit 0
 fi
@@ -645,7 +645,7 @@ WantedBy=multi-user.target
 SVCEOF
 
 # Kill placeholder health server
-kill \\$HEALTH_PID 2>/dev/null || true
+kill \$HEALTH_PID 2>/dev/null || true
 fuser -k 3001/tcp 2>/dev/null || true
 sleep 2
 
@@ -655,17 +655,17 @@ cd /opt/ai-employees/app
 source /opt/ai-employees/.env
 export DATABASE_URL JWT_SECRET JWT_EXPIRES_IN ENCRYPTION_KEY INTERSERVICE_SECRET API_PORT PLATFORM_URL REDIS_URL NODE_ENV=production
 timeout 10 /usr/bin/node apps/api/dist/index.js > /tmp/api-test.log 2>&1 &
-TEST_PID=\\$!
+TEST_PID=\$!
 sleep 5
 
 if curl -sf http://localhost:3001/health > /dev/null 2>&1; then
   echo "Direct test: API started successfully!"
-  kill \\$TEST_PID 2>/dev/null || true
+  kill \$TEST_PID 2>/dev/null || true
   fuser -k 3001/tcp 2>/dev/null || true
   sleep 1
 else
   echo "Direct test: API failed to start. Output:"
-  kill \\$TEST_PID 2>/dev/null || true
+  kill \$TEST_PID 2>/dev/null || true
   cat /tmp/api-test.log 2>/dev/null || true
   fuser -k 3001/tcp 2>/dev/null || true
   sleep 1
@@ -676,13 +676,13 @@ systemctl enable ai-employees-api
 systemctl start ai-employees-api
 
 # Wait for real API to be healthy (up to 60s)
-for i in \\$(seq 1 12); do
+for i in \$(seq 1 12); do
   if curl -sf http://localhost:3001/health > /dev/null 2>&1; then
     echo "READY" > /opt/ai-employees/status
-    echo "Apps droplet ready at \\$(date)"
+    echo "Apps droplet ready at \$(date)"
     exit 0
   fi
-  echo "Waiting for API... attempt \\$i/12"
+  echo "Waiting for API... attempt \$i/12"
   sleep 5
 done
 
