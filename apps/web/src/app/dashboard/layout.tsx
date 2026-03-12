@@ -86,11 +86,40 @@ export default function DashboardLayout({
   const toastIdRef = useRef(0);
   const knownLastMsgRef = useRef<Record<string, string>>({}); // employeeId → last message id
 
+  // Request browser notification permission on mount
+  useEffect(() => {
+    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+  }, []);
+
+  const sendBrowserNotification = useCallback((name: string, message: string) => {
+    if (
+      typeof window === "undefined" ||
+      !("Notification" in window) ||
+      Notification.permission !== "granted" ||
+      document.hasFocus()
+    ) return;
+    try {
+      const n = new Notification(name, {
+        body: message.slice(0, 200),
+        icon: "/favicon.ico",
+        tag: `inbox-${name}`, // dedup per employee
+      });
+      n.onclick = () => {
+        window.focus();
+        window.location.href = "/dashboard/inbox";
+        n.close();
+      };
+    } catch {}
+  }, []);
+
   const addToast = useCallback((name: string, message: string) => {
     const id = ++toastIdRef.current;
     setToasts((prev) => [...prev.slice(-2), { id, name, message }]); // keep max 3
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 5000);
-  }, []);
+    sendBrowserNotification(name, message);
+  }, [sendBrowserNotification]);
 
   useEffect(() => {
     const token = api.getToken();
