@@ -96,17 +96,22 @@ export async function POST(
     });
 
     if (!res.ok) {
-      const body = await res.json().catch(() => ({ error: "Upload failed" }));
-      return NextResponse.json(body, { status: res.status });
+      const text = await res.text().catch(() => "");
+      let parsed: Record<string, unknown> = {};
+      try { parsed = JSON.parse(text); } catch {}
+      const errorMsg = (parsed.error as string) || `Backend returned ${res.status}: ${text.slice(0, 200)}`;
+      console.error("[upload] backend error:", res.status, text.slice(0, 500));
+      return NextResponse.json({ error: errorMsg }, { status: res.status });
     }
 
     const data = await res.json();
     return NextResponse.json(data, { status: 201 });
   } catch (err: any) {
+    console.error("[upload] fetch error:", err.message || err);
     if (err.name === "TimeoutError" || err.name === "AbortError") {
       return NextResponse.json({ error: "Upload timed out — backend did not respond in time" }, { status: 504 });
     }
-    return NextResponse.json({ error: "Failed to reach employee backend" }, { status: 502 });
+    return NextResponse.json({ error: `Failed to reach employee backend: ${err.message || "unknown error"}` }, { status: 502 });
   }
 }
 
