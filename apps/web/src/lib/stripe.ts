@@ -193,6 +193,44 @@ export async function addEmployeeToSubscription(opts: {
 }
 
 /**
+ * Update an employee's subscription item price when capabilities change.
+ * Replaces the existing subscription item with a new one at the updated price.
+ */
+export async function updateEmployeeSubscriptionPrice(opts: {
+  subscriptionItemId: string;
+  stripeSubscriptionId: string;
+  pricing: EmployeePricingParams;
+}): Promise<string> {
+  const stripe = getStripe();
+  const priceCents = calculateTotalPriceCents(opts.pricing);
+
+  // Create a new ad-hoc price for the updated capabilities
+  const newPrice = await stripe.prices.create({
+    currency: "usd",
+    recurring: { interval: "month" },
+    product_data: {
+      name: `AI Employee: ${opts.pricing.employeeName}`,
+      metadata: {
+        employeeName: opts.pricing.employeeName,
+        tier: opts.pricing.tier,
+      },
+    },
+    unit_amount: priceCents,
+  });
+
+  // Swap the price on the existing subscription item
+  const updatedItem = await stripe.subscriptionItems.update(
+    opts.subscriptionItemId,
+    {
+      price: newPrice.id,
+      proration_behavior: "create_prorations",
+    },
+  );
+
+  return updatedItem.id;
+}
+
+/**
  * Remove an employee's line item from the subscription.
  * Called when an employee is terminated.
  */

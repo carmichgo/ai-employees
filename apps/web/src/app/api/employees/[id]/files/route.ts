@@ -10,6 +10,7 @@ import { employees } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
 import { getEmployeeBackend } from "@/lib/backend";
 
+// Increase body size limit for file uploads (default 4.5MB is too small for 10MB files)
 export const maxDuration = 60;
 
 async function authenticate(request: NextRequest) {
@@ -100,7 +101,7 @@ export async function POST(
       body: JSON.stringify({
         name: file.name,
         content: base64,
-        mimeType: file.type,
+        mimeType: file.type || "application/octet-stream",
         ...(folder ? { folder } : {}),
       }),
       signal: AbortSignal.timeout(30000),

@@ -444,6 +444,25 @@ class ApiClient {
     );
   }
 
+  // Employee capabilities
+  async getCapabilities(employeeId: string) {
+    return this.request<{ capabilities: string[]; tier: string }>(
+      `/api/employees/${employeeId}/capabilities`,
+    );
+  }
+
+  async updateCapabilities(employeeId: string, capabilities: string[]) {
+    return this.request<{
+      capabilities: string[];
+      priceDifference: number;
+      billingUpdated: boolean;
+      message: string;
+    }>(`/api/employees/${employeeId}/capabilities`, {
+      method: "PUT",
+      body: JSON.stringify({ capabilities }),
+    });
+  }
+
   // Browser extension relay info
   async getRelayInfo(employeeId: string) {
     return this.request<{

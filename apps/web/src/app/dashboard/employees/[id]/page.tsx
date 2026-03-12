@@ -11,7 +11,7 @@ import {
   Monitor, Sparkles, RotateCw, Square, RefreshCw,
 } from "lucide-react";
 import Link from "next/link";
-import { CAPABILITY_OPTIONS } from "@ai-employees/shared";
+import { CAPABILITY_OPTIONS, getAddonPrice, type EmployeeTier } from "@ai-employees/shared";
 
 const EMAIL_PROVIDERS: Record<string, { label: string; smtpHost: string; smtpPort: number; imapHost: string; imapPort: number; webmail: string; note?: string }> = {
   gmail: { label: "Google / Gmail", smtpHost: "smtp.gmail.com", smtpPort: 587, imapHost: "imap.gmail.com", imapPort: 993, webmail: "https://mail.google.com", note: "Use an App Password (Google Account > Security > App Passwords)" },
@@ -201,11 +201,6 @@ export default function EmployeeDetailPage() {
   const [apiKeySaving, setApiKeySaving] = useState(false);
   const [apiKeyNotice, setApiKeyNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
-  // Tools/Capabilities state
-  const [capabilities, setCapabilities] = useState<string[]>([]);
-  const [capSaving, setCapSaving] = useState(false);
-  const [capNotice, setCapNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
-
   // Skills state
   const [skillsList, setSkillsList] = useState<Array<{ id: string; skillSlug: string; source: string; enabled: boolean; config: Record<string, unknown>; createdAt: string }>>([]);
   const [showInstallSkill, setShowInstallSkill] = useState(false);
@@ -215,6 +210,11 @@ export default function EmployeeDetailPage() {
   const [skillExtraFiles, setSkillExtraFiles] = useState<Array<{ name: string; content: string }>>([]);
   const [skillSaving, setSkillSaving] = useState(false);
   const [skillNotice, setSkillNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  // Capabilities state
+  const [capabilitiesList, setCapabilitiesList] = useState<string[]>([]);
+  const [capabilitiesSaving, setCapabilitiesSaving] = useState(false);
+  const [capabilitiesNotice, setCapabilitiesNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   // Relay state
   const [relayInfo, setRelayInfo] = useState<{ available: boolean; employeeName?: string; gatewayUrl?: string; gatewayToken?: string; wsUrl?: string; relayToken?: string; command?: string } | null>(null);
@@ -242,18 +242,6 @@ export default function EmployeeDetailPage() {
     api.getEmployee(employeeId).then((res) => {
       setEmployee(res.employee);
       setLoading(false);
-      // Initialize capabilities from toolsConfig
-      const allow = (res.employee.toolsConfig as any)?.allow as string[] | undefined;
-      if (allow?.length) {
-        // Reverse-map toolsAllow entries back to capability IDs
-        const active = CAPABILITY_OPTIONS.filter((cap) =>
-          cap.toolsAllow.length > 0 && cap.toolsAllow.every((t) => allow.includes(t)),
-        ).map((c) => c.id);
-        setCapabilities(active);
-      } else {
-        // No allow list = all capabilities enabled
-        setCapabilities(CAPABILITY_OPTIONS.map((c) => c.id));
-      }
     });
     api.getEmployeeEmail(employeeId).then((res) => {
       if (res.email) {
@@ -271,6 +259,7 @@ export default function EmployeeDetailPage() {
     api.listCredentials(employeeId).then((res) => setCredentialsList(res.credentials || [])).catch(() => {});
     api.listChannels(employeeId).then((res) => setChannelsList(res.channels || [])).catch(() => {});
     api.listSkills(employeeId).then((res) => setSkillsList(res.skills || [])).catch(() => {});
+    api.getCapabilities(employeeId).then((res) => setCapabilitiesList(res.capabilities || [])).catch(() => {});
     api.getRelayInfo(employeeId).then((res) => setRelayInfo(res)).catch(() => {});
   }, [employeeId]);
 
@@ -724,6 +713,37 @@ export default function EmployeeDetailPage() {
       setSkillNotice({ type: "success", message: `Skill "${slug}" uninstalled` });
     } catch (err: any) {
       setSkillNotice({ type: "error", message: err.message });
+    }
+  };
+
+  // ── Capability handlers ──
+  const handleToggleCapability = async (capId: string) => {
+    const newCaps = capabilitiesList.includes(capId)
+      ? capabilitiesList.filter((c) => c !== capId)
+      : [...capabilitiesList, capId];
+
+    // Show price difference and confirm
+    const tier = (employee?.tier || "junior") as EmployeeTier;
+    const price = getAddonPrice("capabilities", capId, tier);
+    const isAdding = !capabilitiesList.includes(capId);
+    const cap = CAPABILITY_OPTIONS.find((c) => c.id === capId);
+
+    if (price !== "free" && isAdding) {
+      if (!confirm(`Adding "${cap?.label || capId}" will add $${price}/mo to your plan. Continue?`)) return;
+    } else if (price !== "free" && !isAdding) {
+      if (!confirm(`Removing "${cap?.label || capId}" will reduce your plan by $${price}/mo. Continue?`)) return;
+    }
+
+    setCapabilitiesSaving(true);
+    setCapabilitiesNotice(null);
+    try {
+      const res = await api.updateCapabilities(employeeId, newCaps);
+      setCapabilitiesList(res.capabilities);
+      setCapabilitiesNotice({ type: "success", message: res.message });
+    } catch (err: any) {
+      setCapabilitiesNotice({ type: "error", message: err.message });
+    } finally {
+      setCapabilitiesSaving(false);
     }
   };
 
@@ -1466,95 +1486,66 @@ export default function EmployeeDetailPage() {
       </div>
 
       {/* ════════════════════════════════════════════════════════════ */}
-      {/* TOOLS / CAPABILITIES SECTION */}
+      {/* CAPABILITIES SECTION */}
       {/* ════════════════════════════════════════════════════════════ */}
       <div className="card" style={{ padding: 20, marginBottom: 16, background: "#ffffff", border: "1px solid var(--border)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <Cpu size={14} style={{ color: "var(--text-tertiary)" }} />
-            <p className="label" style={{ margin: 0 }}>Tools & Capabilities</p>
+            <p className="label" style={{ margin: 0 }}>Capabilities</p>
             <span style={{ fontSize: 11, color: "var(--text-tertiary)", background: "var(--bg-secondary)", padding: "2px 6px", borderRadius: "var(--radius-sm)" }}>
-              {capabilities.length}/{CAPABILITY_OPTIONS.length}
+              {capabilitiesList.length}
             </span>
           </div>
-          <button
-            className="btn-secondary btn-sm"
-            disabled={capSaving}
-            onClick={async () => {
-              setCapSaving(true);
-              setCapNotice(null);
-              try {
-                // Expand capabilities to toolsAllow entries
-                const toolsAllow: string[] = [];
-                for (const capId of capabilities) {
-                  const cap = CAPABILITY_OPTIONS.find((c) => c.id === capId);
-                  if (cap) for (const t of cap.toolsAllow) if (!toolsAllow.includes(t)) toolsAllow.push(t);
-                }
-                await api.updateEmployee(employeeId, { toolsAllow });
-                setCapNotice({ type: "success", message: "Tools updated — configs regenerating on droplet" });
-              } catch (err: any) {
-                setCapNotice({ type: "error", message: err.message });
-              } finally {
-                setCapSaving(false);
-              }
-            }}
-            style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
-          >
-            {capSaving ? <Loader2 size={12} style={{ animation: "spin 0.8s linear infinite" }} /> : <Save size={12} />}
-            Save Changes
-          </button>
         </div>
 
-        {capNotice && (
+        {capabilitiesNotice && (
           <div style={{
-            padding: "8px 12px", marginBottom: 12, borderRadius: "var(--radius-sm)", fontSize: 12,
-            background: capNotice.type === "success" ? "#f0fdf4" : "#fef2f2",
-            color: capNotice.type === "success" ? "#166534" : "#991b1b",
-            border: `1px solid ${capNotice.type === "success" ? "#bbf7d0" : "#fecaca"}`,
+            padding: "8px 12px", borderRadius: "var(--radius-md)", marginBottom: 12, fontSize: 13,
+            background: capabilitiesNotice.type === "success" ? "rgba(34, 197, 94, 0.08)" : "rgba(220, 38, 38, 0.08)",
+            color: capabilitiesNotice.type === "success" ? "var(--green)" : "var(--red)",
+            border: `1px solid ${capabilitiesNotice.type === "success" ? "rgba(34, 197, 94, 0.15)" : "rgba(220, 38, 38, 0.15)"}`,
           }}>
-            {capNotice.message}
+            {capabilitiesNotice.message}
           </div>
         )}
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 8 }}>
           {CAPABILITY_OPTIONS.map((cap) => {
-            const enabled = capabilities.includes(cap.id);
+            const active = capabilitiesList.includes(cap.id);
+            const tier = (employee?.tier || "junior") as EmployeeTier;
+            const price = getAddonPrice("capabilities", cap.id, tier);
             return (
-              <button
+              <div
                 key={cap.id}
-                onClick={() => {
-                  setCapabilities((prev) =>
-                    enabled ? prev.filter((c) => c !== cap.id) : [...prev, cap.id],
-                  );
-                  setCapNotice(null);
-                }}
+                onClick={() => !capabilitiesSaving && handleToggleCapability(cap.id)}
                 style={{
-                  display: "flex", alignItems: "center", gap: 10, padding: "10px 12px",
-                  background: enabled ? "var(--bg-secondary)" : "transparent",
-                  border: `1px solid ${enabled ? "var(--text)" : "var(--border)"}`,
-                  borderRadius: "var(--radius-sm)", cursor: "pointer", textAlign: "left",
-                  opacity: enabled ? 1 : 0.5, transition: "all 0.15s ease",
+                  padding: "10px 12px",
+                  borderRadius: "var(--radius-md)",
+                  border: `1px solid ${active ? "var(--blue)" : "var(--border)"}`,
+                  background: active ? "rgba(59, 130, 246, 0.04)" : "#ffffff",
+                  cursor: capabilitiesSaving ? "wait" : "pointer",
+                  opacity: capabilitiesSaving ? 0.6 : 1,
+                  transition: "all 0.15s",
                 }}
               >
-                <div style={{
-                  width: 16, height: 16, borderRadius: 4, flexShrink: 0,
-                  background: enabled ? "var(--text)" : "transparent",
-                  border: `2px solid ${enabled ? "var(--text)" : "var(--border)"}`,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                }}>
-                  {enabled && <Check size={10} style={{ color: "var(--bg)" }} />}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontSize: 13, fontWeight: 500, color: active ? "var(--blue)" : "var(--text)" }}>
+                    {cap.label}
+                  </span>
+                  {active ? <ToggleRight size={16} style={{ color: "var(--blue)" }} /> : <ToggleLeft size={16} style={{ color: "var(--text-tertiary)" }} />}
                 </div>
-                <div>
-                  <div style={{ fontSize: 12, fontWeight: 500, color: "var(--text)" }}>{cap.label}</div>
-                  <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>{cap.desc}</div>
+                <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 4 }}>
+                  {cap.desc}
                 </div>
-              </button>
+                {price !== "free" && (
+                  <div style={{ fontSize: 11, fontWeight: 500, color: "var(--orange, #f59e0b)", marginTop: 4 }}>
+                    +${price}/mo
+                  </div>
+                )}
+              </div>
             );
           })}
-        </div>
-
-        <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 10 }}>
-          Toggle capabilities on/off and click Save to update. Changes take effect after config regeneration (~10s).
         </div>
       </div>
 

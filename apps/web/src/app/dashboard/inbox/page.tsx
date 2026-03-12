@@ -120,6 +120,44 @@ function InboxContent() {
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Notification permission state
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission | "unsupported">("default");
+
+  // Request notification permission on mount
+  useEffect(() => {
+    if (typeof window === "undefined" || !("Notification" in window)) {
+      setNotifPermission("unsupported");
+      return;
+    }
+    setNotifPermission(Notification.permission);
+    if (Notification.permission === "default") {
+      Notification.requestPermission().then((perm) => setNotifPermission(perm));
+    }
+  }, []);
+
+  // Show browser notification when a message arrives and tab is not focused
+  const showNotification = useCallback((employeeName: string, messagePreview: string) => {
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    if (Notification.permission !== "granted") return;
+    if (document.hasFocus()) return;
+
+    try {
+      const notif = new Notification(`${employeeName}`, {
+        body: messagePreview.slice(0, 200),
+        icon: "/favicon.ico",
+        tag: `ai-employee-${employeeName}`,
+      });
+      notif.onclick = () => {
+        window.focus();
+        notif.close();
+      };
+      // Auto-close after 10 seconds
+      setTimeout(() => notif.close(), 10000);
+    } catch {
+      // Notification API can throw in some contexts (e.g. insecure origins)
+    }
+  }, []);
+
   // Voice state (dictation)
   const [listening, setListening] = useState(false);
   const [autoSpeak, setAutoSpeak] = useState(false);
@@ -587,6 +625,10 @@ function InboxContent() {
             ),
           );
           setPendingReplyId(null);
+
+          // Notify if tab is not focused
+          const emp = employees.find((e) => e.id === selectedId);
+          if (emp) showNotification(emp.name, replyAfterUser.content);
         }
       } catch {
         // Polling failed — keep trying
@@ -749,8 +791,11 @@ function InboxContent() {
       // start polling for the real reply.
       if (res.mode === "pending") {
         setPendingReplyId(msgId);
-      } else if (autoSpeak) {
-        speak(res.reply);
+      } else {
+        // Notify if tab is not focused
+        const emp = employees.find((e) => e.id === sendForId);
+        if (emp) showNotification(emp.name, res.reply);
+        if (autoSpeak) speak(res.reply);
       }
 
       // Update preview
@@ -897,6 +942,27 @@ function InboxContent() {
           <h2 style={{ fontSize: 16, fontWeight: 700, color: "var(--text, #0a0a0a)", margin: 0, marginBottom: 12 }}>
             Inbox
           </h2>
+          {notifPermission === "default" && (
+            <button
+              onClick={() => {
+                Notification.requestPermission().then((perm) => setNotifPermission(perm));
+              }}
+              style={{
+                width: "100%",
+                padding: "6px 10px",
+                marginBottom: 8,
+                fontSize: 11,
+                color: "var(--blue, #3b82f6)",
+                background: "rgba(59, 130, 246, 0.06)",
+                border: "1px solid rgba(59, 130, 246, 0.15)",
+                borderRadius: "var(--radius-md, 8px)",
+                cursor: "pointer",
+                textAlign: "left",
+              }}
+            >
+              Enable notifications to get alerts when employees reply
+            </button>
+          )}
           <div
             style={{
               display: "flex",
