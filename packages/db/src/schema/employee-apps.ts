@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, text, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, uuid, varchar, text, boolean, jsonb, timestamp } from "drizzle-orm/pg-core";
 import { companies } from "./companies.js";
 import { employees } from "./employees.js";
 
@@ -34,6 +34,13 @@ export const employeeApps = pgTable("employee_apps", {
 
   // Version counter for internal deploys
   deployVersion: varchar("deploy_version", { length: 50 }).default("0"),
+
+  // Serverless functions — JSONB map of route patterns to JS code
+  // e.g. { "GET /api/data": "export default async (req) => { return { items: [] } }" }
+  serverFunctions: jsonb("server_functions").$type<Record<string, string>>(),
+
+  // Environment variables for server functions (encrypted at rest in future)
+  envVars: jsonb("env_vars").$type<Record<string, string>>(),
 
   // Instructions on how to use this app
   instructions: text("instructions"),

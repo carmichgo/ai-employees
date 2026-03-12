@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { eq, and, desc } from "drizzle-orm";
 import { db, employeeApps, employees } from "@ai-employees/db";
+import { executeFunction, matchRoute, type FunctionRequest } from "../serverless-runtime.js";
 
 /** Common select columns for app listings (excludes html_content which can be large) */
 const appSelectColumns = {
@@ -97,6 +98,126 @@ export async function appRoutes(fastify: FastifyInstance) {
         .header("X-Frame-Options", "SAMEORIGIN")
         .header("Cache-Control", "public, max-age=300")
         .send(app.htmlContent);
+    },
+  );
+
+  // ─── Serverless Function Execution ───────────────────────────────
+  // ALL /app/:id/api/* — execute a serverless function
+  fastify.all<{ Params: { id: string; "*": string } }>(
+    "/app/:id/api/*",
+    async (request, reply) => {
+      const { id } = request.params;
+      const apiPath = "/api/" + (request.params["*"] || "");
+
+      const [app] = await db
+        .select({
+          id: employeeApps.id,
+          name: employeeApps.name,
+          serverFunctions: employeeApps.serverFunctions,
+          envVars: employeeApps.envVars,
+          isPublic: employeeApps.isPublic,
+          status: employeeApps.status,
+        })
+        .from(employeeApps)
+        .where(eq(employeeApps.id, id))
+        .limit(1);
+
+      if (!app || app.status !== "active") {
+        return reply.status(404).send({ error: "App not found" });
+      }
+
+      const serverFns = (app.serverFunctions || {}) as Record<string, string>;
+      if (Object.keys(serverFns).length === 0) {
+        return reply.status(404).send({ error: "No server functions deployed for this app" });
+      }
+
+      // If not public, require auth
+      if (!app.isPublic) {
+        const token =
+          request.headers.authorization?.replace("Bearer ", "") ||
+          (request.headers.cookie?.match(/token=([^;]+)/)?.[1] ?? null);
+        if (!token) {
+          return reply.status(401).send({ error: "Unauthorized" });
+        }
+        try {
+          fastify.jwt.verify(token);
+        } catch {
+          return reply.status(401).send({ error: "Invalid token" });
+        }
+      }
+
+      // Match the request to a registered function
+      const match = matchRoute(serverFns, request.method, apiPath);
+      if (!match) {
+        return reply.status(404).send({
+          error: `No function matches ${request.method} ${apiPath}`,
+          registeredRoutes: Object.keys(serverFns),
+        });
+      }
+
+      // Build the function request
+      const url = new URL(request.url, "http://localhost");
+      const query: Record<string, string> = {};
+      url.searchParams.forEach((v, k) => { query[k] = v; });
+
+      const fnReq: FunctionRequest = {
+        method: request.method,
+        path: apiPath,
+        query: { ...query, ...match.params },
+        headers: Object.fromEntries(
+          Object.entries(request.headers)
+            .filter(([, v]) => typeof v === "string")
+            .map(([k, v]) => [k, v as string]),
+        ),
+        body: request.body || null,
+      };
+
+      const envVars = (app.envVars || {}) as Record<string, string>;
+
+      try {
+        const result = await executeFunction(match.code, fnReq, envVars);
+
+        const status = result.status || 200;
+        const headers = result.headers || {};
+
+        // Set response headers
+        for (const [key, value] of Object.entries(headers)) {
+          if (key.toLowerCase() !== "x-function-logs" || process.env.NODE_ENV !== "production") {
+            reply.header(key, value);
+          }
+        }
+
+        // Log function execution (only include logs header in non-prod)
+        if (headers["x-function-logs"]) {
+          fastify.log.info(`[serverless] ${app.name} ${request.method} ${apiPath}: ${headers["x-function-logs"].slice(0, 200)}`);
+        }
+
+        return reply
+          .status(status)
+          .header("X-Powered-By", "ai-employees-serverless")
+          .header("Access-Control-Allow-Origin", "*")
+          .header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+          .header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+          .send(result.body);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        fastify.log.error(`[serverless] ${app.name} ${request.method} ${apiPath} error: ${message}`);
+        return reply.status(500).send({ error: "Function execution failed", message });
+      }
+    },
+  );
+
+  // CORS preflight for serverless functions
+  fastify.options<{ Params: { id: string; "*": string } }>(
+    "/app/:id/api/*",
+    async (_request, reply) => {
+      return reply
+        .status(204)
+        .header("Access-Control-Allow-Origin", "*")
+        .header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+        .header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        .header("Access-Control-Max-Age", "86400")
+        .send();
     },
   );
 

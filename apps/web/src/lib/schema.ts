@@ -327,6 +327,8 @@ export const employeeApps = pgTable("employee_apps", {
   htmlContent: text("html_content"),
   deployVersion: varchar("deploy_version", { length: 50 }).default("0"),
   isPublic: boolean("is_public").notNull().default(true),
+  serverFunctions: jsonb("server_functions"),
+  envVars: jsonb("env_vars"),
   instructions: text("instructions"),
   shared: boolean("shared").notNull().default(true),
   status: varchar("status", { length: 20 }).notNull().default("active"),

@@ -186,7 +186,9 @@ export async function POST(request: NextRequest) {
     await sql`ALTER TABLE employee_apps ADD COLUMN IF NOT EXISTS html_content TEXT`;
     await sql`ALTER TABLE employee_apps ADD COLUMN IF NOT EXISTS deploy_version VARCHAR(50) DEFAULT '0'`;
     await sql`ALTER TABLE employee_apps ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT true`;
-    results.push("0013: employee_apps hosting columns (hosting_mode, html_content, deploy_version, is_public) — OK");
+    await sql`ALTER TABLE employee_apps ADD COLUMN IF NOT EXISTS server_functions JSONB`;
+    await sql`ALTER TABLE employee_apps ADD COLUMN IF NOT EXISTS env_vars JSONB`;
+    results.push("0013: employee_apps hosting columns (hosting_mode, html_content, deploy_version, is_public, server_functions, env_vars) — OK");
 
     // Admin actions
     const action = request.nextUrl.searchParams.get("action");

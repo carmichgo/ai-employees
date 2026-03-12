@@ -981,6 +981,8 @@ export async function employeeGatewayRoutes(fastify: FastifyInstance) {
       url?: string;
       hostingMode?: string; // "external" | "internal"
       htmlContent?: string; // if provided with hostingMode=internal, deploys immediately
+      serverFunctions?: Record<string, string>; // e.g. { "GET /api/data": "export default async (req) => ..." }
+      envVars?: Record<string, string>; // env vars accessible in server functions
       instructions?: string;
       shared?: boolean;
       isPublic?: boolean;
@@ -1005,7 +1007,9 @@ export async function employeeGatewayRoutes(fastify: FastifyInstance) {
         url: body.url || null,
         hostingMode,
         htmlContent: hostingMode === "internal" ? (body.htmlContent || null) : null,
-        deployVersion: body.htmlContent ? "1" : "0",
+        serverFunctions: body.serverFunctions || null,
+        envVars: body.envVars || null,
+        deployVersion: (body.htmlContent || body.serverFunctions) ? "1" : "0",
         isPublic: body.isPublic !== false,
         instructions: body.instructions || null,
         shared: body.shared !== false,
@@ -1034,16 +1038,30 @@ export async function employeeGatewayRoutes(fastify: FastifyInstance) {
 
     const { appId } = request.params;
     const body = request.body as {
-      htmlContent: string;
+      htmlContent?: string;
+      serverFunctions?: Record<string, string>;
+      envVars?: Record<string, string>;
     };
 
-    if (!body.htmlContent) {
-      return reply.status(400).send({ error: "htmlContent is required — provide a complete HTML document" });
+    if (!body.htmlContent && !body.serverFunctions) {
+      return reply.status(400).send({ error: "Provide htmlContent and/or serverFunctions to deploy" });
     }
 
     // Max 5MB for HTML content
-    if (body.htmlContent.length > 5 * 1024 * 1024) {
+    if (body.htmlContent && body.htmlContent.length > 5 * 1024 * 1024) {
       return reply.status(400).send({ error: "HTML content too large (max 5MB). Inline your JS/CSS or optimize assets." });
+    }
+
+    // Validate server functions: each value must be a string (JS code)
+    if (body.serverFunctions) {
+      for (const [route, code] of Object.entries(body.serverFunctions)) {
+        if (typeof code !== "string") {
+          return reply.status(400).send({ error: `serverFunctions["${route}"] must be a string of JS code` });
+        }
+        if (code.length > 512 * 1024) {
+          return reply.status(400).send({ error: `serverFunctions["${route}"] is too large (max 512KB per function)` });
+        }
+      }
     }
 
     const [existing] = await db
@@ -1051,6 +1069,8 @@ export async function employeeGatewayRoutes(fastify: FastifyInstance) {
         id: employeeApps.id,
         deployVersion: employeeApps.deployVersion,
         hostingMode: employeeApps.hostingMode,
+        serverFunctions: employeeApps.serverFunctions,
+        envVars: employeeApps.envVars,
       })
       .from(employeeApps)
       .where(and(eq(employeeApps.id, appId), eq(employeeApps.employeeId, employee.id)))
@@ -1063,31 +1083,39 @@ export async function employeeGatewayRoutes(fastify: FastifyInstance) {
     const currentVersion = parseInt(existing.deployVersion || "0", 10);
     const newVersion = String(currentVersion + 1);
 
-    // Auto-set hosting mode to internal if it was external
     const apiBase = process.env.API_PUBLIC_URL || process.env.PLATFORM_URL || "http://localhost:3001";
     const appUrl = `${apiBase}/app/${appId}`;
 
+    const updates: Record<string, unknown> = {
+      hostingMode: "internal",
+      deployVersion: newVersion,
+      url: appUrl,
+      type: "webapp",
+      updatedAt: new Date(),
+    };
+
+    if (body.htmlContent !== undefined) updates.htmlContent = body.htmlContent;
+    if (body.serverFunctions !== undefined) updates.serverFunctions = body.serverFunctions;
+    if (body.envVars !== undefined) updates.envVars = body.envVars;
+
     const [app] = await db
       .update(employeeApps)
-      .set({
-        htmlContent: body.htmlContent,
-        hostingMode: "internal",
-        deployVersion: newVersion,
-        url: appUrl,
-        type: "webapp",
-        updatedAt: new Date(),
-      })
+      .set(updates)
       .where(eq(employeeApps.id, appId))
       .returning();
 
-    fastify.log.info(`[app-deploy] ${employee.name} deployed ${app.name} v${newVersion} (${(body.htmlContent.length / 1024).toFixed(1)}KB)`);
+    const fnCount = body.serverFunctions ? Object.keys(body.serverFunctions).length : 0;
+    const htmlSize = body.htmlContent ? (body.htmlContent.length / 1024).toFixed(1) + "KB" : "unchanged";
+    fastify.log.info(`[app-deploy] ${employee.name} deployed ${app.name} v${newVersion} (html: ${htmlSize}, functions: ${fnCount})`);
 
     return {
       app,
       deployment: {
         version: newVersion,
         url: appUrl,
-        size: body.htmlContent.length,
+        htmlSize: body.htmlContent?.length || 0,
+        functionCount: fnCount,
+        functionRoutes: body.serverFunctions ? Object.keys(body.serverFunctions) : [],
         deployedAt: new Date().toISOString(),
       },
     };
