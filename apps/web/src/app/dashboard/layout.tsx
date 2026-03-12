@@ -19,6 +19,7 @@ import {
   CreditCard,
   FolderOpen,
   Database,
+  Blocks,
   Menu,
   X,
 } from "lucide-react";
@@ -33,6 +34,7 @@ const NAV_SECTIONS = [
       { href: "/dashboard/tasks", label: "Tasks", icon: ListTodo },
       { href: "/dashboard/documents", label: "Documents", icon: FolderOpen },
       { href: "/dashboard/tables", label: "Bases", icon: Database },
+      { href: "/dashboard/apps", label: "Apps", icon: Blocks },
     ],
   },
   {

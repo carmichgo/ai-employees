@@ -8,7 +8,7 @@
 import type { FastifyInstance } from "fastify";
 import { execSync } from "node:child_process";
 import { eq, and, ne, desc, sql } from "drizzle-orm";
-import { db, employees, tasks, taskComments, chatMessages, users, companies, spreadsheetBases, spreadsheetTables, spreadsheetColumns, spreadsheetRows } from "@ai-employees/db";
+import { db, employees, tasks, taskComments, chatMessages, users, companies, spreadsheetBases, spreadsheetTables, spreadsheetColumns, spreadsheetRows, employeeApps } from "@ai-employees/db";
 import { recordTokenUsage, extractUsage } from "../usage.js";
 
 /** Authenticate an employee by their gateway token. Returns the employee or sends an error. */
@@ -917,5 +917,160 @@ export async function employeeGatewayRoutes(fastify: FastifyInstance) {
       delivered: { dashboard: true, slack: slackSent },
       message: "Manager has been notified.",
     };
+  });
+
+  // ─── Apps / Artifacts ───────────────────────────────────────────
+
+  // GET /employee/apps — list apps visible to this employee (own + shared by teammates)
+  fastify.get("/employee/apps", async (request, reply) => {
+    const auth = await authenticateEmployee(request, reply);
+    if ("error" in auth) return auth.error;
+    const { employee } = auth;
+
+    const apps = await db
+      .select({
+        id: employeeApps.id,
+        name: employeeApps.name,
+        description: employeeApps.description,
+        emoji: employeeApps.emoji,
+        type: employeeApps.type,
+        workspacePath: employeeApps.workspacePath,
+        url: employeeApps.url,
+        instructions: employeeApps.instructions,
+        shared: employeeApps.shared,
+        status: employeeApps.status,
+        employeeId: employeeApps.employeeId,
+        createdAt: employeeApps.createdAt,
+        creatorName: employees.name,
+        creatorJobTitle: employees.jobTitle,
+      })
+      .from(employeeApps)
+      .leftJoin(employees, eq(employeeApps.employeeId, employees.id))
+      .where(
+        and(
+          eq(employeeApps.companyId, employee.companyId),
+          eq(employeeApps.status, "active"),
+        ),
+      )
+      .orderBy(desc(employeeApps.createdAt));
+
+    // Return own apps + shared apps from teammates
+    const visible = apps.filter(
+      (a) => a.employeeId === employee.id || a.shared,
+    );
+
+    return { apps: visible };
+  });
+
+  // POST /employee/apps — register a new app
+  fastify.post("/employee/apps", async (request, reply) => {
+    const auth = await authenticateEmployee(request, reply);
+    if ("error" in auth) return auth.error;
+    const { employee } = auth;
+
+    const body = request.body as {
+      name: string;
+      description?: string;
+      emoji?: string;
+      type?: string;
+      workspacePath?: string;
+      url?: string;
+      instructions?: string;
+      shared?: boolean;
+    };
+
+    if (!body.name) {
+      return reply.status(400).send({ error: "name is required" });
+    }
+
+    const [app] = await db
+      .insert(employeeApps)
+      .values({
+        companyId: employee.companyId,
+        employeeId: employee.id,
+        name: body.name,
+        description: body.description || null,
+        emoji: body.emoji || "🔧",
+        type: body.type || "tool",
+        workspacePath: body.workspacePath || null,
+        url: body.url || null,
+        instructions: body.instructions || null,
+        shared: body.shared !== false,
+      })
+      .returning();
+
+    return { app };
+  });
+
+  // PATCH /employee/apps/:appId — update own app
+  fastify.patch<{ Params: { appId: string } }>("/employee/apps/:appId", async (request, reply) => {
+    const auth = await authenticateEmployee(request, reply);
+    if ("error" in auth) return auth.error;
+    const { employee } = auth;
+
+    const { appId } = request.params;
+    const body = request.body as {
+      name?: string;
+      description?: string;
+      emoji?: string;
+      type?: string;
+      workspacePath?: string;
+      url?: string;
+      instructions?: string;
+      shared?: boolean;
+      status?: string;
+    };
+
+    const [existing] = await db
+      .select({ id: employeeApps.id })
+      .from(employeeApps)
+      .where(and(eq(employeeApps.id, appId), eq(employeeApps.employeeId, employee.id)))
+      .limit(1);
+
+    if (!existing) {
+      return reply.status(404).send({ error: "App not found" });
+    }
+
+    const updates: Record<string, unknown> = { updatedAt: new Date() };
+    if (body.name) updates.name = body.name;
+    if (body.description !== undefined) updates.description = body.description;
+    if (body.emoji) updates.emoji = body.emoji;
+    if (body.type) updates.type = body.type;
+    if (body.workspacePath !== undefined) updates.workspacePath = body.workspacePath;
+    if (body.url !== undefined) updates.url = body.url;
+    if (body.instructions !== undefined) updates.instructions = body.instructions;
+    if (body.shared !== undefined) updates.shared = body.shared;
+    if (body.status) updates.status = body.status;
+
+    const [app] = await db
+      .update(employeeApps)
+      .set(updates)
+      .where(eq(employeeApps.id, appId))
+      .returning();
+
+    return { app };
+  });
+
+  // DELETE /employee/apps/:appId — delete own app
+  fastify.delete<{ Params: { appId: string } }>("/employee/apps/:appId", async (request, reply) => {
+    const auth = await authenticateEmployee(request, reply);
+    if ("error" in auth) return auth.error;
+    const { employee } = auth;
+
+    const { appId } = request.params;
+
+    const [existing] = await db
+      .select({ id: employeeApps.id })
+      .from(employeeApps)
+      .where(and(eq(employeeApps.id, appId), eq(employeeApps.employeeId, employee.id)))
+      .limit(1);
+
+    if (!existing) {
+      return reply.status(404).send({ error: "App not found" });
+    }
+
+    await db.delete(employeeApps).where(eq(employeeApps.id, appId));
+
+    return { success: true };
   });
 }

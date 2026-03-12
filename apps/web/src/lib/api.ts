@@ -852,6 +852,43 @@ class ApiClient {
     });
   }
 
+  // Apps / Artifacts
+  async listApps() {
+    return this.request<{
+      apps: Array<{
+        id: string;
+        name: string;
+        description: string | null;
+        emoji: string | null;
+        type: string;
+        workspacePath: string | null;
+        url: string | null;
+        instructions: string | null;
+        shared: boolean;
+        status: string;
+        createdAt: string;
+        updatedAt: string;
+        employeeId: string;
+        employeeName: string | null;
+        employeeEmoji: string | null;
+        employeeJobTitle: string | null;
+      }>;
+    }>("/api/apps");
+  }
+
+  async deleteApp(id: string) {
+    return this.request<{ message: string }>(`/api/apps/${id}`, {
+      method: "DELETE",
+    });
+  }
+
+  async updateApp(id: string, data: { name?: string; description?: string; emoji?: string; shared?: boolean; status?: string }) {
+    return this.request<{ app: any }>(`/api/apps/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
   getSlackInstallUrl(): string {
     const token = this.getToken();
     // The install route is a redirect, so we navigate to it directly
