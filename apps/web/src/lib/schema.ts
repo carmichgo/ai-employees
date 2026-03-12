@@ -308,6 +308,28 @@ export const spreadsheetRows = pgTable("spreadsheet_rows", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// ── Employee Apps ─────────────────────────────────────
+export const employeeApps = pgTable("employee_apps", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  companyId: uuid("company_id")
+    .notNull()
+    .references(() => companies.id),
+  employeeId: uuid("employee_id")
+    .notNull()
+    .references(() => employees.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  emoji: varchar("emoji", { length: 10 }).default("🔧"),
+  type: varchar("type", { length: 50 }).notNull().default("tool"),
+  workspacePath: varchar("workspace_path", { length: 500 }),
+  url: varchar("url", { length: 1000 }),
+  instructions: text("instructions"),
+  shared: boolean("shared").notNull().default(true),
+  status: varchar("status", { length: 20 }).notNull().default("active"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // ── Pending Hires (stores hire payload while Stripe Checkout is in progress) ──
 export const pendingHires = pgTable("pending_hires", {
   id: uuid("id").primaryKey().defaultRandom(),
