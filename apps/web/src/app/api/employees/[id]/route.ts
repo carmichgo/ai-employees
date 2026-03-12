@@ -123,6 +123,7 @@ export async function PATCH(
   if (input.goals !== undefined) updateData.goals = input.goals;
   if (input.modelConfig) updateData.modelConfig = input.modelConfig;
   if (input.personalityConfig) updateData.personalityConfig = input.personalityConfig;
+  if (input.toolsAllow) updateData.toolsConfig = { allow: input.toolsAllow };
 
   const [updated] = await db
     .update(employees)
@@ -130,8 +131,9 @@ export async function PATCH(
     .where(eq(employees.id, id))
     .returning();
 
-  // If personality config changed, regenerate SOUL.md on the droplet (fire-and-forget)
-  if (input.personalityConfig && updated.dropletIp && updated.interserviceSecret && updated.dropletStatus === "active") {
+  // If personality or tools config changed, regenerate configs on the droplet (fire-and-forget)
+  const needsRegen = input.personalityConfig || input.toolsAllow;
+  if (needsRegen && updated.dropletIp && updated.interserviceSecret && updated.dropletStatus === "active") {
     fetch(`http://${updated.dropletIp}:3001/internal/regenerate-configs`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-interservice-secret": updated.interserviceSecret },

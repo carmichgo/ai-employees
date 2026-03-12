@@ -11,6 +11,7 @@ import {
   Monitor, Sparkles, RotateCw, Square, RefreshCw,
 } from "lucide-react";
 import Link from "next/link";
+import { CAPABILITY_OPTIONS } from "@ai-employees/shared";
 
 const EMAIL_PROVIDERS: Record<string, { label: string; smtpHost: string; smtpPort: number; imapHost: string; imapPort: number; webmail: string; note?: string }> = {
   gmail: { label: "Google / Gmail", smtpHost: "smtp.gmail.com", smtpPort: 587, imapHost: "imap.gmail.com", imapPort: 993, webmail: "https://mail.google.com", note: "Use an App Password (Google Account > Security > App Passwords)" },
@@ -200,6 +201,11 @@ export default function EmployeeDetailPage() {
   const [apiKeySaving, setApiKeySaving] = useState(false);
   const [apiKeyNotice, setApiKeyNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
+  // Tools/Capabilities state
+  const [capabilities, setCapabilities] = useState<string[]>([]);
+  const [capSaving, setCapSaving] = useState(false);
+  const [capNotice, setCapNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
   // Skills state
   const [skillsList, setSkillsList] = useState<Array<{ id: string; skillSlug: string; source: string; enabled: boolean; config: Record<string, unknown>; createdAt: string }>>([]);
   const [showInstallSkill, setShowInstallSkill] = useState(false);
@@ -236,6 +242,18 @@ export default function EmployeeDetailPage() {
     api.getEmployee(employeeId).then((res) => {
       setEmployee(res.employee);
       setLoading(false);
+      // Initialize capabilities from toolsConfig
+      const allow = (res.employee.toolsConfig as any)?.allow as string[] | undefined;
+      if (allow?.length) {
+        // Reverse-map toolsAllow entries back to capability IDs
+        const active = CAPABILITY_OPTIONS.filter((cap) =>
+          cap.toolsAllow.length > 0 && cap.toolsAllow.every((t) => allow.includes(t)),
+        ).map((c) => c.id);
+        setCapabilities(active);
+      } else {
+        // No allow list = all capabilities enabled
+        setCapabilities(CAPABILITY_OPTIONS.map((c) => c.id));
+      }
     });
     api.getEmployeeEmail(employeeId).then((res) => {
       if (res.email) {
@@ -1444,6 +1462,99 @@ export default function EmployeeDetailPage() {
         )}
         <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 10 }}>
           Files appear in the employee&apos;s workspace at <code style={{ fontSize: 10, background: "var(--bg-secondary)", padding: "1px 4px", borderRadius: 3 }}>/uploads/</code> — max 10MB each
+        </div>
+      </div>
+
+      {/* ════════════════════════════════════════════════════════════ */}
+      {/* TOOLS / CAPABILITIES SECTION */}
+      {/* ════════════════════════════════════════════════════════════ */}
+      <div className="card" style={{ padding: 20, marginBottom: 16, background: "#ffffff", border: "1px solid var(--border)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Cpu size={14} style={{ color: "var(--text-tertiary)" }} />
+            <p className="label" style={{ margin: 0 }}>Tools & Capabilities</p>
+            <span style={{ fontSize: 11, color: "var(--text-tertiary)", background: "var(--bg-secondary)", padding: "2px 6px", borderRadius: "var(--radius-sm)" }}>
+              {capabilities.length}/{CAPABILITY_OPTIONS.length}
+            </span>
+          </div>
+          <button
+            className="btn-secondary btn-sm"
+            disabled={capSaving}
+            onClick={async () => {
+              setCapSaving(true);
+              setCapNotice(null);
+              try {
+                // Expand capabilities to toolsAllow entries
+                const toolsAllow: string[] = [];
+                for (const capId of capabilities) {
+                  const cap = CAPABILITY_OPTIONS.find((c) => c.id === capId);
+                  if (cap) for (const t of cap.toolsAllow) if (!toolsAllow.includes(t)) toolsAllow.push(t);
+                }
+                await api.updateEmployee(employeeId, { toolsAllow });
+                setCapNotice({ type: "success", message: "Tools updated — configs regenerating on droplet" });
+              } catch (err: any) {
+                setCapNotice({ type: "error", message: err.message });
+              } finally {
+                setCapSaving(false);
+              }
+            }}
+            style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
+          >
+            {capSaving ? <Loader2 size={12} style={{ animation: "spin 0.8s linear infinite" }} /> : <Save size={12} />}
+            Save Changes
+          </button>
+        </div>
+
+        {capNotice && (
+          <div style={{
+            padding: "8px 12px", marginBottom: 12, borderRadius: "var(--radius-sm)", fontSize: 12,
+            background: capNotice.type === "success" ? "#f0fdf4" : "#fef2f2",
+            color: capNotice.type === "success" ? "#166534" : "#991b1b",
+            border: `1px solid ${capNotice.type === "success" ? "#bbf7d0" : "#fecaca"}`,
+          }}>
+            {capNotice.message}
+          </div>
+        )}
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          {CAPABILITY_OPTIONS.map((cap) => {
+            const enabled = capabilities.includes(cap.id);
+            return (
+              <button
+                key={cap.id}
+                onClick={() => {
+                  setCapabilities((prev) =>
+                    enabled ? prev.filter((c) => c !== cap.id) : [...prev, cap.id],
+                  );
+                  setCapNotice(null);
+                }}
+                style={{
+                  display: "flex", alignItems: "center", gap: 10, padding: "10px 12px",
+                  background: enabled ? "var(--bg-secondary)" : "transparent",
+                  border: `1px solid ${enabled ? "var(--text)" : "var(--border)"}`,
+                  borderRadius: "var(--radius-sm)", cursor: "pointer", textAlign: "left",
+                  opacity: enabled ? 1 : 0.5, transition: "all 0.15s ease",
+                }}
+              >
+                <div style={{
+                  width: 16, height: 16, borderRadius: 4, flexShrink: 0,
+                  background: enabled ? "var(--text)" : "transparent",
+                  border: `2px solid ${enabled ? "var(--text)" : "var(--border)"}`,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  {enabled && <Check size={10} style={{ color: "var(--bg)" }} />}
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 500, color: "var(--text)" }}>{cap.label}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>{cap.desc}</div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 10 }}>
+          Toggle capabilities on/off and click Save to update. Changes take effect after config regeneration (~10s).
         </div>
       </div>
 
