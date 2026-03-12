@@ -652,6 +652,27 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Admin action: destroy-apps-droplet — destroy the apps hosting droplet
+    if (action === "destroy-apps-droplet") {
+      const dropletId = request.nextUrl.searchParams.get("dropletId");
+      if (!dropletId) {
+        return NextResponse.json({ error: "dropletId required" }, { status: 400 });
+      }
+      try {
+        const { default: doFetchModule } = await import("@/lib/digitalocean");
+        // Use the DO API directly via fetch since we need the token
+        const DO_API_TOKEN = process.env.DO_API_TOKEN?.trim();
+        if (!DO_API_TOKEN) throw new Error("DO_API_TOKEN not configured");
+        const res = await fetch(`https://api.digitalocean.com/v2/droplets/${dropletId}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${DO_API_TOKEN}` },
+        });
+        results.push(`destroy-apps-droplet: HTTP ${res.status} for droplet ${dropletId}`);
+      } catch (err: any) {
+        results.push(`destroy-apps-droplet: FAILED — ${err.message}`);
+      }
+    }
+
     // Admin action: reboot-droplet — power-cycle a droplet via DigitalOcean API
     if (action === "reboot-droplet") {
       const empId = request.nextUrl.searchParams.get("employeeId");
