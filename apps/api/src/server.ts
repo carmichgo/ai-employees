@@ -24,6 +24,7 @@ import { getSlackProxy } from "./slack/proxy.js";
 export async function buildServer(config: Env) {
   const isDev = process.env.NODE_ENV !== "production";
   const fastify = Fastify({
+    bodyLimit: 20 * 1024 * 1024, // 20MB — needed for base64-encoded file uploads (~33% overhead)
     logger: {
       level: "info",
       ...(isDev && {
