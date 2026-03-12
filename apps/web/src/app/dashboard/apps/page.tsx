@@ -27,6 +27,9 @@ type App = {
   type: string;
   workspacePath: string | null;
   url: string | null;
+  hostingMode: string;
+  deployVersion: string | null;
+  isPublic: boolean;
   instructions: string | null;
   shared: boolean;
   status: string;
@@ -242,6 +245,52 @@ function AppDetail({ app, onClose, onDelete }: { app: App; onClose: () => void; 
               <span style={{ fontSize: 13, fontWeight: 500 }}>{app.employeeName}</span>
               <span style={{ fontSize: 12, color: "var(--text-tertiary)", marginLeft: 6 }}>
                 {app.employeeJobTitle}
+              </span>
+            </div>
+          </div>
+
+          {/* Hosting Mode Badge */}
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", marginBottom: 4, letterSpacing: "0.02em" }}>HOSTING</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  fontSize: 11,
+                  fontWeight: 500,
+                  padding: "2px 8px",
+                  borderRadius: 99,
+                  background: app.hostingMode === "internal" ? "#10b98118" : "#f59e0b18",
+                  color: app.hostingMode === "internal" ? "#10b981" : "#f59e0b",
+                }}
+              >
+                {app.hostingMode === "internal" ? "Internal" : "External"}
+              </span>
+              {app.hostingMode === "internal" && app.deployVersion && app.deployVersion !== "0" && (
+                <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
+                  v{app.deployVersion}
+                </span>
+              )}
+              {app.hostingMode === "internal" && (!app.deployVersion || app.deployVersion === "0") && (
+                <span style={{ fontSize: 11, color: "var(--red, #dc2626)" }}>
+                  Not deployed
+                </span>
+              )}
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 3,
+                  fontSize: 11,
+                  padding: "2px 8px",
+                  borderRadius: 99,
+                  background: app.isPublic ? "#3b82f618" : "#6b728018",
+                  color: app.isPublic ? "#3b82f6" : "#6b7280",
+                }}
+              >
+                {app.isPublic ? "Public" : "Auth required"}
               </span>
             </div>
           </div>
@@ -591,6 +640,17 @@ export default function AppsPage() {
                       <span style={{ fontSize: 11, color: "var(--text-tertiary)", display: "flex", alignItems: "center", gap: 2 }}>
                         {app.shared ? <Globe size={9} /> : <Lock size={9} />}
                         {app.shared ? "Shared" : "Private"}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: 10,
+                          padding: "0 5px",
+                          borderRadius: 99,
+                          background: app.hostingMode === "internal" ? "#10b98112" : "#f59e0b12",
+                          color: app.hostingMode === "internal" ? "#10b981" : "#f59e0b",
+                        }}
+                      >
+                        {app.hostingMode === "internal" ? "hosted" : "external"}
                       </span>
                     </div>
                   </div>

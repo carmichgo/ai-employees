@@ -863,6 +863,9 @@ class ApiClient {
         type: string;
         workspacePath: string | null;
         url: string | null;
+        hostingMode: string;
+        deployVersion: string | null;
+        isPublic: boolean;
         instructions: string | null;
         shared: boolean;
         status: string;
@@ -882,7 +885,7 @@ class ApiClient {
     });
   }
 
-  async updateApp(id: string, data: { name?: string; description?: string; emoji?: string; shared?: boolean; status?: string }) {
+  async updateApp(id: string, data: { name?: string; description?: string; emoji?: string; shared?: boolean; isPublic?: boolean; status?: string }) {
     return this.request<{ app: any }>(`/api/apps/${id}`, {
       method: "PATCH",
       body: JSON.stringify(data),

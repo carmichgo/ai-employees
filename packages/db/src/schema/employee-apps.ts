@@ -23,14 +23,26 @@ export const employeeApps = pgTable("employee_apps", {
   // Path within the employee's workspace (e.g. "workspace-main/apps/email-sender")
   workspacePath: varchar("workspace_path", { length: 500 }),
 
-  // URL if it's a hosted webapp
+  // URL if it's a hosted webapp (external Vercel deploy, or auto-set for internal deploys)
   url: varchar("url", { length: 1000 }),
+
+  // Hosting mode: "external" (user provides URL) | "internal" (hosted by us, HTML stored in DB)
+  hostingMode: varchar("hosting_mode", { length: 20 }).notNull().default("external"),
+
+  // HTML content for internally-hosted apps (single-page HTML with inlined JS/CSS)
+  htmlContent: text("html_content"),
+
+  // Version counter for internal deploys
+  deployVersion: varchar("deploy_version", { length: 50 }).default("0"),
 
   // Instructions on how to use this app
   instructions: text("instructions"),
 
   // Sharing
   shared: boolean("shared").notNull().default(true),
+
+  // Whether the app is publicly accessible (no auth required)
+  isPublic: boolean("is_public").notNull().default(true),
 
   // Status: active | archived
   status: varchar("status", { length: 20 }).notNull().default("active"),

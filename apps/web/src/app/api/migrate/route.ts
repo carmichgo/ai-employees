@@ -181,6 +181,13 @@ export async function POST(request: NextRequest) {
     `;
     results.push("0012: employee_apps table — OK");
 
+    // Migration 0013: Add internal app hosting columns
+    await sql`ALTER TABLE employee_apps ADD COLUMN IF NOT EXISTS hosting_mode VARCHAR(20) NOT NULL DEFAULT 'external'`;
+    await sql`ALTER TABLE employee_apps ADD COLUMN IF NOT EXISTS html_content TEXT`;
+    await sql`ALTER TABLE employee_apps ADD COLUMN IF NOT EXISTS deploy_version VARCHAR(50) DEFAULT '0'`;
+    await sql`ALTER TABLE employee_apps ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT true`;
+    results.push("0013: employee_apps hosting columns (hosting_mode, html_content, deploy_version, is_public) — OK");
+
     // Admin actions
     const action = request.nextUrl.searchParams.get("action");
 

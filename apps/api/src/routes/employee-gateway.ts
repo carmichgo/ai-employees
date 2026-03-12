@@ -936,6 +936,9 @@ export async function employeeGatewayRoutes(fastify: FastifyInstance) {
         type: employeeApps.type,
         workspacePath: employeeApps.workspacePath,
         url: employeeApps.url,
+        hostingMode: employeeApps.hostingMode,
+        deployVersion: employeeApps.deployVersion,
+        isPublic: employeeApps.isPublic,
         instructions: employeeApps.instructions,
         shared: employeeApps.shared,
         status: employeeApps.status,
@@ -963,6 +966,7 @@ export async function employeeGatewayRoutes(fastify: FastifyInstance) {
   });
 
   // POST /employee/apps — register a new app
+  // Supports both external (provide url) and internal (will deploy HTML later) hosting
   fastify.post("/employee/apps", async (request, reply) => {
     const auth = await authenticateEmployee(request, reply);
     if ("error" in auth) return auth.error;
@@ -975,13 +979,18 @@ export async function employeeGatewayRoutes(fastify: FastifyInstance) {
       type?: string;
       workspacePath?: string;
       url?: string;
+      hostingMode?: string; // "external" | "internal"
+      htmlContent?: string; // if provided with hostingMode=internal, deploys immediately
       instructions?: string;
       shared?: boolean;
+      isPublic?: boolean;
     };
 
     if (!body.name) {
       return reply.status(400).send({ error: "name is required" });
     }
+
+    const hostingMode = body.hostingMode || (body.url ? "external" : "internal");
 
     const [app] = await db
       .insert(employeeApps)
@@ -991,15 +1000,97 @@ export async function employeeGatewayRoutes(fastify: FastifyInstance) {
         name: body.name,
         description: body.description || null,
         emoji: body.emoji || "🔧",
-        type: body.type || "tool",
+        type: body.type || (hostingMode === "internal" ? "webapp" : "tool"),
         workspacePath: body.workspacePath || null,
         url: body.url || null,
+        hostingMode,
+        htmlContent: hostingMode === "internal" ? (body.htmlContent || null) : null,
+        deployVersion: body.htmlContent ? "1" : "0",
+        isPublic: body.isPublic !== false,
         instructions: body.instructions || null,
         shared: body.shared !== false,
       })
       .returning();
 
+    // For internal apps, auto-set the URL to the serving endpoint
+    if (hostingMode === "internal") {
+      const apiBase = process.env.API_PUBLIC_URL || process.env.PLATFORM_URL || "http://localhost:3001";
+      const appUrl = `${apiBase}/app/${app.id}`;
+      await db
+        .update(employeeApps)
+        .set({ url: appUrl })
+        .where(eq(employeeApps.id, app.id));
+      app.url = appUrl;
+    }
+
     return { app };
+  });
+
+  // POST /employee/apps/:appId/deploy — deploy HTML content for an internal app
+  fastify.post<{ Params: { appId: string } }>("/employee/apps/:appId/deploy", async (request, reply) => {
+    const auth = await authenticateEmployee(request, reply);
+    if ("error" in auth) return auth.error;
+    const { employee } = auth;
+
+    const { appId } = request.params;
+    const body = request.body as {
+      htmlContent: string;
+    };
+
+    if (!body.htmlContent) {
+      return reply.status(400).send({ error: "htmlContent is required — provide a complete HTML document" });
+    }
+
+    // Max 5MB for HTML content
+    if (body.htmlContent.length > 5 * 1024 * 1024) {
+      return reply.status(400).send({ error: "HTML content too large (max 5MB). Inline your JS/CSS or optimize assets." });
+    }
+
+    const [existing] = await db
+      .select({
+        id: employeeApps.id,
+        deployVersion: employeeApps.deployVersion,
+        hostingMode: employeeApps.hostingMode,
+      })
+      .from(employeeApps)
+      .where(and(eq(employeeApps.id, appId), eq(employeeApps.employeeId, employee.id)))
+      .limit(1);
+
+    if (!existing) {
+      return reply.status(404).send({ error: "App not found" });
+    }
+
+    const currentVersion = parseInt(existing.deployVersion || "0", 10);
+    const newVersion = String(currentVersion + 1);
+
+    // Auto-set hosting mode to internal if it was external
+    const apiBase = process.env.API_PUBLIC_URL || process.env.PLATFORM_URL || "http://localhost:3001";
+    const appUrl = `${apiBase}/app/${appId}`;
+
+    const [app] = await db
+      .update(employeeApps)
+      .set({
+        htmlContent: body.htmlContent,
+        hostingMode: "internal",
+        deployVersion: newVersion,
+        url: appUrl,
+        type: "webapp",
+        updatedAt: new Date(),
+      })
+      .where(eq(employeeApps.id, appId))
+      .returning();
+
+    fastify.log.info(`[app-deploy] ${employee.name} deployed ${app.name} v${newVersion} (${(body.htmlContent.length / 1024).toFixed(1)}KB)`);
+
+    return {
+      app,
+      deployment: {
+        version: newVersion,
+        url: appUrl,
+        size: body.htmlContent.length,
+        deployedAt: new Date().toISOString(),
+      },
+    };
   });
 
   // PATCH /employee/apps/:appId — update own app
@@ -1016,8 +1107,10 @@ export async function employeeGatewayRoutes(fastify: FastifyInstance) {
       type?: string;
       workspacePath?: string;
       url?: string;
+      hostingMode?: string;
       instructions?: string;
       shared?: boolean;
+      isPublic?: boolean;
       status?: string;
     };
 
@@ -1038,8 +1131,10 @@ export async function employeeGatewayRoutes(fastify: FastifyInstance) {
     if (body.type) updates.type = body.type;
     if (body.workspacePath !== undefined) updates.workspacePath = body.workspacePath;
     if (body.url !== undefined) updates.url = body.url;
+    if (body.hostingMode) updates.hostingMode = body.hostingMode;
     if (body.instructions !== undefined) updates.instructions = body.instructions;
     if (body.shared !== undefined) updates.shared = body.shared;
+    if (body.isPublic !== undefined) updates.isPublic = body.isPublic;
     if (body.status) updates.status = body.status;
 
     const [app] = await db
