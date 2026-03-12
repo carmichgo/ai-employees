@@ -47,17 +47,32 @@ export async function POST(
     return NextResponse.json({ error: "Employee backend not available" }, { status: 503 });
   }
 
-  // Read multipart form data
-  const formData = await request.formData();
+  // Read multipart form data — bypass Next.js's 1MB body limit by reading the
+  // raw stream and parsing it through a fresh Response object.
+  const contentType = request.headers.get("content-type") || "";
+  const chunks: Uint8Array[] = [];
+  const reader = request.body?.getReader();
+  if (!reader) {
+    return NextResponse.json({ error: "No request body" }, { status: 400 });
+  }
+  let totalSize = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    totalSize += value.length;
+    if (totalSize > 10 * 1024 * 1024 + 4096) {
+      // 10MB + overhead for multipart boundaries/headers
+      return NextResponse.json({ error: "File too large (max 10MB)" }, { status: 413 });
+    }
+    chunks.push(value);
+  }
+  const rawBody = new Blob(chunks, { type: contentType });
+  const formData = await new Response(rawBody).formData();
   const file = formData.get("file") as File | null;
   const folder = formData.get("folder") as string | null;
 
   if (!file) {
     return NextResponse.json({ error: "No file provided" }, { status: 400 });
-  }
-
-  if (file.size > 10 * 1024 * 1024) {
-    return NextResponse.json({ error: "File too large (max 10MB)" }, { status: 413 });
   }
 
   // Convert to base64 and proxy to droplet
