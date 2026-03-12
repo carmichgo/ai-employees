@@ -10,6 +10,8 @@ import { employees } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
 import { getEmployeeBackend } from "@/lib/backend";
 
+export const maxDuration = 60;
+
 async function authenticate(request: NextRequest) {
   const token =
     request.cookies.get("token")?.value ||
@@ -62,27 +64,35 @@ export async function POST(
   const buffer = Buffer.from(await file.arrayBuffer());
   const base64 = buffer.toString("base64");
 
-  const res = await fetch(`${backend.url}/internal/employees/${id}/files`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-interservice-secret": backend.secret,
-    },
-    body: JSON.stringify({
-      name: file.name,
-      content: base64,
-      mimeType: file.type,
-      ...(folder ? { folder } : {}),
-    }),
-  });
+  try {
+    const res = await fetch(`${backend.url}/internal/employees/${id}/files`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-interservice-secret": backend.secret,
+      },
+      body: JSON.stringify({
+        name: file.name,
+        content: base64,
+        mimeType: file.type,
+        ...(folder ? { folder } : {}),
+      }),
+      signal: AbortSignal.timeout(30000),
+    });
 
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({ error: "Upload failed" }));
-    return NextResponse.json(body, { status: res.status });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ error: "Upload failed" }));
+      return NextResponse.json(body, { status: res.status });
+    }
+
+    const data = await res.json();
+    return NextResponse.json(data, { status: 201 });
+  } catch (err: any) {
+    if (err.name === "TimeoutError" || err.name === "AbortError") {
+      return NextResponse.json({ error: "Upload timed out — backend did not respond in time" }, { status: 504 });
+    }
+    return NextResponse.json({ error: "Failed to reach employee backend" }, { status: 502 });
   }
-
-  const data = await res.json();
-  return NextResponse.json(data, { status: 201 });
 }
 
 // GET — list files
@@ -110,18 +120,23 @@ export async function GET(
     return NextResponse.json({ files: [] });
   }
 
-  const res = await fetch(`${backend.url}/internal/employees/${id}/files`, {
-    headers: {
-      "x-interservice-secret": backend.secret,
-    },
-  });
+  try {
+    const res = await fetch(`${backend.url}/internal/employees/${id}/files`, {
+      headers: {
+        "x-interservice-secret": backend.secret,
+      },
+      signal: AbortSignal.timeout(15000),
+    });
 
-  if (!res.ok) {
+    if (!res.ok) {
+      return NextResponse.json({ files: [] });
+    }
+
+    const data = await res.json();
+    return NextResponse.json(data);
+  } catch {
     return NextResponse.json({ files: [] });
   }
-
-  const data = await res.json();
-  return NextResponse.json(data);
 }
 
 // DELETE — delete a file
@@ -155,20 +170,25 @@ export async function DELETE(
     return NextResponse.json({ error: "Employee backend not available" }, { status: 503 });
   }
 
-  const res = await fetch(
-    `${backend.url}/internal/employees/${id}/files/${encodeURIComponent(filename)}`,
-    {
-      method: "DELETE",
-      headers: {
-        "x-interservice-secret": backend.secret,
+  try {
+    const res = await fetch(
+      `${backend.url}/internal/employees/${id}/files/${encodeURIComponent(filename)}`,
+      {
+        method: "DELETE",
+        headers: {
+          "x-interservice-secret": backend.secret,
+        },
+        signal: AbortSignal.timeout(15000),
       },
-    },
-  );
+    );
 
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({ error: "Delete failed" }));
-    return NextResponse.json(body, { status: res.status });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ error: "Delete failed" }));
+      return NextResponse.json(body, { status: res.status });
+    }
+
+    return NextResponse.json({ message: "File deleted" });
+  } catch {
+    return NextResponse.json({ error: "Failed to reach employee backend" }, { status: 502 });
   }
-
-  return NextResponse.json({ message: "File deleted" });
 }

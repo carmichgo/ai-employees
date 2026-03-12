@@ -539,8 +539,8 @@ function DocumentsPage() {
       // Refresh file list
       const res = await api.listDocuments(selectedId);
       setFiles(res.files || []);
-    } catch {
-      alert("Failed to upload file");
+    } catch (err: any) {
+      alert(err?.message || "Failed to upload file");
     } finally {
       setUploading(null);
     }
