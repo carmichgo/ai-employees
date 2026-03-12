@@ -659,8 +659,6 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "dropletId required" }, { status: 400 });
       }
       try {
-        const { default: doFetchModule } = await import("@/lib/digitalocean");
-        // Use the DO API directly via fetch since we need the token
         const DO_API_TOKEN = process.env.DO_API_TOKEN?.trim();
         if (!DO_API_TOKEN) throw new Error("DO_API_TOKEN not configured");
         const res = await fetch(`https://api.digitalocean.com/v2/droplets/${dropletId}`, {
