@@ -725,8 +725,8 @@ export async function createAppsDroplet(): Promise<{
     method: "POST",
     body: JSON.stringify({
       name: "ai-emp-apps-hosting",
-      region: "nyc3",
-      size: "s-2vcpu-4gb-intel",
+      region: "nyc1",
+      size: "s-2vcpu-4gb",
       image: "ubuntu-24-04-x64",
       user_data: userData,
       tags: ["ai-employees", "apps-hosting"],
