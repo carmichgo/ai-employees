@@ -54,6 +54,7 @@ export async function checkPendingTasks(): Promise<void> {
       id: true,
       companyId: true,
       name: true,
+      tier: true,
       dropletIp: true,
       containerHost: true,
       containerPort: true,
@@ -81,6 +82,7 @@ async function checkEmployeeTasks(employee: {
   id: string;
   companyId: string;
   name: string;
+  tier: string;
   containerHost: string | null;
   containerPort: number | null;
   gatewayToken: string | null;
@@ -294,7 +296,14 @@ async function checkEmployeeTasks(employee: {
       await db.update(employees).set({ lastRequestSentAt: new Date() } as any).where(eq(employees.id, employee.id));
     } catch { /* column may not exist yet */ }
 
-    const model = (employee.modelConfig as { primary?: string })?.primary || "anthropic/claude-sonnet-4-5-20250929";
+    // Use tier to determine model — never allow non-expert employees to use Opus.
+    // Task-check nudges are routine work, so even expert-tier employees use Sonnet here.
+    const TIER_MODELS: Record<string, string> = {
+      junior: "anthropic/claude-haiku-4-5-20251001",
+      senior: "anthropic/claude-sonnet-4-5-20250929",
+      expert: "anthropic/claude-sonnet-4-5-20250929", // Routine task nudges don't need Opus
+    };
+    const model = TIER_MODELS[employee.tier] || "anthropic/claude-sonnet-4-5-20250929";
     const url = `http://${employee.containerHost}:${employee.containerPort}/v1/chat/completions`;
     const res = await fetch(url, {
       method: "POST",

@@ -54,6 +54,7 @@ export interface ChannelInput {
 export type OpenClawConfig = Record<string, unknown>;
 
 // Sonnet model ID — used as the fast/efficient model for Expert tier routing
+const HAIKU_MODEL = "anthropic/claude-haiku-4-5-20251001";
 const SONNET_MODEL = "anthropic/claude-sonnet-4-5-20250929";
 const OPUS_MODEL = "anthropic/claude-opus-4-6";
 
@@ -79,23 +80,28 @@ export function generateOpenClawConfig(
   const agentsList: Record<string, unknown>[] = [];
 
   // Build model config with failover — if the primary provider has an outage,
-  // agents fall through to the next model instead of going completely dead
+  // agents fall through to the next model instead of going completely dead.
+  // IMPORTANT: Non-expert tiers must NEVER fall back to Opus (too expensive).
+  // Fallback chain: Haiku→Sonnet, Sonnet→Haiku, Opus→Sonnet
   const primaryModel = employee.modelConfig.primary;
   const modelWithFallbacks = {
     primary: primaryModel,
     fallbacks: primaryModel === OPUS_MODEL
       ? [SONNET_MODEL]
-      : [OPUS_MODEL],
+      : primaryModel === SONNET_MODEL
+        ? [HAIKU_MODEL]
+        : [SONNET_MODEL],  // Haiku falls back to Sonnet
   };
 
   if (isExpertTier) {
     // Default agent — runs on Sonnet for cost efficiency. Handles most tasks
     // and escalates to the Opus expert agent only when deep reasoning is needed.
+    // Fallback to Haiku (NOT Opus) to prevent accidental Opus cost blowup.
     agentsList.push({
       id: agentId,
       default: true,
       workspace: "/home/node/.openclaw/workspace",
-      model: { primary: SONNET_MODEL, fallbacks: [OPUS_MODEL] },
+      model: { primary: SONNET_MODEL, fallbacks: [HAIKU_MODEL] },
       identity: {
         name: employee.name,
         emoji: employee.emoji || "🤖",

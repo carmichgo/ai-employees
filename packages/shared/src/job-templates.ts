@@ -90,7 +90,7 @@ When you communicate, you lead with the insight or recommendation, back it up wi
     goals: "Drive measurable growth: increase qualified leads, improve conversion rates, reduce CAC, and build a brand that customers actively seek out.",
     suggestedSkills: ["web_search", "content_writing", "analytics", "social_media"],
     suggestedChannels: ["slack", "email"],
-    modelRecommendation: "anthropic/claude-opus-4-6",
+    modelRecommendation: "anthropic/claude-sonnet-4-5-20250929",
     defaultPersonality: { autonomy: "high", proactivity: "very-proactive", communication: "concise" },
   },
   {
@@ -140,7 +140,7 @@ When creating content briefs, you optimize for both audiences: human readers who
     goals: "Grow organic visibility across traditional search AND AI answer engines. Improve keyword rankings, earn AI citations, fix technical issues, build topical authority, and ensure the brand shows up wherever people search — whether that's Google, ChatGPT, Perplexity, or the next AI discovery platform.",
     suggestedSkills: ["web_search", "analytics", "content_writing", "web_scraping"],
     suggestedChannels: ["slack", "email"],
-    modelRecommendation: "anthropic/claude-opus-4-6",
+    modelRecommendation: "anthropic/claude-sonnet-4-5-20250929",
     defaultPersonality: { autonomy: "high", proactivity: "proactive", communication: "detailed" },
   },
   {
@@ -198,7 +198,7 @@ Your tone is warm but efficient. No corporate jargon, no canned responses that s
     goals: "Deliver fast, accurate support that turns problems into positive experiences. Reduce ticket volume through better self-service documentation. Identify and escalate systemic issues.",
     suggestedSkills: ["customer_support", "documentation", "web_search"],
     suggestedChannels: ["slack", "email", "webchat", "telegram"],
-    modelRecommendation: "anthropic/claude-opus-4-6",
+    modelRecommendation: "anthropic/claude-sonnet-4-5-20250929",
     defaultPersonality: { autonomy: "moderate", proactivity: "proactive", communication: "detailed" },
   },
   {
@@ -225,7 +225,7 @@ You sound like a smart peer giving advice, not a salesperson pitching a product.
     goals: "Generate a consistent pipeline of qualified leads, book discovery meetings with decision-makers, and continuously improve outreach conversion rates.",
     suggestedSkills: ["web_search", "email_outreach", "crm", "content_writing"],
     suggestedChannels: ["slack", "email"],
-    modelRecommendation: "anthropic/claude-opus-4-6",
+    modelRecommendation: "anthropic/claude-sonnet-4-5-20250929",
     defaultPersonality: { autonomy: "high", proactivity: "very-proactive", communication: "concise" },
   },
   {
@@ -253,7 +253,7 @@ You track everything in the CRM. Every touchpoint, every response, every meeting
     goals: "Build and execute multi-channel outbound campaigns that generate qualified pipeline. Book discovery meetings with ideal customer profiles. Continuously improve response rates and conversion through testing and iteration.",
     suggestedSkills: ["web_search", "email_outreach", "content_writing", "web_scraping", "social_media"],
     suggestedChannels: ["slack", "email"],
-    modelRecommendation: "anthropic/claude-opus-4-6",
+    modelRecommendation: "anthropic/claude-sonnet-4-5-20250929",
     defaultPersonality: { autonomy: "high", proactivity: "very-proactive", communication: "concise" },
   },
   {
@@ -309,7 +309,7 @@ You're fluent in SQL, comfortable with Python/pandas, and you know your way arou
     goals: "Deliver insights that drive better decisions. Build self-serve reporting that reduces ad-hoc requests. Identify trends and anomalies before they become problems.",
     suggestedSkills: ["analytics", "data_visualization", "sql", "documentation"],
     suggestedChannels: ["slack", "email"],
-    modelRecommendation: "anthropic/claude-opus-4-6",
+    modelRecommendation: "anthropic/claude-sonnet-4-5-20250929",
     defaultPersonality: { autonomy: "moderate", proactivity: "proactive", communication: "detailed" },
   },
   {
@@ -336,7 +336,7 @@ You're fast and reliable. You hit deadlines. You take feedback without ego and r
     goals: "Produce content that drives organic traffic, builds thought leadership, and supports the sales pipeline. Maintain a consistent publishing cadence.",
     suggestedSkills: ["content_writing", "web_search", "seo", "social_media"],
     suggestedChannels: ["slack", "email"],
-    modelRecommendation: "anthropic/claude-opus-4-6",
+    modelRecommendation: "anthropic/claude-sonnet-4-5-20250929",
     defaultPersonality: { autonomy: "high", proactivity: "proactive", communication: "casual" },
   },
   {
@@ -365,7 +365,7 @@ You're the person who makes sure nothing falls through the cracks — not by doi
     goals: "Maximize executive productivity by managing communications, calendar, and follow-ups. Ensure nothing falls through the cracks. Reduce context-switching overhead.",
     suggestedSkills: ["scheduling", "email_management", "documentation", "web_search"],
     suggestedChannels: ["slack", "email", "whatsapp"],
-    modelRecommendation: "anthropic/claude-opus-4-6",
+    modelRecommendation: "anthropic/claude-sonnet-4-5-20250929",
     defaultPersonality: { autonomy: "moderate", proactivity: "very-proactive", communication: "concise" },
   },
   {
@@ -396,7 +396,7 @@ When communicating with your manager, you report in terms they care about: how m
     goals: "Build and manage a pipeline of UGC creators who produce authentic, high-performing content. Maximize creator recruitment conversion rates, ensure on-time content delivery, and continuously grow the roster of reliable creators.",
     suggestedSkills: ["web_search", "social_media", "email_outreach", "content_writing"],
     suggestedChannels: ["slack", "email"],
-    modelRecommendation: "anthropic/claude-opus-4-6",
+    modelRecommendation: "anthropic/claude-sonnet-4-5-20250929",
     defaultPersonality: { autonomy: "high", proactivity: "very-proactive", communication: "concise" },
   },
   {
@@ -435,7 +435,7 @@ You understand that social media is a brand's most human touchpoint. Your conten
     goals: "Grow social media presence with engaged, loyal communities across key platforms. Create consistent, high-performing content that builds brand awareness and drives traffic. Turn followers into advocates and advocates into customers.",
     suggestedSkills: ["social_media", "content_writing", "web_search", "media_generation"],
     suggestedChannels: ["slack", "email"],
-    modelRecommendation: "anthropic/claude-opus-4-6",
+    modelRecommendation: "anthropic/claude-sonnet-4-5-20250929",
     defaultPersonality: { autonomy: "high", proactivity: "very-proactive", communication: "casual" },
   },
   {
@@ -465,7 +465,7 @@ When communicating with your manager, you lead with results: "This week's TikTok
     goals: "Produce high-volume, authentic UGC-style content that drives views, engagement, and conversions across social platforms. Publish consistently, grow audience reach, and continuously optimize content formats based on performance data.",
     suggestedSkills: ["social_media", "content_writing", "media_generation", "web_search"],
     suggestedChannels: ["slack", "email"],
-    modelRecommendation: "anthropic/claude-opus-4-6",
+    modelRecommendation: "anthropic/claude-sonnet-4-5-20250929",
     defaultPersonality: { autonomy: "high", proactivity: "very-proactive", communication: "casual" },
   },
   {

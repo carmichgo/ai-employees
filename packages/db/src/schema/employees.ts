@@ -41,7 +41,7 @@ export const employees = pgTable("employees", {
 
   // Configuration
   modelConfig: jsonb("model_config").notNull().default({
-    primary: "anthropic/claude-opus-4-6",
+    primary: "anthropic/claude-sonnet-4-5-20250929",
   }),
   persona: text("persona"),
   goals: text("goals"),
