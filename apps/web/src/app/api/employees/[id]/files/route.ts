@@ -66,7 +66,7 @@ export async function POST(
     }
     chunks.push(value);
   }
-  const rawBody = new Blob(chunks, { type: contentType });
+  const rawBody = new Blob(chunks as unknown as BlobPart[], { type: contentType });
   const formData = await new Response(rawBody).formData();
   const file = formData.get("file") as File | null;
   const folder = formData.get("folder") as string | null;
