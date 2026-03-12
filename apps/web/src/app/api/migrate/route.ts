@@ -160,6 +160,27 @@ export async function POST(request: NextRequest) {
     }
     results.push("0011: spreadsheet_bases table + base_id column + orphan migration — OK");
 
+    // Migration 0012: Create employee_apps table
+    await sql`
+      CREATE TABLE IF NOT EXISTS employee_apps (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        company_id UUID NOT NULL REFERENCES companies(id),
+        employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+        name VARCHAR(255) NOT NULL,
+        description TEXT,
+        emoji VARCHAR(10) DEFAULT '🔧',
+        type VARCHAR(50) NOT NULL DEFAULT 'tool',
+        workspace_path VARCHAR(500),
+        url VARCHAR(1000),
+        instructions TEXT,
+        shared BOOLEAN NOT NULL DEFAULT true,
+        status VARCHAR(20) NOT NULL DEFAULT 'active',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `;
+    results.push("0012: employee_apps table — OK");
+
     // Admin actions
     const action = request.nextUrl.searchParams.get("action");
 
