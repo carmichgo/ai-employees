@@ -106,6 +106,17 @@ export async function appRoutes(fastify: FastifyInstance) {
   fastify.all<{ Params: { id: string; "*": string } }>(
     "/app/:id/api/*",
     async (request, reply) => {
+      // Handle CORS preflight
+      if (request.method === "OPTIONS") {
+        return reply
+          .status(204)
+          .header("Access-Control-Allow-Origin", "*")
+          .header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+          .header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+          .header("Access-Control-Max-Age", "86400")
+          .send();
+      }
+
       const { id } = request.params;
       const apiPath = "/api/" + (request.params["*"] || "");
 
@@ -207,19 +218,8 @@ export async function appRoutes(fastify: FastifyInstance) {
     },
   );
 
-  // CORS preflight for serverless functions
-  fastify.options<{ Params: { id: string; "*": string } }>(
-    "/app/:id/api/*",
-    async (_request, reply) => {
-      return reply
-        .status(204)
-        .header("Access-Control-Allow-Origin", "*")
-        .header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-        .header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-        .header("Access-Control-Max-Age", "86400")
-        .send();
-    },
-  );
+  // Note: CORS preflight for /app/:id/api/* is handled inside the fastify.all handler above
+  // (fastify.all already captures OPTIONS requests)
 
   // ─── Manager API ────────────────────────────────────────────────
 
