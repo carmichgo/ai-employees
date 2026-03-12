@@ -452,6 +452,332 @@ echo "PHASE2_FAILED" > /opt/ai-employees/status
 `;
 }
 
+/** Generate a lighter cloud-init for the dedicated apps droplet (no Docker/Redis/OpenClaw) */
+function generateAppsCloudInit(params: {
+  databaseUrl: string;
+  interserviceSecret: string;
+  platformUrl: string;
+  repoUrl: string;
+  repoBranch: string;
+}): string {
+  const jwtSecret = crypto.randomBytes(32).toString("hex");
+  const encryptionKey = crypto.randomBytes(32).toString("hex");
+  const dbUrl = params.databaseUrl.replace(/'/g, "'\\''");
+
+  return `#!/bin/bash
+
+# === AI Employees — Dedicated Apps Hosting Droplet ===
+
+exec > /var/log/ai-employees-init.log 2>&1
+echo "Starting apps droplet cloud-init at $(date)"
+
+# Configure firewall
+ufw --force reset
+ufw default deny incoming
+ufw default allow outgoing
+ufw allow ssh
+ufw allow 3001/tcp
+ufw allow 80/tcp
+ufw allow 443/tcp
+ufw --force enable
+
+# Start a lightweight Python health server immediately
+cat > /opt/health-server.py << 'PYEOF'
+import http.server, json, socketserver, os
+
+STATUS_FILE = "/opt/ai-employees/status"
+LOG_FILE = "/var/log/ai-employees-init.log"
+
+def get_phase():
+    try:
+        with open(STATUS_FILE) as f:
+            status = f.read().strip()
+        if status == "READY":
+            return "ready"
+        elif status.startswith("PHASE2_FAILED"):
+            return status
+        else:
+            return "provisioning"
+    except:
+        return "provisioning"
+
+def get_logs(tail=100):
+    try:
+        with open(LOG_FILE) as f:
+            lines = f.readlines()
+        return "".join(lines[-tail:])
+    except:
+        return "No logs available"
+
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        phase = get_phase()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        if self.path == "/health" or self.path == "/api/health":
+            self.wfile.write(json.dumps({"status": "ok", "phase": phase}).encode())
+        elif self.path == "/logs":
+            self.wfile.write(json.dumps({"phase": phase, "logs": get_logs()}).encode())
+        else:
+            self.wfile.write(json.dumps({"status": phase}).encode())
+    def log_message(self, format, *args):
+        pass
+
+socketserver.TCPServer.allow_reuse_address = True
+httpd = socketserver.TCPServer(("0.0.0.0", 3001), H)
+httpd.serve_forever()
+PYEOF
+
+mkdir -p /opt/ai-employees
+
+python3 /opt/health-server.py &
+HEALTH_PID=\\$!
+echo "Placeholder health server started on :3001 (PID \\$HEALTH_PID)"
+echo "PHASE1_READY" > /opt/ai-employees/status
+
+# ============================================================
+# PHASE 2: Full application setup
+# ============================================================
+
+# Update system and install basics (no Docker/Redis needed for apps droplet)
+apt-get update -qq || true
+apt-get install -y -qq git ufw fail2ban curl build-essential python3 || true
+
+# Install Node.js 22
+curl -fsSL https://deb.nodesource.com/setup_22.x | bash - || true
+apt-get install -y -qq nodejs || {
+  echo "PHASE2_FAILED_NODE" > /opt/ai-employees/status
+  exit 0
+}
+
+# Install pnpm
+corepack enable 2>/dev/null && corepack prepare pnpm@9.15.0 --activate 2>/dev/null || {
+  npm install -g pnpm@9.15.0 || true
+}
+
+# Create app directory and write environment file
+mkdir -p /opt/ai-employees
+cd /opt/ai-employees
+
+cat > .env << 'ENVEOF'
+DATABASE_URL=${dbUrl}
+JWT_SECRET=${jwtSecret}
+JWT_EXPIRES_IN=7d
+ENCRYPTION_KEY=${encryptionKey}
+INTERSERVICE_SECRET=${params.interserviceSecret}
+API_PORT=3001
+PLATFORM_URL=${params.platformUrl}
+REDIS_URL=redis://127.0.0.1:6379
+OPENCLAW_IMAGE=ghcr.io/carmichgo/openclaw:latest
+OPENCLAW_NETWORK=ai-employees-internal
+ENVEOF
+
+# Download repo
+TARBALL_URL="https://github.com/carmichgo/ai-employees/archive/refs/heads/${params.repoBranch}.tar.gz"
+echo "Downloading from: \\$TARBALL_URL"
+
+mkdir -p /opt/ai-employees/app
+DOWNLOAD_OK=false
+
+HTTP_CODE=\\$(curl -sL -w "%{http_code}" "\\$TARBALL_URL" -o /tmp/repo.tar.gz 2>/dev/null)
+if [ "\\$HTTP_CODE" = "200" ] && [ -s /tmp/repo.tar.gz ]; then
+  tar xzf /tmp/repo.tar.gz --strip-components=1 -C /opt/ai-employees/app && DOWNLOAD_OK=true
+  rm -f /tmp/repo.tar.gz
+fi
+
+if [ "\\$DOWNLOAD_OK" = "false" ]; then
+  echo "Tarball failed, trying git clone..."
+  rm -f /tmp/repo.tar.gz
+  if git clone --depth 1 --branch "${params.repoBranch}" "https://github.com/carmichgo/ai-employees.git" /tmp/repo-clone 2>&1; then
+    cp -r /tmp/repo-clone/* /opt/ai-employees/app/
+    cp -r /tmp/repo-clone/.* /opt/ai-employees/app/ 2>/dev/null || true
+    rm -rf /tmp/repo-clone
+    DOWNLOAD_OK=true
+  fi
+fi
+
+if [ "\\$DOWNLOAD_OK" = "false" ]; then
+  echo "PHASE2_FAILED_DOWNLOAD" > /opt/ai-employees/status
+  exit 0
+fi
+
+cd /opt/ai-employees/app
+cp /opt/ai-employees/.env .env
+echo "${params.repoBranch}" > .branch
+
+# Install dependencies and build (isolated-vm needs build-essential for native compilation)
+pnpm install --frozen-lockfile 2>&1 || pnpm install 2>&1 || {
+  echo "PHASE2_FAILED_INSTALL" > /opt/ai-employees/status
+  exit 0
+}
+
+pnpm turbo build --filter=@ai-employees/api 2>&1 || {
+  echo "PHASE2_FAILED_BUILD" > /opt/ai-employees/status
+  exit 0
+}
+
+# Patch package.json main fields for Node.js ESM runtime
+sed -i 's|"main": "src/index.ts"|"main": "dist/index.js"|g' packages/*/package.json
+
+# Install Redis (API config requires it even if unused for apps-only mode)
+apt-get install -y -qq redis-server || true
+systemctl enable redis-server || true
+systemctl start redis-server || true
+
+# Create systemd service for API
+cat > /etc/systemd/system/ai-employees-api.service << 'SVCEOF'
+[Unit]
+Description=AI Employees Apps API
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/ai-employees/app
+EnvironmentFile=/opt/ai-employees/.env
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node apps/api/dist/index.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+
+# Kill placeholder health server
+kill \\$HEALTH_PID 2>/dev/null || true
+fuser -k 3001/tcp 2>/dev/null || true
+sleep 2
+
+# Test API startup
+echo "Testing API startup..."
+cd /opt/ai-employees/app
+source /opt/ai-employees/.env
+export DATABASE_URL JWT_SECRET JWT_EXPIRES_IN ENCRYPTION_KEY INTERSERVICE_SECRET API_PORT PLATFORM_URL REDIS_URL NODE_ENV=production
+timeout 10 /usr/bin/node apps/api/dist/index.js > /tmp/api-test.log 2>&1 &
+TEST_PID=\\$!
+sleep 5
+
+if curl -sf http://localhost:3001/health > /dev/null 2>&1; then
+  echo "Direct test: API started successfully!"
+  kill \\$TEST_PID 2>/dev/null || true
+  fuser -k 3001/tcp 2>/dev/null || true
+  sleep 1
+else
+  echo "Direct test: API failed to start. Output:"
+  kill \\$TEST_PID 2>/dev/null || true
+  cat /tmp/api-test.log 2>/dev/null || true
+  fuser -k 3001/tcp 2>/dev/null || true
+  sleep 1
+fi
+
+systemctl daemon-reload
+systemctl enable ai-employees-api
+systemctl start ai-employees-api
+
+# Wait for real API to be healthy (up to 60s)
+for i in \\$(seq 1 12); do
+  if curl -sf http://localhost:3001/health > /dev/null 2>&1; then
+    echo "READY" > /opt/ai-employees/status
+    echo "Apps droplet ready at \\$(date)"
+    exit 0
+  fi
+  echo "Waiting for API... attempt \\$i/12"
+  sleep 5
+done
+
+# If we get here, API didn't come up
+echo "=== systemctl status ===" >> /var/log/ai-employees-init.log
+systemctl status ai-employees-api --no-pager >> /var/log/ai-employees-init.log 2>&1
+echo "=== journalctl ===" >> /var/log/ai-employees-init.log
+journalctl -u ai-employees-api --no-pager -n 50 >> /var/log/ai-employees-init.log 2>&1
+python3 /opt/health-server.py &
+echo "PHASE2_FAILED" > /opt/ai-employees/status
+`;
+}
+
+/** Provision a dedicated droplet for hosting internal apps (no Docker/OpenClaw needed) */
+export async function createAppsDroplet(): Promise<{
+  dropletId: string;
+  dropletIp: string | null;
+  interserviceSecret: string;
+}> {
+  const interserviceSecret = crypto.randomBytes(32).toString("hex");
+  const databaseUrl = process.env.DATABASE_URL?.trim();
+  if (!databaseUrl) throw new Error("DATABASE_URL not set");
+
+  const userData = generateAppsCloudInit({
+    databaseUrl,
+    interserviceSecret,
+    platformUrl: process.env.NEXT_PUBLIC_APP_URL || "https://ai-employees-ten.vercel.app",
+    repoUrl: REPO_URL,
+    repoBranch: REPO_BRANCH,
+  });
+
+  let sshKeys: number[] = [];
+  try {
+    const keysRes = await doFetch("/account/keys");
+    const keysData = await keysRes.json();
+    sshKeys = (keysData.ssh_keys || []).map((k: { id: number }) => k.id);
+  } catch {}
+
+  const res = await doFetch("/droplets", {
+    method: "POST",
+    body: JSON.stringify({
+      name: "ai-emp-apps-hosting",
+      region: "nyc3",
+      size: "s-2vcpu-4gb-intel",
+      image: "ubuntu-24-04-x64",
+      user_data: userData,
+      tags: ["ai-employees", "apps-hosting"],
+      monitoring: true,
+      ...(sshKeys.length > 0 ? { ssh_keys: sshKeys } : {}),
+    }),
+  });
+
+  const data = await res.json();
+  const dropletId = String(data.droplet.id);
+
+  return { dropletId, dropletIp: null, interserviceSecret };
+}
+
+/** Poll the apps droplet for its IP and readiness */
+export async function pollAppsDroplet(dropletId: string): Promise<{
+  status: string;
+  ip: string | null;
+  phase: string | null;
+}> {
+  try {
+    const res = await doFetch(`/droplets/${dropletId}`);
+    const data = await res.json();
+    const droplet = data.droplet;
+    const publicNet = droplet.networks?.v4?.find((n: { type: string }) => n.type === "public");
+    const ip = publicNet?.ip_address || null;
+
+    if (droplet.status === "active" && ip) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+        const healthRes = await fetch(`http://${ip}:3001/health`, { signal: controller.signal });
+        clearTimeout(timeout);
+        if (healthRes.ok) {
+          const body = await healthRes.json().catch(() => ({}));
+          const phase = body.phase || (body.timestamp ? "ready" : "unknown");
+          if (typeof phase === "string" && phase.startsWith("PHASE2_FAILED")) {
+            return { status: "error", ip, phase };
+          }
+          return { status: "active", ip, phase };
+        }
+      } catch {}
+      return { status: "booting", ip, phase: null };
+    }
+
+    return { status: "provisioning", ip, phase: null };
+  } catch {
+    return { status: "error", ip: null, phase: null };
+  }
+}
+
 /** Droplet size mapping based on plan tier */
 const PLAN_DROPLET_SIZES: Record<string, string> = {
   starter: "s-2vcpu-4gb-intel",

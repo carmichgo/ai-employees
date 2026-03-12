@@ -625,6 +625,33 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Admin action: provision-apps-droplet — create a dedicated droplet for hosting internal apps
+    if (action === "provision-apps-droplet") {
+      try {
+        const { createAppsDroplet } = await import("@/lib/digitalocean");
+        const result = await createAppsDroplet();
+        results.push(`provision-apps-droplet: created droplet ${result.dropletId} (secret: ${result.interserviceSecret.substring(0, 8)}...)`);
+        results.push(`provision-apps-droplet: poll status with ?action=poll-apps-droplet&dropletId=${result.dropletId}`);
+      } catch (err: any) {
+        results.push(`provision-apps-droplet: FAILED — ${err.message}`);
+      }
+    }
+
+    // Admin action: poll-apps-droplet — check provisioning status of the apps droplet
+    if (action === "poll-apps-droplet") {
+      const dropletId = request.nextUrl.searchParams.get("dropletId");
+      if (!dropletId) {
+        return NextResponse.json({ error: "dropletId required" }, { status: 400 });
+      }
+      try {
+        const { pollAppsDroplet } = await import("@/lib/digitalocean");
+        const status = await pollAppsDroplet(dropletId);
+        results.push(`poll-apps-droplet: ${JSON.stringify(status)}`);
+      } catch (err: any) {
+        results.push(`poll-apps-droplet: FAILED — ${err.message}`);
+      }
+    }
+
     // Admin action: reboot-droplet — power-cycle a droplet via DigitalOcean API
     if (action === "reboot-droplet") {
       const empId = request.nextUrl.searchParams.get("employeeId");
