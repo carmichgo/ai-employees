@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { api } from "@/lib/api";
 import {
   LayoutDashboard,
@@ -23,6 +23,23 @@ import {
   Menu,
   X,
 } from "lucide-react";
+
+// ── Inbox notification helpers ──────────────────
+const LAST_SEEN_KEY = "inbox_last_seen"; // JSON: Record<employeeId, ISO timestamp>
+
+function getLastSeen(): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem(LAST_SEEN_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function setLastSeenNow(employeeId: string) {
+  const prev = getLastSeen();
+  prev[employeeId] = new Date().toISOString();
+  localStorage.setItem(LAST_SEEN_KEY, JSON.stringify(prev));
+}
 
 const NAV_SECTIONS = [
   {
@@ -63,6 +80,18 @@ export default function DashboardLayout({
   const [user, setUser] = useState<any>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  // Inbox notification state
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [toasts, setToasts] = useState<Array<{ id: number; name: string; message: string }>>([]);
+  const toastIdRef = useRef(0);
+  const knownLastMsgRef = useRef<Record<string, string>>({}); // employeeId → last message id
+
+  const addToast = useCallback((name: string, message: string) => {
+    const id = ++toastIdRef.current;
+    setToasts((prev) => [...prev.slice(-2), { id, name, message }]); // keep max 3
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 5000);
+  }, []);
+
   useEffect(() => {
     const token = api.getToken();
     if (!token) {
@@ -80,6 +109,86 @@ export default function DashboardLayout({
         router.push("/login");
       });
   }, [router]);
+
+  // Poll for new inbox messages every 30s
+  useEffect(() => {
+    let cancelled = false;
+
+    async function checkInbox() {
+      try {
+        const res = await api.listEmployees();
+        const emps = (res.employees || []).filter(
+          (e: any) => e.status !== "terminated" && e.dropletIp,
+        );
+
+        const lastSeen = getLastSeen();
+        let newUnread = 0;
+
+        await Promise.all(
+          emps.map(async (emp: any) => {
+            try {
+              const historyRes = await api.getChatHistory(emp.id);
+              const msgs = historyRes.messages || [];
+              if (msgs.length === 0) return;
+
+              // Find the last assistant message
+              const lastAssistant = [...msgs].reverse().find((m: any) => m.role === "assistant");
+              if (!lastAssistant) return;
+
+              // Check if there are unread assistant messages
+              const seenTs = lastSeen[emp.id];
+              if (!seenTs || new Date(lastAssistant.createdAt) > new Date(seenTs)) {
+                newUnread++;
+              }
+
+              // Show toast for brand-new messages (not on first load)
+              const prevLastId = knownLastMsgRef.current[emp.id];
+              if (prevLastId && lastAssistant.id !== prevLastId && lastAssistant.role === "assistant") {
+                // Only toast if we're not already on the inbox page viewing this employee
+                if (!pathname.startsWith("/dashboard/inbox") && !cancelled) {
+                  addToast(emp.name, lastAssistant.content?.slice(0, 100) || "New message");
+                }
+              }
+              knownLastMsgRef.current[emp.id] = lastAssistant.id;
+            } catch {
+              // Skip failed employee
+            }
+          }),
+        );
+
+        if (!cancelled) setUnreadCount(newUnread);
+      } catch {
+        // Silently fail
+      }
+    }
+
+    checkInbox();
+    const interval = setInterval(checkInbox, 30000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [pathname, addToast]);
+
+  // Mark messages as seen when visiting inbox
+  useEffect(() => {
+    if (pathname.startsWith("/dashboard/inbox")) {
+      // Mark all as seen after a short delay (let the page load)
+      const timeout = setTimeout(async () => {
+        try {
+          const res = await api.listEmployees();
+          const emps = (res.employees || []).filter(
+            (e: any) => e.status !== "terminated" && e.dropletIp,
+          );
+          for (const emp of emps) {
+            setLastSeenNow(emp.id);
+          }
+          setUnreadCount(0);
+        } catch {}
+      }, 2000);
+      return () => clearTimeout(timeout);
+    }
+  }, [pathname]);
 
   // Close sidebar on route change
   useEffect(() => {
@@ -301,6 +410,7 @@ export default function DashboardLayout({
               {section.items.map((item) => {
                 const active = isActive(item.href);
                 const Icon = item.icon;
+                const isInbox = item.href === "/dashboard/inbox";
                 return (
                   <Link
                     key={item.href}
@@ -323,6 +433,27 @@ export default function DashboardLayout({
                   >
                     <Icon size={15} strokeWidth={active ? 2 : 1.5} />
                     {item.label}
+                    {isInbox && unreadCount > 0 && (
+                      <span
+                        style={{
+                          marginLeft: "auto",
+                          background: "#ef4444",
+                          color: "#fff",
+                          fontSize: 10,
+                          fontWeight: 600,
+                          borderRadius: 9,
+                          minWidth: 18,
+                          height: 18,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          padding: "0 5px",
+                          lineHeight: 1,
+                        }}
+                      >
+                        {unreadCount > 9 ? "9+" : unreadCount}
+                      </span>
+                    )}
                   </Link>
                 );
               })}
@@ -425,6 +556,56 @@ export default function DashboardLayout({
           {children}
         </div>
       </main>
+
+      {/* Toast notifications */}
+      {toasts.length > 0 && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 20,
+            right: 20,
+            zIndex: 9999,
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+          }}
+        >
+          {toasts.map((toast) => (
+            <Link
+              key={toast.id}
+              href="/dashboard/inbox"
+              onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}
+              style={{
+                background: "var(--bg)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius-md)",
+                padding: "12px 16px",
+                boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                maxWidth: 320,
+                textDecoration: "none",
+                color: "var(--text)",
+                animation: "slideIn 0.3s ease",
+              }}
+            >
+              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, color: "var(--text)" }}>
+                {toast.name}
+              </div>
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "var(--text-secondary)",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {toast.message}
+              </div>
+            </Link>
+          ))}
+          <style>{`@keyframes slideIn { from { transform: translateY(20px); opacity: 0 } to { transform: translateY(0); opacity: 1 } }`}</style>
+        </div>
+      )}
     </div>
   );
 }
