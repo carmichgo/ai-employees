@@ -59,6 +59,24 @@ interface ConversationPreview {
   employee: Employee;
   lastMessage: string | null;
   lastMessageTime: Date | null;
+  lastAssistantTime: Date | null; // for unread tracking
+}
+
+// Shared localStorage key with dashboard layout
+const LAST_SEEN_KEY = "inbox_last_seen";
+
+function getLastSeen(): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem(LAST_SEEN_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function markSeen(employeeId: string) {
+  const prev = getLastSeen();
+  prev[employeeId] = new Date().toISOString();
+  localStorage.setItem(LAST_SEEN_KEY, JSON.stringify(prev));
 }
 
 // ── Main Inbox Page ─────────────────────────────
@@ -144,16 +162,19 @@ function InboxContent() {
               const historyRes = await api.getChatHistory(emp.id);
               const msgs = historyRes.messages || [];
               const last = msgs.length > 0 ? msgs[msgs.length - 1] : null;
+              const lastAssistant = [...msgs].reverse().find((m: any) => m.role === "assistant");
               previewMap.set(emp.id, {
                 employee: emp,
                 lastMessage: last?.content?.slice(0, 80) || null,
                 lastMessageTime: last ? new Date(last.createdAt) : null,
+                lastAssistantTime: lastAssistant ? new Date(lastAssistant.createdAt) : null,
               });
             } catch {
               previewMap.set(emp.id, {
                 employee: emp,
                 lastMessage: null,
                 lastMessageTime: null,
+                lastAssistantTime: null,
               });
             }
           }),
@@ -925,7 +946,7 @@ function InboxContent() {
             return (
               <button
                 key={emp.id}
-                onClick={() => setSelectedId(emp.id)}
+                onClick={() => { setSelectedId(emp.id); markSeen(emp.id); }}
                 style={{
                   width: "100%",
                   display: "flex",
@@ -1000,19 +1021,36 @@ function InboxContent() {
                   </div>
                 </div>
 
-                {/* Time */}
-                {preview?.lastMessageTime && (
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: "var(--text-tertiary, #a3a3a3)",
-                      flexShrink: 0,
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {formatTime(preview.lastMessageTime)}
-                  </div>
-                )}
+                {/* Time + unread badge */}
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4, flexShrink: 0 }}>
+                  {preview?.lastMessageTime && (
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: "var(--text-tertiary, #a3a3a3)",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {formatTime(preview.lastMessageTime)}
+                    </div>
+                  )}
+                  {(() => {
+                    const lastSeen = getLastSeen();
+                    const seenTs = lastSeen[emp.id];
+                    const assistantTime = preview?.lastAssistantTime;
+                    const hasUnread = assistantTime && (!seenTs || assistantTime > new Date(seenTs));
+                    return hasUnread ? (
+                      <div
+                        style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: "50%",
+                          background: "#ef4444",
+                        }}
+                      />
+                    ) : null;
+                  })()}
+                </div>
               </button>
             );
           })}

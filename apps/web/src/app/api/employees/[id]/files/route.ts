@@ -25,61 +25,72 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await authenticate(request);
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const { id } = await params;
-
-  // Verify employee belongs to company (explicit columns to avoid SELECT * breakage)
-  const [employee] = await db
-    .select({ id: employees.id, companyId: employees.companyId })
-    .from(employees)
-    .where(and(eq(employees.id, id), eq(employees.companyId, session.companyId)))
-    .limit(1);
-
-  if (!employee) {
-    return NextResponse.json({ error: "Employee not found" }, { status: 404 });
-  }
-
-  // Get the backend
-  const backend = await getEmployeeBackend(id);
-  if (!backend) {
-    return NextResponse.json({ error: "Employee backend not available" }, { status: 503 });
-  }
-
-  // Read multipart form data — bypass Next.js's 1MB body limit by reading the
-  // raw stream and parsing it through a fresh Response object.
-  const contentType = request.headers.get("content-type") || "";
-  const chunks: Uint8Array[] = [];
-  const reader = request.body?.getReader();
-  if (!reader) {
-    return NextResponse.json({ error: "No request body" }, { status: 400 });
-  }
-  let totalSize = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    totalSize += value.length;
-    if (totalSize > 10 * 1024 * 1024 + 4096) {
-      // 10MB + overhead for multipart boundaries/headers
-      return NextResponse.json({ error: "File too large (max 10MB)" }, { status: 413 });
-    }
-    chunks.push(value);
-  }
-  const rawBody = new Blob(chunks as unknown as BlobPart[], { type: contentType });
-  const formData = await new Response(rawBody).formData();
-  const file = formData.get("file") as File | null;
-  const folder = formData.get("folder") as string | null;
-
-  if (!file) {
-    return NextResponse.json({ error: "No file provided" }, { status: 400 });
-  }
-
-  // Convert to base64 and proxy to droplet
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const base64 = buffer.toString("base64");
-
   try {
+    const session = await authenticate(request);
+    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const { id } = await params;
+
+    // Verify employee belongs to company (explicit columns to avoid SELECT * breakage)
+    const [employee] = await db
+      .select({ id: employees.id, companyId: employees.companyId })
+      .from(employees)
+      .where(and(eq(employees.id, id), eq(employees.companyId, session.companyId)))
+      .limit(1);
+
+    if (!employee) {
+      return NextResponse.json({ error: "Employee not found" }, { status: 404 });
+    }
+
+    // Get the backend
+    const backend = await getEmployeeBackend(id);
+    if (!backend) {
+      return NextResponse.json({ error: "Employee backend not available" }, { status: 503 });
+    }
+
+    // Read multipart form data — bypass Next.js's 1MB body limit by reading the
+    // raw stream and parsing it through a fresh Response object.
+    const contentType = request.headers.get("content-type") || "";
+    const chunks: Uint8Array[] = [];
+    const reader = request.body?.getReader();
+    if (!reader) {
+      return NextResponse.json({ error: "No request body" }, { status: 400 });
+    }
+    let totalSize = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalSize += value.length;
+      if (totalSize > 10 * 1024 * 1024 + 4096) {
+        // 10MB + overhead for multipart boundaries/headers
+        return NextResponse.json({ error: "File too large (max 10MB)" }, { status: 413 });
+      }
+      chunks.push(value);
+    }
+
+    let formData: FormData;
+    try {
+      const rawBody = new Blob(chunks as unknown as BlobPart[], { type: contentType });
+      formData = await new Response(rawBody).formData();
+    } catch (parseErr: any) {
+      console.error("[upload] formData parse error:", parseErr.message);
+      return NextResponse.json(
+        { error: `Failed to parse upload: ${parseErr.message}` },
+        { status: 400 },
+      );
+    }
+
+    const file = formData.get("file") as File | null;
+    const folder = formData.get("folder") as string | null;
+
+    if (!file) {
+      return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    }
+
+    // Convert to base64 and proxy to droplet
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const base64 = buffer.toString("base64");
+
     const res = await fetch(`${backend.url}/internal/employees/${id}/files`, {
       method: "POST",
       headers: {
@@ -107,11 +118,14 @@ export async function POST(
     const data = await res.json();
     return NextResponse.json(data, { status: 201 });
   } catch (err: any) {
-    console.error("[upload] fetch error:", err.message || err);
+    console.error("[upload] unhandled error:", err.name, err.message);
     if (err.name === "TimeoutError" || err.name === "AbortError") {
       return NextResponse.json({ error: "Upload timed out — backend did not respond in time" }, { status: 504 });
     }
-    return NextResponse.json({ error: `Failed to reach employee backend: ${err.message || "unknown error"}` }, { status: 502 });
+    return NextResponse.json(
+      { error: `Upload failed: ${err.message || "unknown error"}` },
+      { status: 502 },
+    );
   }
 }
 

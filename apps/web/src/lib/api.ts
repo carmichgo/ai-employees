@@ -424,8 +424,15 @@ class ApiClient {
     });
 
     if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new ApiError(res.status, body.error || "Upload failed");
+      const text = await res.text().catch(() => "");
+      let errorMsg = `Upload failed (${res.status})`;
+      try {
+        const body = JSON.parse(text);
+        if (body.error) errorMsg = body.error;
+      } catch {
+        if (text) errorMsg = `Upload failed: ${text.slice(0, 200)}`;
+      }
+      throw new ApiError(res.status, errorMsg);
     }
     return res.json();
   }
