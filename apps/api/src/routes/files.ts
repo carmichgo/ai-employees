@@ -44,6 +44,7 @@ export async function fileRoutes(fastify: FastifyInstance) {
   // POST /internal/employees/:id/files — upload a file (JSON with base64 content)
   fastify.post<{ Params: { id: string } }>(
     "/internal/employees/:id/files",
+    { bodyLimit: 15 * 1024 * 1024 }, // 15MB to accommodate base64 overhead (~33%) on 10MB files
     async (request, reply) => {
       const { id } = request.params;
       const body = request.body as {
