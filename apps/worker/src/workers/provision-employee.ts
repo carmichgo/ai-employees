@@ -267,8 +267,12 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
         `HOME=/home/node`,
         `NODE_OPTIONS=--max-old-space-size=${getNodeHeapForTier(tier)}`,
         `OPENCLAW_GATEWAY_TOKEN=${employee.gatewayToken}`,
-        `ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}`,
-        ...(GEMINI_API_KEY ? [`GEMINI_API_KEY=${GEMINI_API_KEY}`] : []),
+        // BYOK: use employee's own keys; Managed: use platform keys
+        `ANTHROPIC_API_KEY=${(employee as any).hostingMode === "byok" && (employee as any).byokAnthropicKey ? (employee as any).byokAnthropicKey : ANTHROPIC_API_KEY}`,
+        ...(() => {
+          const gemini = (employee as any).hostingMode === "byok" && (employee as any).byokGeminiKey ? (employee as any).byokGeminiKey : GEMINI_API_KEY;
+          return gemini ? [`GEMINI_API_KEY=${gemini}`] : [];
+        })(),
         ...(BRAVE_API_KEY ? [`BRAVE_API_KEY=${BRAVE_API_KEY}`] : []),
         ...(TWILIO_ACCOUNT_SID ? [`TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}`] : []),
         ...(TWILIO_AUTH_TOKEN ? [`TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}`] : []),

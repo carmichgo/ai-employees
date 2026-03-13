@@ -3,8 +3,10 @@ import {
   EMPLOYEE_TIERS,
   calculateAddonTotal,
   getAddonPrice,
+  BYOK_PRICE_MONTHLY,
   type EmployeeTier,
   type AddonConfig,
+  type HostingMode,
 } from "@ai-employees/shared";
 
 // ── Stripe Client ─────────────────────────────────────
@@ -32,10 +34,15 @@ export interface EmployeePricingParams {
   channels: string[];
   capabilities: string[];
   expertise: string[];
+  hostingMode?: HostingMode;
 }
 
 /** Total monthly price in cents for one employee */
 export function calculateTotalPriceCents(params: EmployeePricingParams): number {
+  // BYOK: flat infrastructure fee, no add-on charges
+  if (params.hostingMode === "byok") {
+    return BYOK_PRICE_MONTHLY * 100;
+  }
   const base = EMPLOYEE_TIERS[params.tier].priceMonthly;
   const addons = calculateAddonTotal(
     params.tier,
@@ -53,6 +60,9 @@ export function calculateTotalPriceDollars(params: EmployeePricingParams): numbe
 
 /** Build description for Stripe line item */
 export function buildLineItemDescription(params: EmployeePricingParams): string {
+  if (params.hostingMode === "byok") {
+    return `BYOK — Bring Your Own Key (infrastructure only)`;
+  }
   const tier = EMPLOYEE_TIERS[params.tier];
   const parts = [`${tier.label} — ${tier.creditsIncluded} credits/mo`];
 

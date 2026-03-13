@@ -19,8 +19,12 @@ import {
   EMPLOYEE_TIER_OPTIONS,
   getAddonPrice,
   calculateAddonTotal,
+  BYOK_PRICE_MONTHLY,
+  BYOK_MODEL_OPTIONS,
+  HOSTING_MODE_OPTIONS,
   type PersonalityConfig,
   type EmployeeTier,
+  type HostingMode,
 } from "@ai-employees/shared";
 import {
   Check,
@@ -59,12 +63,16 @@ import {
   ImageIcon,
   Video,
   Phone,
+  Key,
+  Eye,
+  EyeOff,
+  Server,
 } from "lucide-react";
 
 // ── Steps ──────────────────────────────────────
 
-type Step = "role" | "identity" | "tier" | "personality" | "boss-tech" | "authority" | "channels" | "tools" | "skills" | "review";
-const STEPS: Step[] = ["role", "identity", "tier", "personality", "boss-tech", "authority", "channels", "tools", "skills", "review"];
+type Step = "role" | "identity" | "tier" | "hosting" | "personality" | "boss-tech" | "authority" | "channels" | "tools" | "skills" | "review";
+const STEPS: Step[] = ["role", "identity", "tier", "hosting", "personality", "boss-tech", "authority", "channels", "tools", "skills", "review"];
 const SKIPPABLE_STEPS: Step[] = ["authority", "channels", "tools", "skills"];
 
 // ── Channel Options ────────────────────────────
@@ -229,6 +237,10 @@ function HireEmployeeWizard() {
     name: "",
     jobTitle: "",
     tier: "senior" as EmployeeTier,
+    hostingMode: "managed" as HostingMode,
+    byokAnthropicKey: "",
+    byokGeminiKey: "",
+    byokModel: BYOK_MODEL_OPTIONS[1].id as string, // default to Sonnet
     persona: "",
     goals: "",
     channels: [] as string[],
@@ -240,6 +252,10 @@ function HireEmployeeWizard() {
       members: [] as Array<{ slackUserId: string; name: string; role: "manager" | "colleague" }>,
     },
   });
+  const [showAnthropicKey, setShowAnthropicKey] = useState(false);
+  const [showGeminiKey, setShowGeminiKey] = useState(false);
+  const [validatingKeys, setValidatingKeys] = useState(false);
+  const [keyValidation, setKeyValidation] = useState<{ anthropic?: string; gemini?: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -306,6 +322,10 @@ function HireEmployeeWizard() {
       name: "",
       jobTitle: t.title,
       tier: "senior" as EmployeeTier,
+      hostingMode: "managed",
+      byokAnthropicKey: "",
+      byokGeminiKey: "",
+      byokModel: BYOK_MODEL_OPTIONS[1].id,
       persona: t.persona,
       goals: t.goals,
       channels: [...t.suggestedChannels],
@@ -323,6 +343,10 @@ function HireEmployeeWizard() {
       name: "",
       jobTitle: "",
       tier: "senior" as EmployeeTier,
+      hostingMode: "managed",
+      byokAnthropicKey: "",
+      byokGeminiKey: "",
+      byokModel: BYOK_MODEL_OPTIONS[1].id,
       persona: "",
       goals: "",
       channels: [],
@@ -379,10 +403,11 @@ function HireEmployeeWizard() {
       const toolsAllow = expandCapabilities(form.capabilities);
       const skillSlugs = expandExpertise(form.skills);
 
-      const hireData = {
+      const hireData: Record<string, any> = {
         name: form.name,
         jobTitle: form.jobTitle,
         tier: form.tier,
+        hostingMode: form.hostingMode,
         templateId: selectedTemplate || undefined,
         persona: buildPersona() || undefined,
         goals: form.goals || undefined,
@@ -394,6 +419,13 @@ function HireEmployeeWizard() {
           ? form.authority
           : undefined,
       };
+
+      // Include BYOK keys if user selected BYOK mode
+      if (form.hostingMode === "byok") {
+        hireData.byokAnthropicKey = form.byokAnthropicKey;
+        hireData.byokGeminiKey = form.byokGeminiKey || undefined;
+        hireData.byokModel = form.byokModel;
+      }
 
       // Try Stripe billing first — if configured:
       //   - First hire: returns { url } → redirect to Stripe Checkout
@@ -1126,6 +1158,274 @@ function HireEmployeeWizard() {
         </div>
       )}
 
+      {/* ═══ Step: Hosting Mode (Managed vs BYOK) ═══ */}
+      {step === "hosting" && (
+        <div key={animKey} className={animClass}>
+          <h1 style={styles.heading}>How should we run {form.name || "them"}?</h1>
+          <p style={styles.subtitle}>
+            Choose between our managed service or bring your own API keys
+          </p>
+
+          <div style={{ marginTop: 40, display: "flex", flexDirection: "column", gap: 12 }}>
+            {HOSTING_MODE_OPTIONS.map((opt) => {
+              const selected = form.hostingMode === opt.id;
+              const ModeIcon = opt.id === "managed" ? Server : Key;
+              return (
+                <button
+                  key={opt.id}
+                  onClick={() => {
+                    setForm({ ...form, hostingMode: opt.id });
+                    setKeyValidation(null);
+                  }}
+                  style={{
+                    padding: "24px 24px",
+                    background: selected ? "#ffffff" : "var(--bg-secondary)",
+                    border: selected ? "1.5px solid var(--text)" : "1px solid var(--border)",
+                    borderRadius: "var(--radius-2xl)",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    transition: "all 0.15s ease",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 20,
+                    position: "relative",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!selected) {
+                      (e.currentTarget as HTMLElement).style.borderColor = "var(--border-hover)";
+                      (e.currentTarget as HTMLElement).style.boxShadow = "var(--shadow-sm)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!selected) {
+                      (e.currentTarget as HTMLElement).style.borderColor = "var(--border)";
+                      (e.currentTarget as HTMLElement).style.boxShadow = "none";
+                    }
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 48, height: 48, borderRadius: 14,
+                      background: selected ? "var(--text)" : "var(--bg-secondary)",
+                      border: selected ? "none" : "1px solid var(--border)",
+                      display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    <ModeIcon size={22} style={{ color: selected ? "#ffffff" : "var(--text-secondary)" }} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 4 }}>
+                      <div style={{ fontSize: 17, fontWeight: 700, color: "var(--text)", letterSpacing: "-0.02em" }}>
+                        {opt.label}
+                      </div>
+                      <div style={{ fontSize: 17, fontWeight: 700, color: "var(--text)" }}>
+                        {opt.id === "managed"
+                          ? <>{EMPLOYEE_TIERS[form.tier].priceMonthly}<span style={{ fontSize: 13, fontWeight: 400, color: "var(--text-secondary)" }}>/mo</span></>
+                          : <>${BYOK_PRICE_MONTHLY}<span style={{ fontSize: 13, fontWeight: 400, color: "var(--text-secondary)" }}>/mo + your API costs</span></>
+                        }
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                      {opt.desc}
+                    </div>
+                  </div>
+                  {selected && (
+                    <div style={{
+                      position: "absolute", top: 14, right: 14, width: 22, height: 22, borderRadius: "50%",
+                      background: "var(--text)", display: "flex", alignItems: "center", justifyContent: "center",
+                    }}>
+                      <Check size={13} style={{ color: "#ffffff" }} />
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* BYOK Configuration — only shown when BYOK is selected */}
+          {form.hostingMode === "byok" && (
+            <div style={{ marginTop: 32 }}>
+              {/* API Keys */}
+              <div style={{ marginBottom: 24 }}>
+                <div style={styles.sectionLabel}>API Keys</div>
+                <div style={styles.sectionHint}>
+                  Your keys are encrypted and stored securely. They are only used inside your employee's isolated container.
+                </div>
+
+                {/* Anthropic Key */}
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ fontSize: 13, fontWeight: 500, color: "var(--text)", display: "block", marginBottom: 6 }}>
+                    Anthropic API Key <span style={{ color: "var(--red, #dc2626)" }}>*</span>
+                  </label>
+                  <div style={{ position: "relative" }}>
+                    <input
+                      className="input"
+                      type={showAnthropicKey ? "text" : "password"}
+                      placeholder="sk-ant-..."
+                      value={form.byokAnthropicKey}
+                      onChange={(e) => {
+                        setForm({ ...form, byokAnthropicKey: e.target.value });
+                        setKeyValidation(null);
+                      }}
+                      style={{ paddingRight: 40, borderRadius: "var(--radius-lg)", fontSize: 13 }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowAnthropicKey(!showAnthropicKey)}
+                      style={{
+                        position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)",
+                        background: "none", border: "none", cursor: "pointer", padding: 4,
+                        color: "var(--text-tertiary)",
+                      }}
+                    >
+                      {showAnthropicKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                  {keyValidation?.anthropic && (
+                    <div style={{ fontSize: 12, color: "var(--red, #dc2626)", marginTop: 4 }}>
+                      {keyValidation.anthropic}
+                    </div>
+                  )}
+                </div>
+
+                {/* Gemini Key */}
+                <div>
+                  <label style={{ fontSize: 13, fontWeight: 500, color: "var(--text)", display: "block", marginBottom: 6 }}>
+                    Gemini API Key <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>(optional — for image/video generation)</span>
+                  </label>
+                  <div style={{ position: "relative" }}>
+                    <input
+                      className="input"
+                      type={showGeminiKey ? "text" : "password"}
+                      placeholder="AIza..."
+                      value={form.byokGeminiKey}
+                      onChange={(e) => {
+                        setForm({ ...form, byokGeminiKey: e.target.value });
+                        setKeyValidation(null);
+                      }}
+                      style={{ paddingRight: 40, borderRadius: "var(--radius-lg)", fontSize: 13 }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowGeminiKey(!showGeminiKey)}
+                      style={{
+                        position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)",
+                        background: "none", border: "none", cursor: "pointer", padding: 4,
+                        color: "var(--text-tertiary)",
+                      }}
+                    >
+                      {showGeminiKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                  {keyValidation?.gemini && (
+                    <div style={{ fontSize: 12, color: "var(--red, #dc2626)", marginTop: 4 }}>
+                      {keyValidation.gemini}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Model Selection */}
+              <div>
+                <div style={styles.sectionLabel}>Choose AI Model</div>
+                <div style={styles.sectionHint}>
+                  With BYOK you can use any model — you pay Anthropic directly for usage.
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {BYOK_MODEL_OPTIONS.map((model) => {
+                    const selected = form.byokModel === model.id;
+                    const ModelIcon = model.tier === "expert" ? Crown : model.tier === "senior" ? Rocket : Zap;
+                    return (
+                      <button
+                        key={model.id}
+                        onClick={() => setForm({ ...form, byokModel: model.id })}
+                        style={{
+                          padding: "16px 18px",
+                          background: selected ? "#ffffff" : "var(--bg-secondary)",
+                          border: selected ? "1.5px solid var(--text)" : "1px solid var(--border)",
+                          borderRadius: "var(--radius-xl)",
+                          cursor: "pointer",
+                          textAlign: "left",
+                          transition: "all 0.15s ease",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 14,
+                          position: "relative",
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!selected) {
+                            (e.currentTarget as HTMLElement).style.borderColor = "var(--border-hover)";
+                            (e.currentTarget as HTMLElement).style.boxShadow = "var(--shadow-sm)";
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!selected) {
+                            (e.currentTarget as HTMLElement).style.borderColor = "var(--border)";
+                            (e.currentTarget as HTMLElement).style.boxShadow = "none";
+                          }
+                        }}
+                      >
+                        <ModelIcon size={18} style={{ color: selected ? "var(--text)" : "var(--text-secondary)", flexShrink: 0 }} />
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>{model.label}</div>
+                          <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>{model.desc}</div>
+                        </div>
+                        {selected && (
+                          <div style={{
+                            width: 20, height: 20, borderRadius: "50%",
+                            background: "var(--text)", display: "flex", alignItems: "center", justifyContent: "center",
+                          }}>
+                            <Check size={12} style={{ color: "#ffffff" }} />
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {renderBottomNav({
+            onNext: form.hostingMode === "byok" && !form.byokAnthropicKey.trim()
+              ? undefined
+              : async () => {
+                  if (form.hostingMode === "byok") {
+                    // Validate the API key before proceeding
+                    setValidatingKeys(true);
+                    setKeyValidation(null);
+                    try {
+                      const result = await api.validateApiKeys({
+                        anthropicKey: form.byokAnthropicKey,
+                        geminiKey: form.byokGeminiKey || undefined,
+                      });
+                      if (!result.anthropicValid) {
+                        setKeyValidation({ anthropic: result.anthropicError || "Invalid API key" });
+                        setValidatingKeys(false);
+                        return;
+                      }
+                      if (form.byokGeminiKey && !result.geminiValid) {
+                        setKeyValidation({ gemini: result.geminiError || "Invalid API key" });
+                        setValidatingKeys(false);
+                        return;
+                      }
+                    } catch (err: any) {
+                      setKeyValidation({ anthropic: err.message || "Validation failed" });
+                      setValidatingKeys(false);
+                      return;
+                    }
+                    setValidatingKeys(false);
+                  }
+                  goNext();
+                },
+            nextLabel: validatingKeys ? "Validating..." : undefined,
+            isLoading: validatingKeys,
+            nextDisabled: form.hostingMode === "byok" && !form.byokAnthropicKey.trim(),
+          })}
+        </div>
+      )}
+
       {/* ═══ Step 4: Personality ═══ */}
       {step === "personality" && (
         <div key={animKey} className={animClass}>
@@ -1812,52 +2112,79 @@ function HireEmployeeWizard() {
 
             {/* Tier & Pricing */}
             {(() => {
-              const baseCost = EMPLOYEE_TIERS[form.tier].priceMonthly;
-              const addonCost = calculateAddonTotal(form.tier, form.channels, form.capabilities, form.skills);
+              const isByok = form.hostingMode === "byok";
+              const baseCost = isByok ? BYOK_PRICE_MONTHLY : EMPLOYEE_TIERS[form.tier].priceMonthly;
+              const addonCost = isByok ? 0 : calculateAddonTotal(form.tier, form.channels, form.capabilities, form.skills);
               const totalCost = baseCost + addonCost;
 
-              // Collect paid add-on line items
+              // Collect paid add-on line items (managed only)
               const addonLines: { label: string; price: number }[] = [];
-              for (const ch of form.channels) {
-                const p = getAddonPrice("channels", ch, form.tier);
-                if (p !== "free") {
-                  const opt = CHANNEL_OPTIONS.find((c) => c.id === ch);
-                  addonLines.push({ label: opt?.label || ch, price: p });
+              if (!isByok) {
+                for (const ch of form.channels) {
+                  const p = getAddonPrice("channels", ch, form.tier);
+                  if (p !== "free") {
+                    const opt = CHANNEL_OPTIONS.find((c) => c.id === ch);
+                    addonLines.push({ label: opt?.label || ch, price: p });
+                  }
+                }
+                for (const cap of form.capabilities) {
+                  const p = getAddonPrice("capabilities", cap, form.tier);
+                  if (p !== "free") {
+                    const opt = CAPABILITY_OPTIONS.find((c) => c.id === cap);
+                    addonLines.push({ label: opt?.label || cap, price: p });
+                  }
+                }
+                for (const sk of form.skills) {
+                  const p = getAddonPrice("expertise", sk, form.tier);
+                  if (p !== "free") {
+                    const opt = EXPERTISE_OPTIONS.find((s) => s.id === sk);
+                    addonLines.push({ label: opt?.label || sk, price: p });
+                  }
                 }
               }
-              for (const cap of form.capabilities) {
-                const p = getAddonPrice("capabilities", cap, form.tier);
-                if (p !== "free") {
-                  const opt = CAPABILITY_OPTIONS.find((c) => c.id === cap);
-                  addonLines.push({ label: opt?.label || cap, price: p });
-                }
-              }
-              for (const sk of form.skills) {
-                const p = getAddonPrice("expertise", sk, form.tier);
-                if (p !== "free") {
-                  const opt = EXPERTISE_OPTIONS.find((s) => s.id === sk);
-                  addonLines.push({ label: opt?.label || sk, price: p });
-                }
-              }
+
+              const byokModelLabel = BYOK_MODEL_OPTIONS.find((m) => m.id === form.byokModel)?.label;
 
               return (
                 <div style={{ marginBottom: 20 }}>
                   <div style={{ fontSize: 11, fontWeight: 500, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>
                     Pricing
                   </div>
+                  {/* Hosting mode badge */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                    <span style={{
+                      ...pillStyle,
+                      background: isByok ? "var(--blue-muted, #dbeafe)" : undefined,
+                      color: isByok ? "var(--blue, #2563eb)" : undefined,
+                    }}>
+                      {isByok ? "Bring Your Own Key" : "Managed"}
+                    </span>
+                    {isByok && byokModelLabel && (
+                      <span style={pillStyle}>{byokModelLabel}</span>
+                    )}
+                  </div>
                   {/* Base tier */}
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={pillStyle}>{EMPLOYEE_TIERS[form.tier].label}</span>
-                      <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
-                        {EMPLOYEE_TIERS[form.tier].creditsIncluded} credits included
+                      <span style={pillStyle}>
+                        {isByok ? "Infrastructure" : EMPLOYEE_TIERS[form.tier].label}
                       </span>
+                      {!isByok && (
+                        <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
+                          {EMPLOYEE_TIERS[form.tier].creditsIncluded} credits included
+                        </span>
+                      )}
+                      {isByok && (
+                        <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
+                          API costs billed by Anthropic
+                        </span>
+                      )}
                     </div>
                     <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text)" }}>
                       ${baseCost}/mo
                     </span>
                   </div>
-                  {/* Add-on line items */}
+                  {/* Add-on line items (managed only) */}
                   {addonLines.length > 0 && (
                     <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border)" }}>
                       {addonLines.map((item, i) => (

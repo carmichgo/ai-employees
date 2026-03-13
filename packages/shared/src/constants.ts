@@ -1,4 +1,4 @@
-import type { EmployeeTier } from "./types/employee.js";
+import type { EmployeeTier, HostingMode } from "./types/employee.js";
 
 export const PLAN_LIMITS = {
   starter: { maxEmployees: 50, maxChannelsPerEmployee: 10 },
@@ -54,6 +54,23 @@ export const EMPLOYEE_TIERS: Record<EmployeeTier, EmployeeTierConfig> = {
 } as const;
 
 export const EMPLOYEE_TIER_OPTIONS: EmployeeTier[] = ["junior", "senior", "expert"];
+
+// ── BYOK (Bring Your Own Key) ────────────────────────
+// Users provide their own Anthropic + Gemini API keys.
+// They get model freedom and pay a flat infra-only fee.
+
+export const BYOK_PRICE_MONTHLY = 129; // $/mo per employee (infrastructure only)
+
+export const BYOK_MODEL_OPTIONS = [
+  { id: "anthropic/claude-opus-4-6", label: "Claude Opus 4.6", desc: "Most capable — deep reasoning, complex tasks", tier: "expert" },
+  { id: "anthropic/claude-sonnet-4-5-20250929", label: "Claude Sonnet 4.5", desc: "Balanced — fast and capable", tier: "senior" },
+  { id: "anthropic/claude-haiku-4-5-20251001", label: "Claude Haiku 4.5", desc: "Fast & affordable — simple tasks", tier: "junior" },
+] as const;
+
+export const HOSTING_MODE_OPTIONS: { id: HostingMode; label: string; desc: string }[] = [
+  { id: "managed", label: "Managed", desc: "We handle everything — API keys, billing, and credits included" },
+  { id: "byok", label: "Bring Your Own Key", desc: "Use your own Anthropic & Gemini API keys — flat $129/mo infrastructure fee" },
+];
 
 /** Get the model string for a given employee tier */
 export function getModelForTier(tier: EmployeeTier): string {

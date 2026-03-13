@@ -39,6 +39,7 @@ export async function POST(request: NextRequest) {
       name,
       jobTitle,
       tier = "junior",
+      hostingMode = "managed",
       channels = [],
       capabilities = [],
       expertise = [],
@@ -109,12 +110,14 @@ export async function POST(request: NextRequest) {
       channels,
       capabilities,
       expertise,
+      hostingMode,
     };
 
     const hirePayload = {
       name,
       jobTitle,
       tier,
+      hostingMode,
       channels,
       capabilities,
       expertise,

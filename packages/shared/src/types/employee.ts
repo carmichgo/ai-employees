@@ -19,6 +19,8 @@ export type PlanTier = "starter" | "professional" | "enterprise";
 
 export type EmployeeTier = "junior" | "senior" | "expert";
 
+export type HostingMode = "managed" | "byok";
+
 export interface ModelConfig {
   primary: string;
   fallbacks?: string[];
@@ -61,4 +63,8 @@ export interface EmployeeCreateInput {
   modelConfig?: ModelConfig;
   channels?: ChannelType[];
   authorityConfig?: AuthorityConfig;
+  hostingMode?: HostingMode;
+  byokAnthropicKey?: string;
+  byokGeminiKey?: string;
+  byokModel?: string;
 }

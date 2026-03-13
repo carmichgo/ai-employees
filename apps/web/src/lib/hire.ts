@@ -57,6 +57,7 @@ export async function provisionAndReturn(
   if (!company) throw new Error("Company not found");
 
   const tier = (input.tier || "junior") as EmployeeTier;
+  const hostingMode = input.hostingMode || "managed";
   let persona = input.persona;
   let goals = input.goals;
   let emoji = "🤖";
@@ -71,7 +72,10 @@ export async function provisionAndReturn(
   }
 
   const gatewayToken = crypto.randomBytes(32).toString("hex");
-  const tierModel = getModelForTier(tier);
+  // BYOK: use the user-selected model; Managed: use the tier model
+  const tierModel = hostingMode === "byok" && input.byokModel
+    ? input.byokModel
+    : getModelForTier(tier);
 
   // Determine initial status
   const doEnabled = isDropletProvisioningEnabled();
@@ -86,6 +90,13 @@ export async function provisionAndReturn(
       jobTitle: input.jobTitle,
       templateId: input.templateId,
       tier,
+      hostingMode,
+      // BYOK keys — stored alongside the employee record
+      ...(hostingMode === "byok" && {
+        byokAnthropicKey: input.byokAnthropicKey || null,
+        byokGeminiKey: input.byokGeminiKey || null,
+        byokModel: input.byokModel || null,
+      }),
       emoji,
       persona,
       goals,

@@ -16,6 +16,15 @@ export const employees = pgTable("employees", {
   tier: varchar("tier", { length: 20 }).notNull().default("junior"),
   // junior | senior | expert
 
+  // Hosting mode — "managed" uses platform API keys, "byok" uses customer's own keys
+  hostingMode: varchar("hosting_mode", { length: 20 }).notNull().default("managed"),
+  // managed | byok
+
+  // BYOK fields — only populated when hostingMode = "byok"
+  byokAnthropicKey: text("byok_anthropic_key"), // encrypted
+  byokGeminiKey: text("byok_gemini_key"), // encrypted
+  byokModel: varchar("byok_model", { length: 100 }), // user-selected model (e.g. "anthropic/claude-sonnet-4-5-20250929")
+
   // Stripe billing — links this employee to a line item on the company subscription
   stripeSubscriptionItemId: varchar("stripe_subscription_item_id", { length: 255 }),
   priceMonthly: integer("price_monthly"),

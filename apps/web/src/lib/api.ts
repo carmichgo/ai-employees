@@ -109,6 +109,7 @@ class ApiClient {
     name: string;
     jobTitle: string;
     tier?: string;
+    hostingMode?: string;
     templateId?: string;
     persona?: string;
     goals?: string;
@@ -124,6 +125,9 @@ class ApiClient {
       defaultRole: string;
       members: Array<{ slackUserId: string; name: string; role: string }>;
     };
+    byokAnthropicKey?: string;
+    byokGeminiKey?: string;
+    byokModel?: string;
   }) {
     return this.request<{ employee: any; message: string }>("/api/employees", {
       method: "POST",
@@ -681,6 +685,7 @@ class ApiClient {
     name: string;
     jobTitle: string;
     tier: string;
+    hostingMode?: string;
     channels: string[];
     capabilities: string[];
     expertise: string[];
@@ -691,6 +696,9 @@ class ApiClient {
     skills?: string[];
     personalityConfig?: any;
     authorityConfig?: any;
+    byokAnthropicKey?: string;
+    byokGeminiKey?: string;
+    byokModel?: string;
   }) {
     // Returns { url } for first hire (redirect to Stripe Checkout)
     // or { employee, message } for subsequent hires (line item added to existing subscription)
@@ -916,6 +924,19 @@ class ApiClient {
   async updateApp(id: string, data: { name?: string; description?: string; emoji?: string; shared?: boolean; isPublic?: boolean; status?: string }) {
     return this.request<{ app: any }>(`/api/apps/${id}`, {
       method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  // BYOK API key validation
+  async validateApiKeys(data: { anthropicKey: string; geminiKey?: string }) {
+    return this.request<{
+      anthropicValid: boolean;
+      anthropicError?: string;
+      geminiValid: boolean;
+      geminiError?: string;
+    }>("/api/billing/validate-keys", {
+      method: "POST",
       body: JSON.stringify(data),
     });
   }
