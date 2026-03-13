@@ -72,7 +72,7 @@ import {
 // ── Steps ──────────────────────────────────────
 
 type Step = "role" | "identity" | "tier" | "hosting" | "personality" | "boss-tech" | "authority" | "channels" | "tools" | "skills" | "review";
-const STEPS: Step[] = ["role", "identity", "tier", "hosting", "personality", "boss-tech", "authority", "channels", "tools", "skills", "review"];
+const STEPS: Step[] = ["role", "identity", "hosting", "tier", "personality", "boss-tech", "authority", "channels", "tools", "skills", "review"];
 const SKIPPABLE_STEPS: Step[] = ["authority", "channels", "tools", "skills"];
 
 // ── Channel Options ────────────────────────────
@@ -1059,7 +1059,10 @@ function HireEmployeeWizard() {
         <div key={animKey} className={animClass}>
           <h1 style={styles.heading}>Choose their experience level</h1>
           <p style={styles.subtitle}>
-            This determines {form.name || "their"} AI model, speed, and monthly cost
+            {form.hostingMode === "byok"
+              ? <>This determines {form.name || "their"} container resources. You pay a flat ${BYOK_PRICE_MONTHLY}/mo + your own API costs.</>
+              : <>This determines {form.name || "their"} AI model, speed, and monthly cost</>
+            }
           </p>
 
           <div style={{ marginTop: 40, display: "flex", flexDirection: "column", gap: 12 }}>
@@ -1067,6 +1070,7 @@ function HireEmployeeWizard() {
               const config = EMPLOYEE_TIERS[tierId];
               const selected = form.tier === tierId;
               const TierIcon = tierId === "junior" ? Zap : tierId === "senior" ? Rocket : Crown;
+              const isByok = form.hostingMode === "byok";
               return (
                 <button
                   key={tierId}
@@ -1118,16 +1122,20 @@ function HireEmployeeWizard() {
                       <div style={{ fontSize: 17, fontWeight: 700, color: "var(--text)", letterSpacing: "-0.02em" }}>
                         {config.label}
                       </div>
-                      <div style={{ fontSize: 17, fontWeight: 700, color: "var(--text)" }}>
-                        ${config.priceMonthly}<span style={{ fontSize: 13, fontWeight: 400, color: "var(--text-secondary)" }}>/mo</span>
-                      </div>
+                      {!isByok && (
+                        <div style={{ fontSize: 17, fontWeight: 700, color: "var(--text)" }}>
+                          ${config.priceMonthly}<span style={{ fontSize: 13, fontWeight: 400, color: "var(--text-secondary)" }}>/mo</span>
+                        </div>
+                      )}
                     </div>
                     <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.5 }}>
                       {config.subtitle}
                     </div>
-                    <div style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 4 }}>
-                      {config.creditsIncluded} task credits/mo &middot; ${config.overagePerCredit.toFixed(2)}/credit overage
-                    </div>
+                    {!isByok && (
+                      <div style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 4 }}>
+                        {config.creditsIncluded} task credits/mo &middot; ${config.overagePerCredit.toFixed(2)}/credit overage
+                      </div>
+                    )}
                   </div>
                   {selected && (
                     <div
