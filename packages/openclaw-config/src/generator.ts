@@ -651,7 +651,7 @@ export function generateAgentsMd(employee: EmployeeInput): string {
   parts.push("## Self-Repair");
   parts.push("");
   parts.push("You have `sudo` access (no password). Never say 'I can't because X is not installed' — install it yourself: `sudo apt-get install -y <pkg>`, `pip3 install <pkg>`, `sudo npm install -g <pkg>`.");
-  parts.push("If browser breaks: `cd /app && sudo npx playwright-core install-deps chromium && npx playwright-core install chromium`, then symlink and restart gateway.");
+  parts.push("If browser breaks: `cd /app && sudo npx playwright-core install-deps chromium && npx playwright-core install chromium && sudo ln -sf $(find /home/node/.cache/ms-playwright -name chrome -path '*/chrome-linux64/*' | head -1) /usr/local/bin/chromium`, then restart gateway.");
   parts.push("Restart gateway: `curl -s -X POST \"$BLITZ_API_URL/employee/restart-gateway\" -H \"Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN\" -H \"Content-Type: application/json\"`");
   parts.push("");
 

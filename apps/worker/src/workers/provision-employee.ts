@@ -251,7 +251,18 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
       // proxy can reach the relay listener (which only binds to localhost).
       // The relay-tunnel.cjs script is written to the config dir during provisioning.
       // Then start the OpenClaw gateway as the main process.
-      Cmd: ["bash", "-c", "node /home/node/.openclaw/relay-tunnel.cjs & exec node openclaw.mjs gateway --bind lan --allow-unconfigured"],
+      Cmd: ["bash", "-c", [
+        // Auto-fix chromium symlink on startup if missing (handles cases where
+        // the install step timed out during provisioning or container was recreated)
+        `if [ ! -x /usr/local/bin/chromium ]; then`,
+        `  CHROME_BIN=$(find /home/node/.cache/ms-playwright -name chrome -path "*/chrome-linux64/*" 2>/dev/null | head -1);`,
+        `  if [ -n "$CHROME_BIN" ] && [ -x "$CHROME_BIN" ]; then`,
+        `    ln -sf "$CHROME_BIN" /usr/local/bin/chromium 2>/dev/null || sudo ln -sf "$CHROME_BIN" /usr/local/bin/chromium 2>/dev/null || true;`,
+        `  fi;`,
+        `fi;`,
+        `node /home/node/.openclaw/relay-tunnel.cjs &`,
+        `exec node openclaw.mjs gateway --bind lan --allow-unconfigured`,
+      ].join(" ")],
       Env: [
         `HOME=/home/node`,
         `NODE_OPTIONS=--max-old-space-size=${getNodeHeapForTier(tier)}`,
