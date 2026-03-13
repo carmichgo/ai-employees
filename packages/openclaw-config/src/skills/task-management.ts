@@ -19,7 +19,13 @@ You MUST log every piece of work you do to the company's task management system.
 
 **The rule is simple: if someone asked you to do work, there should be a task for it.**
 
-**Before creating any task, ALWAYS list your existing tasks first** and verify no task with the same or similar title/topic already exists. If one does, update it with a PATCH instead of creating a new one.
+**Before creating any task, you MUST run the anti-duplication check:**
+1. List ALL existing tasks (all statuses including completed)
+2. Read \`recentComments\` on each task to understand what work was actually done
+3. Search for similar titles, topics, or overlapping scope
+4. If a similar non-completed task exists → PATCH it with updates, don't create new
+5. If similar work was already COMPLETED → don't redo it, find genuinely different work
+6. Only create a new task if it passes ALL checks above
 
 ## API Reference
 
@@ -74,13 +80,16 @@ curl -s -X PATCH "$BLITZ_API_URL/employee/tasks/TASK_ID" \\
 ## Standard Task Lifecycle
 
 1. **Receive work** — your manager asks you to do something, or you identify work to do
-2. **Check for existing tasks first** — list your tasks and verify no task with the same or similar title/topic already exists
-3. **Create task** — only if no matching task exists. Log it with status \`in_progress\` and appropriate priority
+2. **Run anti-duplication check** — fetch ALL tasks (all statuses), read their \`recentComments\`, search for similar titles/topics/scope
+3. **Decide: create or update?**
+   - Similar non-completed task exists → PATCH it (add comment, update description/status)
+   - Similar work was already COMPLETED → DON'T create, find genuinely different work
+   - Genuinely new work → Create task with status \`in_progress\`
 4. **Do the work** — complete the task using your tools and capabilities
 5. **Mark complete** — update the task status to \`completed\` with a comment summarizing the result
 6. **Report back** — tell your manager what you did (the task is also visible in the dashboard)
 
-**IMPORTANT: NEVER create duplicate tasks.** Before creating any task, review your FULL task list — all statuses including completed. If a non-completed task with the same or similar title/topic exists, update it with a PATCH. If similar work was already COMPLETED, do not redo it — find something genuinely new instead.
+**CRITICAL: The anti-duplication check in step 2 is NOT optional.** Every duplicate task you create wastes your manager's time and makes the task board unreliable. When in doubt, update an existing task rather than creating a new one.
 
 ### Example: Manager Asks You to Research Competitors
 
@@ -257,6 +266,11 @@ curl -s -X PATCH "$BLITZ_API_URL/employee/tasks/$TASK_ID" \\
 You should always be moving forward — finishing work, picking up the next thing, finding new opportunities. Being proactive is good — but repeating the same work or creating vague busywork is not.
 
 **The #1 rule for avoiding duplicates: ALWAYS review your completed tasks and memory.md before creating anything new.** Your completed tasks tell you what you already did. If something is similar to a completed task, do NOT create it again.
+
+**Plan full scope upfront, then batch:**
+- Multi-platform content → handle all platforms together (LinkedIn + X in one pass), not one platform at a time
+- Multi-step pipelines → prepare all data/payloads first, then execute in sequence
+- API operations → batch creates/updates, don't create a record and then patch it 5 times separately
 
 Self-initiated work is encouraged, but it must:
 1. Be **genuinely different** from anything you already completed or have in progress

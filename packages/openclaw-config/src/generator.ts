@@ -484,13 +484,49 @@ export function generateAgentsMd(employee: EmployeeInput): string {
   // ANTI-LOOP PROTOCOL — must be the very first thing the model reads
   // ═══════════════════════════════════════════════════════════════════════
 
-  parts.push("## RULE #0 — TASK BOARD FIRST (ANTI-LOOP PROTOCOL)");
+  parts.push("## RULE #0 — PRE-FLIGHT CHECKLIST (ANTI-LOOP PROTOCOL)");
   parts.push("");
-  parts.push("**YOUR CONTEXT LIES. YOUR TASK BOARD TELLS THE TRUTH.** Chat context may show stale messages about work already completed. Before doing ANY work, gather all context in ONE exec call:");
+  parts.push("**YOUR CONTEXT LIES. YOUR TASK BOARD TELLS THE TRUTH.** Chat context may show stale messages about work already completed. RUN THIS CHECKLIST BEFORE EVERY WORK CYCLE — no exceptions.");
+  parts.push("");
+  parts.push("### Step 1: Context Gathering (ONE exec call)");
   parts.push("```bash");
-  parts.push("echo '=== TASKS ===' && curl -s \"$BLITZ_API_URL/employee/tasks\" -H \"Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN\" | jq '.tasks[] | {id, title, status, recentComments}' && echo '=== MEMORY ===' && cat /home/node/.openclaw/workspace/memory.md 2>/dev/null && echo '=== WORKSPACE ===' && ls /home/node/.openclaw/workspace/ 2>/dev/null || true");
+  parts.push("echo '=== TASKS ===' && curl -s \"$BLITZ_API_URL/employee/tasks\" -H \"Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN\" | jq '.tasks[] | {id, title, status, priority, category, recentComments}' && echo '=== MEMORY ===' && cat /home/node/.openclaw/workspace/memory.md 2>/dev/null && echo '=== WORKSPACE ===' && ls /home/node/.openclaw/workspace/ 2>/dev/null && echo '=== CHECKPOINTS ===' && cat /home/node/.openclaw/workspace/checkpoints/*.json 2>/dev/null || true");
   parts.push("```");
-  parts.push("If a task is COMPLETED → don't redo it. If IN_PROGRESS with comments → resume from where comments indicate, don't restart. Before expensive API calls (video/image generation), check if outputs already exist on disk first.");
+  parts.push("This gives you: ALL tasks (completed + in_progress + pending + blocked) with recent comments, memory.md (what you've learned), workspace files (outputs on disk), and checkpoints (progress on multi-step tasks).");
+  parts.push("");
+  parts.push("### Step 2: Anti-Duplication Checks");
+  parts.push("Before creating ANY task:");
+  parts.push("1. Review the full task list from Step 1 — ALL statuses including completed");
+  parts.push("2. Search for similar titles, topics, or overlapping work");
+  parts.push("3. If a similar task exists in a non-completed status → PATCH it, don't create new");
+  parts.push("4. If similar work was already completed → DON'T redo it, find genuinely new work");
+  parts.push("5. Only create a task if it is genuinely new AND not covered by any existing task");
+  parts.push("");
+  parts.push("Before generating ANY artifact (image, video, document, file):");
+  parts.push("1. Check if outputs already exist on disk (`ls` the expected output directory)");
+  parts.push("2. Check checkpoint files for the task (`cat /home/node/.openclaw/workspace/checkpoints/<task-id>.json`)");
+  parts.push("3. If files exist → skip generation, move to the next step");
+  parts.push("");
+  parts.push("### Step 3: Decide & Act");
+  parts.push("- COMPLETED task → don't redo it");
+  parts.push("- IN_PROGRESS with comments → resume from where comments indicate, don't restart");
+  parts.push("- PENDING → pick highest priority, set to in_progress, start working");
+  parts.push("- BLOCKED → read comments, check if blocker is resolved");
+  parts.push("");
+  parts.push("### Step 4: Batch Operations");
+  parts.push("Plan the FULL scope of work upfront, then batch:");
+  parts.push("- Content creation: generate all pieces together, not one-at-a-time across heartbeats");
+  parts.push("- API calls: prepare full payloads, then execute in sequence — don't create a row and patch it 5 times");
+  parts.push("- Multi-platform work: handle all platforms together (LinkedIn + X together, not separately)");
+  parts.push("");
+  parts.push("### Loop Prevention Gate");
+  parts.push("**Before starting ANY work, verify ALL of these are true:**");
+  parts.push("- [ ] Gathered all context in ONE exec call (tasks + memory + workspace + checkpoints)");
+  parts.push("- [ ] Checked for duplicate tasks (all statuses including completed)");
+  parts.push("- [ ] Checked for existing outputs on disk");
+  parts.push("- [ ] Planned full scope (not fragmented work)");
+  parts.push("- [ ] Ready to batch operations (not one-at-a-time)");
+  parts.push("If any checkbox is unchecked → STOP and complete it first.");
   parts.push("");
 
   parts.push("## RULE #1 — MINIMIZE TOOL CALLS (TOKEN EFFICIENCY)");
@@ -905,52 +941,38 @@ export function generateHeartbeatMd(employee?: { name?: string; jobTitle?: strin
 
 When you receive this heartbeat prompt, follow these steps IN ORDER:
 
-## 0. ANTI-LOOP CHECK — Read this before doing ANYTHING
+## 1. Run the Pre-Flight Checklist (MANDATORY — see AGENTS.md RULE #0)
 
-**Your conversation context may contain stale chat messages about work that is already DONE or actively IN PROGRESS.** Do NOT trust chat context. The ONLY source of truth is your task board and the files on disk. If you skip this step and act on chat context, you WILL redo work, waste API credits, and create duplicates. This has happened before — don't let it happen again.
+**Your conversation context may contain stale messages about work already DONE.** Do NOT trust chat context — the ONLY source of truth is your task board + files on disk.
 
-## 1. Gather ALL context in ONE exec call
-
-**IMPORTANT: Do this in a SINGLE tool call to minimize token usage:**
+Run the Pre-Flight Checklist from AGENTS.md in ONE exec call:
 \`\`\`bash
-echo '=== TASKS ===' && curl -s "$BLITZ_API_URL/employee/tasks" -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" | jq '.tasks[] | {id, title, status, priority, recentComments}' && echo '=== MEMORY ===' && cat /home/node/.openclaw/workspace/memory.md 2>/dev/null && echo '=== CHECKPOINTS ===' && cat /home/node/.openclaw/workspace/checkpoints/*.json 2>/dev/null && echo '=== WORKSPACE FILES ===' && ls /home/node/.openclaw/workspace/ 2>/dev/null || true
+echo '=== TASKS ===' && curl -s "$BLITZ_API_URL/employee/tasks" -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" | jq '.tasks[] | {id, title, status, priority, category, recentComments}' && echo '=== MEMORY ===' && cat /home/node/.openclaw/workspace/memory.md 2>/dev/null && echo '=== CHECKPOINTS ===' && cat /home/node/.openclaw/workspace/checkpoints/*.json 2>/dev/null && echo '=== WORKSPACE FILES ===' && ls /home/node/.openclaw/workspace/ 2>/dev/null || true
 \`\`\`
 
-This gives you tasks + memory + checkpoints + workspace files all at once. Do NOT make separate tool calls for each.
+**Read the output carefully before doing anything:**
+- **Tasks** — your FULL list (all statuses). Completed = your history (don't repeat). \`recentComments\` = your work log, manager instructions, credentials.
+- **Memory** — persistent notes across sessions.
+- **Checkpoints** — progress on multi-step tasks. Resume from here, never restart.
+- **Workspace files** — outputs on disk. Don't regenerate what exists.
 
-**Read the output carefully:**
-- **Tasks** — your FULL task list (in_progress, pending, blocked, AND completed). Completed tasks show what you already did — don't repeat. \`recentComments\` contain your work history, manager instructions, credentials, etc.
-- **Memory** — persistent notes from past sessions.
-- **Checkpoints** — progress on multi-step tasks. Resume from here, don't restart.
-- **Workspace files** — outputs already on disk. Don't regenerate what exists.
-
-**Cross-reference with chat context:** If chat mentions work, check the task board. If COMPLETED → done. If IN_PROGRESS with comments → resume from last comment. Before ANY expensive API call, verify outputs don't already exist.
-
-If you need full comment history for a specific task:
-\`\`\`bash
-curl -s "$BLITZ_API_URL/employee/tasks/<TASK_ID>/comments" -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" | jq '.comments[] | {authorType, authorName, content}'
-\`\`\`
+If you need full comment history: \`curl -s "$BLITZ_API_URL/employee/tasks/<TASK_ID>/comments" -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" | jq '.comments[] | {authorType, authorName, content}'\`
 
 ## 2. Act on what you find
 
-**STOP — Before doing ANY work on ANY task, read that task's comments.** The comments are your memory. They contain what you already did, what your manager told you, credentials they shared, and results you delivered. Acting without reading comments is the #1 cause of redoing work that was already finished.
+**Before touching ANY task, read its comments first.** Comments are your memory — they contain what you already did, what your manager told you, and what results were delivered. Acting without reading comments is the #1 cause of redoing finished work.
 
-- **in_progress tasks** → **Read ALL comments on the task first.** Your last comment tells you exactly where you left off — resume from there, do NOT restart from scratch. **Before doing ANY work**, check for existing outputs:
-  1. \`cat /home/node/.openclaw/workspace/checkpoints/<task-id>.json 2>/dev/null\` — checkpoint file
-  2. \`ls -la /home/node/.openclaw/workspace/\` — output files already on disk
-  3. If outputs exist and the task's comments show the work was done → **mark the task completed** instead of redoing it
-  4. If partially done → resume from checkpoint, do NOT regenerate things that already exist on disk
-  Add a progress comment only if you've made actual progress since the last comment — do NOT repeat the same status.
-- **pending tasks** → **Read the task's comments first** — your manager may have left instructions or context. Then pick the highest-priority one, set it to in_progress, and start working.
-- **blocked tasks** → **Read the comments carefully** — your manager may have already provided what you need (credentials, instructions, approvals). If the blocker is resolved based on the comments, move to \`in_progress\` and continue. If still blocked and you have NOT already notified your manager about this specific blocker, notify them via \`/employee/notify-manager\`. Do NOT add a duplicate comment repeating the same blocker — only comment if something has changed.
-- **completed tasks** → These are your HISTORY. Do not touch them, but **read their titles and last comment** so you know what you already did and what the result was. This prevents you from creating a new task that duplicates completed work.
+- **in_progress** → Read comments, check checkpoint file + output directory. If outputs exist and comments show work was done → mark completed. If partially done → resume from checkpoint. Only add a progress comment if you have genuinely new progress.
+- **pending** → Read comments for manager instructions. Pick highest-priority, set to in_progress, start working.
+- **blocked** → Read comments — manager may have already unblocked you. If resolved → move to in_progress. If still blocked and you haven't already notified → notify via \`/employee/notify-manager\`. Don't add duplicate "still blocked" comments.
+- **completed** → Your HISTORY. Read titles + last comment to know what you already did. Never create a task that duplicates completed work.
 ${nothingToDo}
 
 ## 3. Work until done (or next heartbeat)
 
-Do not stop after one small step. Complete the task fully, or make substantial progress before stopping. If you finish a task, check for the next one immediately — do not wait for the next heartbeat.${isProactive ? " Keep the momentum going — idle time is wasted time." : ""}
+Complete the task fully, or make substantial progress. If you finish, pick up the next one immediately — don't wait for the next heartbeat.${isProactive ? " Keep momentum — idle time is wasted time." : ""}
 
-**MANDATORY: Log each step as a task comment.** For multi-step tasks (generating multiple clips, making multiple API calls, processing a pipeline), add a comment AFTER each step completes: \`"Step 2/5 done: Generated clip 2 (saved to /workspace/clip-2.mp4). Next: clip 3."\` This is how future-you (after context reset) knows exactly which steps are done and which to skip. **Never call an expensive API without first reading your task comments to check if that step was already completed.**
+**Log each step as a task comment** for multi-step tasks. After each step: \`"Step 2/5 done: Generated clip 2 (saved to /workspace/clip-2.mp4). Next: clip 3."\` This is how future-you knows which steps to skip. **Never call an expensive API without first checking if that step was already completed.**
 
 ## 3b. Large tasks — checkpoint your progress
 
