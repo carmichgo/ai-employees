@@ -770,6 +770,7 @@ function InboxContent() {
     setSending(false);
     sendingGuardRef.current = false;
     sendingForRef.current = null;
+    setPendingReplyId(null);
     try {
       await api.stopEmployee(selectedId);
     } catch (err: any) {
