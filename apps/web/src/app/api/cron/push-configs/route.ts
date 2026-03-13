@@ -79,7 +79,7 @@ async function restartContainer(
           "Content-Type": "application/json",
           "x-interservice-secret": secret,
         },
-        signal: AbortSignal.timeout(30000),
+        signal: AbortSignal.timeout(60000),
       },
     );
     return res.ok;
