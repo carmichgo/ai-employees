@@ -273,12 +273,14 @@ class ApiClient {
     message: string,
     conversationHistory?: Array<{ role: string; content: string }>,
     files?: Array<{ name: string; mimeType: string }>,
+    signal?: AbortSignal,
   ) {
     return this.request<{ reply: string; mode: string; usage?: any }>(
       `/api/employees/${id}/chat`,
       {
         method: "POST",
         body: JSON.stringify({ message, conversationHistory, files }),
+        signal,
       },
     );
   }

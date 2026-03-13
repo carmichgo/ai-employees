@@ -115,6 +115,8 @@ function InboxContent() {
   // Ref-based guard to prevent double-invocation of handleSend
   // (React state `sending` can be stale in closures between renders)
   const sendingGuardRef = useRef(false);
+  // AbortController for in-flight chat request so stop/new-send can cancel it
+  const chatAbortRef = useRef<AbortController | null>(null);
 
   // File upload state
   const [uploading, setUploading] = useState(false);
@@ -757,29 +759,40 @@ function InboxContent() {
   const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); setDragOver(true); }, []);
   const handleDragLeave = useCallback((e: React.DragEvent) => { e.preventDefault(); setDragOver(false); }, []);
 
-  // Stop employee — kill all running processes
+  // Stop employee — kill all running processes and abort in-flight chat request
   const handleStop = async () => {
     if (!selectedId) return;
+    // Abort the in-flight chat fetch so the UI unblocks immediately
+    if (chatAbortRef.current) {
+      chatAbortRef.current.abort();
+      chatAbortRef.current = null;
+    }
+    setSending(false);
+    sendingGuardRef.current = false;
+    sendingForRef.current = null;
     try {
       await api.stopEmployee(selectedId);
-      setSending(false);
-      sendingGuardRef.current = false;
-      sendingForRef.current = null;
     } catch (err: any) {
-      alert(`Stop failed: ${err.message}`);
+      console.error("Stop failed:", err.message);
     }
   };
 
   // Send message
   const handleSend = async () => {
-    // Ref-based guard prevents double-invocation (state can be stale in closures)
-    if (sendingGuardRef.current) return;
     const text = input.trim();
     const filesToUpload = [...pendingFiles];
-    if ((!text && filesToUpload.length === 0) || sending || !selectedId) return;
+    if ((!text && filesToUpload.length === 0) || !selectedId) return;
 
     const emp = employees.find((e) => e.id === selectedId);
     if (!emp || emp.status !== "active") return;
+
+    // If already sending, abort the previous in-flight request so we can send the new one
+    if (sendingGuardRef.current && chatAbortRef.current) {
+      chatAbortRef.current.abort();
+      chatAbortRef.current = null;
+    } else if (sendingGuardRef.current) {
+      return; // guard against double-click when not yet in fetch
+    }
 
     sendingGuardRef.current = true;
 
@@ -856,11 +869,15 @@ function InboxContent() {
         .filter((m) => m.id !== "welcome")
         .map((m) => ({ role: m.role, content: m.content }));
 
+      const abortController = new AbortController();
+      chatAbortRef.current = abortController;
+
       const res = await api.chatWithEmployee(
         sendForId,
         messageText,
         history,
         successFiles.length > 0 ? successFiles : undefined,
+        abortController.signal,
       );
 
       // Discard response if user switched to a different employee
@@ -904,6 +921,8 @@ function InboxContent() {
         return updated;
       });
     } catch (err: any) {
+      // Ignore abort errors (user stopped or sent a new message)
+      if (err.name === "AbortError") return;
       if (sendingForRef.current === sendForId) {
         setMessages((prev) => [
           ...prev,
@@ -916,6 +935,7 @@ function InboxContent() {
         ]);
       }
     } finally {
+      chatAbortRef.current = null;
       if (sendingForRef.current === sendForId) {
         setSending(false);
       }
@@ -1770,7 +1790,7 @@ function InboxContent() {
                   {/* Attach file button */}
                   <button
                     onClick={() => fileInputRef.current?.click()}
-                    disabled={sending || uploading}
+                    disabled={uploading}
                     title="Attach file"
                     style={{
                       width: 36, height: 36, borderRadius: 10,
@@ -1789,7 +1809,6 @@ function InboxContent() {
                     onChange={handleInput}
                     onKeyDown={handleKeyDown}
                     placeholder={pendingFiles.length > 0 ? `Add a message about the file(s)...` : `Message ${selectedEmployee.name}...`}
-                    disabled={sending}
                     rows={1}
                     style={{
                       flex: 1,
@@ -1809,7 +1828,6 @@ function InboxContent() {
                   {hasSpeechSupport && (
                     <button
                       onClick={listening ? stopListening : startListening}
-                      disabled={sending}
                       title={listening ? "Stop listening" : "Voice input"}
                       style={{
                         width: 36, height: 36, borderRadius: 10,
@@ -1826,7 +1844,7 @@ function InboxContent() {
                   )}
                   <button
                     onClick={handleSend}
-                    disabled={(!input.trim() && pendingFiles.length === 0) || sending}
+                    disabled={!input.trim() && pendingFiles.length === 0}
                     style={{
                       width: 36,
                       height: 36,
@@ -1835,24 +1853,20 @@ function InboxContent() {
                       alignItems: "center",
                       justifyContent: "center",
                       border: "none",
-                      cursor: (input.trim() || pendingFiles.length > 0) && !sending ? "pointer" : "default",
+                      cursor: (input.trim() || pendingFiles.length > 0) ? "pointer" : "default",
                       background:
-                        (input.trim() || pendingFiles.length > 0) && !sending
+                        (input.trim() || pendingFiles.length > 0)
                           ? "var(--text, #0a0a0a)"
                           : "var(--bg-secondary, #f5f5f5)",
                       color:
-                        (input.trim() || pendingFiles.length > 0) && !sending
+                        (input.trim() || pendingFiles.length > 0)
                           ? "#ffffff"
                           : "var(--text-tertiary, #a3a3a3)",
                       transition: "all 0.2s",
                       flexShrink: 0,
                     }}
                   >
-                    {sending ? (
-                      <Loader2 size={16} style={{ animation: "spin 0.8s linear infinite" }} />
-                    ) : (
-                      <Send size={16} />
-                    )}
+                    <Send size={16} />
                   </button>
                 </div>
               ) : selectedEmployee.status === "provisioning" ? (
