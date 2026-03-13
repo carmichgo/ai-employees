@@ -49,36 +49,31 @@ export async function POST(
       return NextResponse.json({ error: "Employee backend not available" }, { status: 503 });
     }
 
-    // Read multipart form data — bypass Next.js's 1MB body limit by reading the
-    // raw stream and parsing it through a fresh Response object.
-    const contentType = request.headers.get("content-type") || "";
-    const chunks: Uint8Array[] = [];
-    const reader = request.body?.getReader();
-    if (!reader) {
-      return NextResponse.json({ error: "No request body" }, { status: 400 });
-    }
-    let totalSize = 0;
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      totalSize += value.length;
-      if (totalSize > 10 * 1024 * 1024 + 4096) {
-        // 10MB + overhead for multipart boundaries/headers
-        return NextResponse.json({ error: "File too large (max 10MB)" }, { status: 413 });
-      }
-      chunks.push(value);
-    }
-
+    // Parse multipart form data.
+    // Primary: use request.formData() directly (works for most files).
+    // Fallback: read raw stream and reconstruct (for cases where Next.js
+    // has issues with the direct approach).
     let formData: FormData;
     try {
-      const rawBody = new Blob(chunks as unknown as BlobPart[], { type: contentType });
-      formData = await new Response(rawBody).formData();
-    } catch (parseErr: any) {
-      console.error("[upload] formData parse error:", parseErr.message);
-      return NextResponse.json(
-        { error: `Failed to parse upload: ${parseErr.message}` },
-        { status: 400 },
-      );
+      formData = await request.formData();
+    } catch (directErr: any) {
+      console.warn("[upload] request.formData() failed, trying raw stream fallback:", directErr.message);
+      // Fallback: read body as raw stream and reconstruct
+      try {
+        const contentType = request.headers.get("content-type") || "";
+        const rawBuffer = await request.arrayBuffer();
+        if (rawBuffer.byteLength > 10 * 1024 * 1024 + 4096) {
+          return NextResponse.json({ error: "File too large (max 10MB)" }, { status: 413 });
+        }
+        const rawBody = new Blob([rawBuffer], { type: contentType });
+        formData = await new Response(rawBody).formData();
+      } catch (fallbackErr: any) {
+        console.error("[upload] formData parse error:", fallbackErr.message);
+        return NextResponse.json(
+          { error: `Failed to parse upload: ${fallbackErr.message}` },
+          { status: 400 },
+        );
+      }
     }
 
     const file = formData.get("file") as File | null;
