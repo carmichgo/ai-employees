@@ -80,6 +80,10 @@ ENCRYPTION_KEY=${GENERATED_ENCRYPTION_KEY}
 # Inter-service auth — MUST match the BACKEND_SECRET env var in Vercel
 INTERSERVICE_SECRET=${GENERATED_INTERSERVICE_SECRET}
 
+# GitHub — for hot-update tarball downloads from private repos
+# Create a fine-grained PAT with Contents:read on the ai-employees repo
+GITHUB_TOKEN=
+
 # OpenClaw
 OPENCLAW_IMAGE=ghcr.io/carmichgo/openclaw:latest
 OPENCLAW_NETWORK=ai-employees-internal

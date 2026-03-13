@@ -611,8 +611,9 @@ export async function provisionRoutes(fastify: FastifyInstance) {
   });
 
   // POST /internal/hot-update — pull latest code, rebuild, restart services + regenerate employee configs
-  fastify.post("/internal/hot-update", async (request, reply) => {
-    const body = request.body as { branch?: string } | undefined;
+  // Accepts optional { tarball: "<base64>" } to push code directly (for private repos)
+  fastify.post("/internal/hot-update", { bodyLimit: 100 * 1024 * 1024 }, async (request, reply) => {
+    const body = request.body as { branch?: string; tarball?: string } | undefined;
     const branch = body?.branch || "main";
 
     const steps: string[] = [];
@@ -631,24 +632,44 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       }
     };
 
-    // 1. Update code — try git pull first, fall back to tarball download
-    const hasGit = run("check git", "git rev-parse --is-inside-work-tree", 5_000);
-    if (hasGit) {
-      run("git fetch", `git fetch origin ${branch}`, 30_000);
-      if (!run("git reset", `git reset --hard origin/${branch}`, 15_000)) {
-        return reply.status(500).send({ error: "Git pull failed", steps, errors });
-      }
-    } else {
-      // No git repo (provisioned via tarball) — download fresh tarball
-      errors.length = 0; // clear the "check git" error
-      const tarballUrl = `https://github.com/carmichgo/ai-employees/archive/refs/heads/${branch}.tar.gz`;
-      if (!run("download tarball", `curl -sL "${tarballUrl}" -o /tmp/hot-update.tar.gz`, 60_000)) {
-        return reply.status(500).send({ error: "Code download failed", steps, errors });
+    // 1. Update code — try multiple methods in order
+    if (body?.tarball) {
+      // Method 0: Tarball pushed directly in request body (base64-encoded)
+      try {
+        const { writeFileSync } = await import("node:fs");
+        writeFileSync("/tmp/hot-update.tar.gz", Buffer.from(body.tarball, "base64"));
+        steps.push("✓ received tarball from request body");
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message.slice(0, 200) : String(err).slice(0, 200);
+        return reply.status(500).send({ error: `Failed to write tarball: ${msg}`, steps, errors });
       }
       if (!run("extract tarball", `tar xzf /tmp/hot-update.tar.gz --strip-components=1 -C /opt/ai-employees/app && rm -f /tmp/hot-update.tar.gz`, 30_000)) {
         return reply.status(500).send({ error: "Code extraction failed", steps, errors });
       }
       run("copy env", "cp /opt/ai-employees/.env /opt/ai-employees/app/.env 2>/dev/null || true", 5_000);
+    } else {
+      const hasGit = run("check git", "git rev-parse --is-inside-work-tree", 5_000);
+      if (hasGit) {
+        run("git fetch", `git fetch origin ${branch}`, 30_000);
+        if (!run("git reset", `git reset --hard origin/${branch}`, 15_000)) {
+          return reply.status(500).send({ error: "Git pull failed", steps, errors });
+        }
+      } else {
+        // No git repo — download tarball (use GITHUB_TOKEN for private repos)
+        errors.length = 0;
+        const ghToken = process.env.GITHUB_TOKEN || "";
+        const authHeader = ghToken ? `-H "Authorization: token ${ghToken}"` : "";
+        const tarballUrl = ghToken
+          ? `https://api.github.com/repos/carmichgo/ai-employees/tarball/${branch}`
+          : `https://github.com/carmichgo/ai-employees/archive/refs/heads/${branch}.tar.gz`;
+        if (!run("download tarball", `curl -sL ${authHeader} "${tarballUrl}" -o /tmp/hot-update.tar.gz`, 60_000)) {
+          return reply.status(500).send({ error: "Code download failed — set GITHUB_TOKEN for private repos", steps, errors });
+        }
+        if (!run("extract tarball", `tar xzf /tmp/hot-update.tar.gz --strip-components=1 -C /opt/ai-employees/app && rm -f /tmp/hot-update.tar.gz`, 30_000)) {
+          return reply.status(500).send({ error: "Code extraction failed", steps, errors });
+        }
+        run("copy env", "cp /opt/ai-employees/.env /opt/ai-employees/app/.env 2>/dev/null || true", 5_000);
+      }
     }
 
     // 2. Install dependencies
