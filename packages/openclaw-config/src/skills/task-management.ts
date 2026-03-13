@@ -85,23 +85,43 @@ curl -s -X PATCH "$BLITZ_API_URL/employee/tasks/TASK_ID" \\
 ### Example: Manager Asks You to Research Competitors
 
 \`\`\`bash
-# Step 1: Create the task immediately
+# Create the task and capture the ID — all in ONE exec call
 TASK=$(curl -s -X POST "$BLITZ_API_URL/employee/tasks" \\
   -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" \\
   -H "Content-Type: application/json" \\
-  -d '{"title": "Research top 5 competitors", "description": "Analyze competitor pricing, features, and positioning", "priority": "high", "category": "research"}')
+  -d '{"title": "Research top 5 competitors", "description": "Analyze competitor pricing, features, and positioning", "priority": "high", "category": "research"}') && \\
+TASK_ID=$(echo "$TASK" | jq -r '.task.id') && echo "Created task: $TASK_ID"
+\`\`\`
 
-TASK_ID=$(echo "$TASK" | jq -r '.task.id')
+Do the research (web search, browse competitor sites, compile findings), then:
 
-# Step 2: Do the research...
-# (web search, browse competitor sites, compile findings)
-
-# Step 3: Mark complete when done
+\`\`\`bash
+# Mark complete when done
 curl -s -X PATCH "$BLITZ_API_URL/employee/tasks/$TASK_ID" \\
   -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{"status": "completed", "comment": "Completed analysis of 5 competitors with pricing comparison."}'
 \`\`\`
+
+### Token Efficiency — Batch Your Commands
+
+**Every tool call costs tokens.** Combine multiple shell commands into a single \`exec\` call using \`&&\`:
+
+\`\`\`bash
+# BAD: 3 separate tool calls
+exec: curl -s "$BLITZ_API_URL/employee/tasks" -H "$AUTH" | jq ...
+exec: cat memory.md
+exec: ls workspace/
+
+# GOOD: 1 tool call with separators
+exec: echo '=== TASKS ===' && curl -s "$BLITZ_API_URL/employee/tasks" -H "$AUTH" | jq '.tasks[] | {id, title, status}' && echo '=== MEMORY ===' && cat /home/node/.openclaw/workspace/memory.md 2>/dev/null || true
+\`\`\`
+
+**Rules:**
+- Gather ALL context (tasks + memory + workspace) in one call before deciding what to do
+- Use \`echo '=== LABEL ==='\` separators to keep output readable
+- Use \`2>/dev/null\` and \`|| true\` so one failure doesn't kill the chain
+- Combine task creation + work setup when possible
 
 ### Blocked Tasks
 

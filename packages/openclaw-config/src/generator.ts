@@ -486,28 +486,50 @@ export function generateAgentsMd(employee: EmployeeInput): string {
 
   parts.push("## RULE #0 — TASK BOARD FIRST (ANTI-LOOP PROTOCOL)");
   parts.push("");
-  parts.push("**YOUR CONTEXT LIES. YOUR TASK BOARD TELLS THE TRUTH.** Chat context may show stale messages about work already completed. Before doing ANY work, check the task board:");
+  parts.push("**YOUR CONTEXT LIES. YOUR TASK BOARD TELLS THE TRUTH.** Chat context may show stale messages about work already completed. Before doing ANY work, gather all context in ONE exec call:");
   parts.push("```bash");
-  parts.push("curl -s \"$BLITZ_API_URL/employee/tasks\" -H \"Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN\" | jq '.tasks[] | {id, title, status, recentComments}'");
+  parts.push("echo '=== TASKS ===' && curl -s \"$BLITZ_API_URL/employee/tasks\" -H \"Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN\" | jq '.tasks[] | {id, title, status, recentComments}' && echo '=== MEMORY ===' && cat /home/node/.openclaw/workspace/memory.md 2>/dev/null && echo '=== WORKSPACE ===' && ls /home/node/.openclaw/workspace/ 2>/dev/null || true");
   parts.push("```");
   parts.push("If a task is COMPLETED → don't redo it. If IN_PROGRESS with comments → resume from where comments indicate, don't restart. Before expensive API calls (video/image generation), check if outputs already exist on disk first.");
   parts.push("");
 
-  parts.push("## RULE #1 — TASK LOGGING");
+  parts.push("## RULE #1 — MINIMIZE TOOL CALLS (TOKEN EFFICIENCY)");
+  parts.push("");
+  parts.push("**Every tool call costs tokens.** Batch multiple shell commands into a SINGLE `exec` call using `&&` or `;`. Never make separate tool calls for things you can combine.");
+  parts.push("");
+  parts.push("**BAD** (4 tool calls = 4 LLM round-trips):");
+  parts.push("```");
+  parts.push("exec: curl -s \"$BLITZ_API_URL/employee/tasks\" -H \"$AUTH\" | jq ...");
+  parts.push("exec: cat /home/node/.openclaw/workspace/memory.md");
+  parts.push("exec: ls /home/node/.openclaw/workspace/");
+  parts.push("exec: cat /home/node/.openclaw/workspace/checkpoints/*.json");
+  parts.push("```");
+  parts.push("");
+  parts.push("**GOOD** (1 tool call = 1 LLM round-trip):");
+  parts.push("```bash");
+  parts.push("echo '=== TASKS ===' && curl -s \"$BLITZ_API_URL/employee/tasks\" -H \"Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN\" | jq '.tasks[] | {id, title, status, priority, recentComments}' && echo '=== MEMORY ===' && cat /home/node/.openclaw/workspace/memory.md 2>/dev/null && echo '=== WORKSPACE ===' && ls /home/node/.openclaw/workspace/ 2>/dev/null && echo '=== CHECKPOINTS ===' && cat /home/node/.openclaw/workspace/checkpoints/*.json 2>/dev/null || true");
+  parts.push("```");
+  parts.push("");
+  parts.push("**Rules:**");
+  parts.push("- Gather ALL context in one exec call before deciding what to do");
+  parts.push("- Combine task creation + work + task update when possible");
+  parts.push("- Use `echo '=== SECTION ==='` separators to keep batched output readable");
+  parts.push("- Use `2>/dev/null` and `|| true` to prevent one failure from killing the chain");
+  parts.push("- For web browsing: plan multiple actions per turn instead of one click per turn");
+  parts.push("");
+
+  parts.push("## RULE #2 — TASK LOGGING");
   parts.push("");
   parts.push("Every request from a person → create a task BEFORE working, update to `completed` after. If a task is not logged, it did not happen. Your manager tracks all work through the task board.");
   parts.push("");
   parts.push("**Exceptions** — do NOT create a new task when: message starts with `[Task Board Check]` (work existing tasks), `[Recurring Task: ...]` with a Task ID (use that ID), or informational `[Inter-team message]`. Never create duplicates — check existing tasks first.");
   parts.push("");
-  parts.push("**Task API:**");
+  parts.push("**Task API (batch commands in one exec call when possible):**");
   parts.push("```bash");
-  parts.push("# Check existing tasks (do this FIRST)");
-  parts.push("curl -s \"$BLITZ_API_URL/employee/tasks\" -H \"Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN\" | jq '.tasks[] | {id, title, status}'");
+  parts.push("# Check existing tasks + memory in ONE call");
+  parts.push("echo '=== TASKS ===' && curl -s \"$BLITZ_API_URL/employee/tasks\" -H \"Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN\" | jq '.tasks[] | {id, title, status}' && echo '=== MEMORY ===' && cat /home/node/.openclaw/workspace/memory.md 2>/dev/null || true");
   parts.push("# Create task");
-  parts.push("TASK=$(curl -s -X POST \"$BLITZ_API_URL/employee/tasks\" -H \"Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN\" -H \"Content-Type: application/json\" -d '{\"title\": \"...\", \"priority\": \"medium\", \"category\": \"research\", \"status\": \"in_progress\"}')");
-  parts.push("TASK_ID=$(echo \"$TASK\" | jq -r '.task.id')");
-  parts.push("# Add comment (for multi-step tasks, log each step)");
-  parts.push("curl -s -X POST \"$BLITZ_API_URL/employee/tasks/$TASK_ID/comments\" -H \"Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN\" -H \"Content-Type: application/json\" -d '{\"content\": \"Step 2/5 done: ...\"}'");
+  parts.push("TASK=$(curl -s -X POST \"$BLITZ_API_URL/employee/tasks\" -H \"Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN\" -H \"Content-Type: application/json\" -d '{\"title\": \"...\", \"priority\": \"medium\", \"category\": \"research\", \"status\": \"in_progress\"}') && TASK_ID=$(echo \"$TASK\" | jq -r '.task.id') && echo \"Created: $TASK_ID\"");
   parts.push("# Complete task");
   parts.push("curl -s -X PATCH \"$BLITZ_API_URL/employee/tasks/$TASK_ID\" -H \"Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN\" -H \"Content-Type: application/json\" -d '{\"status\": \"completed\", \"comment\": \"Summary.\"}'");
   parts.push("```");
@@ -887,23 +909,26 @@ When you receive this heartbeat prompt, follow these steps IN ORDER:
 
 **Your conversation context may contain stale chat messages about work that is already DONE or actively IN PROGRESS.** Do NOT trust chat context. The ONLY source of truth is your task board and the files on disk. If you skip this step and act on chat context, you WILL redo work, waste API credits, and create duplicates. This has happened before — don't let it happen again.
 
-## 1. Check your task board (WITH COMMENTS — this is your context)
+## 1. Gather ALL context in ONE exec call
+
+**IMPORTANT: Do this in a SINGLE tool call to minimize token usage:**
 \`\`\`bash
-curl -s "$BLITZ_API_URL/employee/tasks" \\
-  -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" | jq '.tasks[] | {id, title, status, priority, recentComments}'
+echo '=== TASKS ===' && curl -s "$BLITZ_API_URL/employee/tasks" -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" | jq '.tasks[] | {id, title, status, priority, recentComments}' && echo '=== MEMORY ===' && cat /home/node/.openclaw/workspace/memory.md 2>/dev/null && echo '=== CHECKPOINTS ===' && cat /home/node/.openclaw/workspace/checkpoints/*.json 2>/dev/null && echo '=== WORKSPACE FILES ===' && ls /home/node/.openclaw/workspace/ 2>/dev/null || true
 \`\`\`
 
-**CRITICAL: This task list is your FULL CONTEXT — it includes ALL tasks (in_progress, pending, blocked, AND completed).** The completed tasks show you what you already did — use them to avoid repeating work. The \`recentComments\` on each task contain your work history — what you've done, what your manager told you, credentials they shared, unblock instructions, etc. **READ THE FULL LIST AND COMMENTS CAREFULLY.** They are your memory of what happened between heartbeats.
+This gives you tasks + memory + checkpoints + workspace files all at once. Do NOT make separate tool calls for each.
 
-**Cross-reference with chat context:** If your recent chat messages mention work (generating videos, creating images, making API calls), check the task board:
-- If that work is **COMPLETED** → it's DONE. Do not redo it.
-- If that work is **IN_PROGRESS** with comments showing progress → read the comments and check disk for outputs before restarting anything. The work may already be finished but just not marked completed, or it may be actively running.
-- **Before ANY expensive API call**, always \`ls\` the workspace and \`cat\` checkpoint files to see if outputs already exist.
+**Read the output carefully:**
+- **Tasks** — your FULL task list (in_progress, pending, blocked, AND completed). Completed tasks show what you already did — don't repeat. \`recentComments\` contain your work history, manager instructions, credentials, etc.
+- **Memory** — persistent notes from past sessions.
+- **Checkpoints** — progress on multi-step tasks. Resume from here, don't restart.
+- **Workspace files** — outputs already on disk. Don't regenerate what exists.
 
-If you need the full comment history for a specific task:
+**Cross-reference with chat context:** If chat mentions work, check the task board. If COMPLETED → done. If IN_PROGRESS with comments → resume from last comment. Before ANY expensive API call, verify outputs don't already exist.
+
+If you need full comment history for a specific task:
 \`\`\`bash
-curl -s "$BLITZ_API_URL/employee/tasks/<TASK_ID>/comments" \\
-  -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" | jq '.comments[] | {authorType, authorName, content}'
+curl -s "$BLITZ_API_URL/employee/tasks/<TASK_ID>/comments" -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" | jq '.comments[] | {authorType, authorName, content}'
 \`\`\`
 
 ## 2. Act on what you find
