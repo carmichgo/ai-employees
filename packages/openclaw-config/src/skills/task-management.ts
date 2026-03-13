@@ -33,7 +33,6 @@ CT="Content-Type: application/json"
 \`\`\`bash
 curl -s "$BLITZ_API_URL/employee/tasks" -H "$AUTH" | jq '.tasks[] | {id, title, status, priority, recentComments}'
 \`\`\`
-By default this only returns active tasks (pending, in_progress, blocked) and recently completed ones (last 24h). To see all tasks including old completed ones, add \`?status=all\`. To filter by specific statuses: \`?status=pending,in_progress\`.
 
 **CRITICAL: Always read \`recentComments\` on each task before acting.** Comments are your memory — they contain what you already did, what your manager told you, credentials they shared, and results you delivered. If you skip reading comments, you WILL redo work that was already finished.
 
@@ -170,7 +169,7 @@ Progress comments should describe **what you've done and what's next**, not just
 
 ### Review Your Tasks Regularly
 Every time you finish a task or receive a \`[Task Board Check]\` message:
-1. **List all your tasks** — \`curl -s "$BLITZ_API_URL/employee/tasks" -H "$AUTH" | jq '.tasks[] | {id, title, status}'\` (add \`?status=all\` if you need to check completed history)
+1. **List all your tasks** — \`curl -s "$BLITZ_API_URL/employee/tasks" -H "$AUTH" | jq '.tasks[] | {id, title, status}'\`
 2. **For each in_progress task** — Is it still in progress? Add a progress comment, or mark it \`completed\`/\`blocked\`.
 3. **For each pending task** — Can you pick it up now? If yes, start it. If not, leave it pending.
 4. **For each blocked task** — Is it still blocked? Has the blocker been resolved? Update accordingly.
