@@ -69,6 +69,8 @@ function selectEmployee() {
       interserviceSecret: employees.interserviceSecret,
       containerHost: employees.containerHost,
       containerPort: employees.containerPort,
+      lastRequestSentAt: employees.lastRequestSentAt,
+      lastResponseAt: employees.lastResponseAt,
     })
     .from(employees);
 }
@@ -264,6 +266,31 @@ export async function POST(
         mode: employee.status === "provisioning" ? "provisioning" : "demo",
       });
       return NextResponse.json({ reply, mode: employee.status === "provisioning" ? "provisioning" : "demo" });
+    }
+  }
+
+  // Check if the employee is currently busy processing a previous request.
+  // If lastRequestSentAt > lastResponseAt, the container is mid-execution (running
+  // a script, generating content, etc.). Sending a new HTTP request to the container
+  // while it's busy can cause it to fail, which triggers the auto-restart logic below
+  // — killing the running process and causing duplicate work.
+  // Instead, save the message and let the employee see it when they're done.
+  if (employee.lastRequestSentAt && employee.lastResponseAt) {
+    const reqTime = new Date(employee.lastRequestSentAt).getTime();
+    const resTime = new Date(employee.lastResponseAt).getTime();
+    // Busy = request sent after last response, AND it's been less than 10 minutes
+    // (after 10 min we assume the tracking is stale and try anyway)
+    const busyDuration = Date.now() - reqTime;
+    if (reqTime > resTime && busyDuration < 10 * 60 * 1000) {
+      const reply = `I'm currently working on something — I'll see your message when I'm done. (Been working for ${Math.floor(busyDuration / 60_000)} min so far.)`;
+      await db.insert(chatMessages).values({
+        employeeId: id,
+        userId: session.userId,
+        role: "assistant",
+        content: reply,
+        mode: "busy",
+      });
+      return NextResponse.json({ reply, mode: "busy" });
     }
   }
 
@@ -586,8 +613,13 @@ export async function POST(
     // Employee is unreachable — try to auto-restart the container before giving up.
     // This handles the common case where the droplet is up but the OpenClaw gateway
     // crashed or didn't start after a reboot.
+    // IMPORTANT: Do NOT restart if the employee is likely busy processing a previous
+    // request — restarting kills the running process and causes duplicate work.
+    const isBusy = employee.lastRequestSentAt && employee.lastResponseAt
+      && new Date(employee.lastRequestSentAt).getTime() > new Date(employee.lastResponseAt).getTime()
+      && (Date.now() - new Date(employee.lastRequestSentAt).getTime()) < 10 * 60 * 1000;
     let autoRestarted = false;
-    if (employee.dropletIp && employee.interserviceSecret) {
+    if (employee.dropletIp && employee.interserviceSecret && !isBusy) {
       try {
         const restartRes = await fetch(
           `http://${employee.dropletIp}:3001/internal/employees/${id}/restart`,
@@ -619,6 +651,20 @@ export async function POST(
         mode: "unreachable",
       });
       return NextResponse.json({ reply, mode: "restarting", employeeId: id });
+    }
+
+    // If we skipped auto-restart because the employee is busy, give a friendlier message
+    if (isBusy && !autoRestarted) {
+      const busyMins = Math.floor((Date.now() - new Date(employee.lastRequestSentAt!).getTime()) / 60_000);
+      const reply = `I'm currently busy working on something (${busyMins} min in). I'll see your message when I'm done — no need to resend.`;
+      await db.insert(chatMessages).values({
+        employeeId: id,
+        userId: session.userId,
+        role: "assistant",
+        content: reply,
+        mode: "busy",
+      });
+      return NextResponse.json({ reply, mode: "busy", employeeId: id });
     }
 
     // Auto-restart failed — mark as error so the UI shows recovery options
