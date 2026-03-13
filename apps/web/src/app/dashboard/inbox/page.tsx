@@ -60,6 +60,7 @@ interface ConversationPreview {
   lastMessage: string | null;
   lastMessageTime: Date | null;
   lastAssistantTime: Date | null; // for unread tracking
+  unreadCount: number; // number of unread assistant messages
 }
 
 // Shared localStorage key with dashboard layout
@@ -194,6 +195,7 @@ function InboxContent() {
 
         // Load last message for each employee
         const previewMap = new Map<string, ConversationPreview>();
+        const lastSeen = getLastSeen();
         await Promise.all(
           emps.map(async (emp: Employee) => {
             try {
@@ -201,11 +203,19 @@ function InboxContent() {
               const msgs = historyRes.messages || [];
               const last = msgs.length > 0 ? msgs[msgs.length - 1] : null;
               const lastAssistant = [...msgs].reverse().find((m: any) => m.role === "assistant");
+
+              // Count unread assistant messages since last seen
+              const seenTs = lastSeen[emp.id] ? new Date(lastSeen[emp.id]) : null;
+              const unreadCount = msgs.filter(
+                (m: any) => m.role === "assistant" && (!seenTs || new Date(m.createdAt) > seenTs),
+              ).length;
+
               previewMap.set(emp.id, {
                 employee: emp,
                 lastMessage: last?.content?.slice(0, 80) || null,
                 lastMessageTime: last ? new Date(last.createdAt) : null,
                 lastAssistantTime: lastAssistant ? new Date(lastAssistant.createdAt) : null,
+                unreadCount,
               });
             } catch {
               previewMap.set(emp.id, {
@@ -213,6 +223,7 @@ function InboxContent() {
                 lastMessage: null,
                 lastMessageTime: null,
                 lastAssistantTime: null,
+                unreadCount: 0,
               });
             }
           }),
@@ -235,6 +246,69 @@ function InboxContent() {
     }
     load();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Background polling: check ALL employees for new messages ──
+  // This catches async replies (Slack forwards, task completions, etc.)
+  // and updates badges + fires notifications even for non-selected employees.
+  useEffect(() => {
+    if (employees.length === 0) return;
+
+    const poll = async () => {
+      const lastSeen = getLastSeen();
+
+      await Promise.allSettled(
+        employees.map(async (emp) => {
+          try {
+            const historyRes = await api.getChatHistory(emp.id);
+            const msgs = historyRes.messages || [];
+            if (msgs.length === 0) return;
+
+            const last = msgs[msgs.length - 1];
+            const lastAssistant = [...msgs].reverse().find((m: any) => m.role === "assistant");
+
+            // Update preview
+            setPreviews((prev) => {
+              const updated = new Map(prev);
+              const existing = updated.get(emp.id);
+              const newAssistantTime = lastAssistant ? new Date(lastAssistant.createdAt) : null;
+              const prevAssistantTime = existing?.lastAssistantTime;
+
+              // Count unread assistant messages since last seen
+              const seenTs = lastSeen[emp.id] ? new Date(lastSeen[emp.id]) : null;
+              const unreadCount = msgs.filter(
+                (m: any) => m.role === "assistant" && (!seenTs || new Date(m.createdAt) > seenTs),
+              ).length;
+
+              updated.set(emp.id, {
+                employee: emp,
+                lastMessage: last?.content?.slice(0, 80) || existing?.lastMessage || null,
+                lastMessageTime: last ? new Date(last.createdAt) : existing?.lastMessageTime || null,
+                lastAssistantTime: newAssistantTime || prevAssistantTime || null,
+                unreadCount,
+              });
+
+              // Fire notification if there's a NEW assistant message we haven't seen
+              if (
+                newAssistantTime &&
+                (!prevAssistantTime || newAssistantTime > prevAssistantTime) &&
+                (!lastSeen[emp.id] || newAssistantTime > new Date(lastSeen[emp.id]))
+              ) {
+                showNotification(emp.name, lastAssistant!.content);
+              }
+
+              return updated;
+            });
+          } catch {
+            // Individual employee poll failed — skip
+          }
+        }),
+      );
+    };
+
+    // Poll every 15 seconds
+    const interval = setInterval(poll, 15000);
+    return () => clearInterval(interval);
+  }, [employees, showNotification]);
 
   // Load chat when selected employee changes
   const loadChat = useCallback(
@@ -626,6 +700,22 @@ function InboxContent() {
           );
           setPendingReplyId(null);
 
+          // Update preview with lastAssistantTime for unread badge
+          const replyTime = new Date(replyAfterUser.createdAt || Date.now());
+          setPreviews((prev) => {
+            const updated = new Map(prev);
+            const existing = updated.get(selectedId);
+            if (existing) {
+              updated.set(selectedId, {
+                ...existing,
+                lastMessage: replyAfterUser.content.slice(0, 80),
+                lastMessageTime: replyTime,
+                lastAssistantTime: replyTime,
+              });
+            }
+            return updated;
+          });
+
           // Notify if tab is not focused
           const emp = employees.find((e) => e.id === selectedId);
           if (emp) showNotification(emp.name, replyAfterUser.content);
@@ -636,7 +726,7 @@ function InboxContent() {
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [pendingReplyId, selectedId]);
+  }, [pendingReplyId, selectedId, employees, showNotification]);
 
   // Handle files selected via file picker
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -798,7 +888,8 @@ function InboxContent() {
         if (autoSpeak) speak(res.reply);
       }
 
-      // Update preview
+      // Update preview (including lastAssistantTime for unread tracking)
+      const now = new Date();
       setPreviews((prev) => {
         const updated = new Map(prev);
         const existing = updated.get(sendForId);
@@ -806,7 +897,8 @@ function InboxContent() {
           updated.set(sendForId, {
             ...existing,
             lastMessage: res.reply.slice(0, 80),
-            lastMessageTime: new Date(),
+            lastMessageTime: now,
+            lastAssistantTime: res.mode !== "pending" ? now : existing.lastAssistantTime,
           });
         }
         return updated;
@@ -1012,7 +1104,17 @@ function InboxContent() {
             return (
               <button
                 key={emp.id}
-                onClick={() => { setSelectedId(emp.id); markSeen(emp.id); }}
+                onClick={() => {
+                  setSelectedId(emp.id);
+                  markSeen(emp.id);
+                  // Clear unread count immediately in the UI
+                  setPreviews((prev) => {
+                    const updated = new Map(prev);
+                    const existing = updated.get(emp.id);
+                    if (existing) updated.set(emp.id, { ...existing, unreadCount: 0 });
+                    return updated;
+                  });
+                }}
                 style={{
                   width: "100%",
                   display: "flex",
@@ -1101,19 +1203,26 @@ function InboxContent() {
                     </div>
                   )}
                   {(() => {
-                    const lastSeen = getLastSeen();
-                    const seenTs = lastSeen[emp.id];
-                    const assistantTime = preview?.lastAssistantTime;
-                    const hasUnread = assistantTime && (!seenTs || assistantTime > new Date(seenTs));
-                    return hasUnread ? (
+                    const count = preview?.unreadCount || 0;
+                    return count > 0 ? (
                       <div
                         style={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: "50%",
+                          minWidth: 18,
+                          height: 18,
+                          borderRadius: 9,
                           background: "#ef4444",
+                          color: "#fff",
+                          fontSize: 11,
+                          fontWeight: 700,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          padding: "0 5px",
+                          lineHeight: 1,
                         }}
-                      />
+                      >
+                        {count > 99 ? "99+" : count}
+                      </div>
                     ) : null;
                   })()}
                 </div>
