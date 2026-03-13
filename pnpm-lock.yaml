@@ -79,6 +79,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@ai-employees/openclaw-config':
+        specifier: workspace:*
+        version: link:../../packages/openclaw-config
       '@ai-employees/shared':
         specifier: workspace:*
         version: link:../../packages/shared

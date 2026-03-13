@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@ai-employees/openclaw-config": "workspace:*",
     "@ai-employees/shared": "workspace:*",
     "@neondatabase/serverless": "^0.10.0",
     "@types/archiver": "^7.0.0",
