@@ -224,10 +224,30 @@ export async function employeeGatewayRoutes(fastify: FastifyInstance) {
   // ─── Task Management ───────────────────────────────────────────────
 
   // GET /employee/tasks — list this employee's tasks (includes recent comments)
+  // By default excludes completed tasks older than 24 hours.
+  // Use ?status=all to get everything, or ?status=pending,in_progress to filter.
   fastify.get("/employee/tasks", async (request, reply) => {
     const auth = await authenticateEmployee(request, reply);
     if ("error" in auth) return auth.error;
     const { employee } = auth;
+
+    const query = request.query as { status?: string };
+    const statusFilter = query.status;
+
+    // Build WHERE conditions
+    const conditions = [eq(tasks.employeeId, employee.id)];
+
+    if (statusFilter && statusFilter !== "all") {
+      // Explicit status filter: ?status=pending,in_progress,blocked
+      const statuses = statusFilter.split(",").map((s) => s.trim());
+      conditions.push(sql`${tasks.status} IN (${sql.join(statuses.map((s) => sql`${s}`), sql`, `)})`);
+    } else if (!statusFilter) {
+      // Default: exclude completed tasks older than 24 hours
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      conditions.push(
+        sql`(${tasks.status} != 'completed' OR ${tasks.completedAt} > ${oneDayAgo.toISOString()})`,
+      );
+    }
 
     const myTasks = await db
       .select({
@@ -244,7 +264,7 @@ export async function employeeGatewayRoutes(fastify: FastifyInstance) {
         updatedAt: tasks.updatedAt,
       })
       .from(tasks)
-      .where(eq(tasks.employeeId, employee.id))
+      .where(and(...conditions))
       .orderBy(desc(tasks.createdAt));
 
     // Fetch recent comments for active tasks AND recently completed tasks so the
