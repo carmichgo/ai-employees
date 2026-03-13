@@ -457,7 +457,7 @@ function HireEmployeeWizard() {
       }
 
       // Direct hire (no Stripe or Stripe unavailable)
-      const result = await api.hireEmployee(hireData);
+      const result = await api.hireEmployee(hireData as any);
       router.push(`/dashboard/employees/${result.employee.id}`);
     } catch (err: any) {
       setError(err.message || "Failed to hire employee");

@@ -60,6 +60,12 @@ export const employees = pgTable("employees", {
   avatar: varchar("avatar", { length: 500 }),
   emoji: varchar("emoji", { length: 10 }).default("🤖"),
   tier: varchar("tier", { length: 20 }).notNull().default("junior"),
+  // Hosting mode — "managed" uses platform API keys, "byok" uses customer's own keys
+  hostingMode: varchar("hosting_mode", { length: 20 }).notNull().default("managed"),
+  // BYOK fields — only populated when hostingMode = "byok"
+  byokAnthropicKey: text("byok_anthropic_key"),
+  byokGeminiKey: text("byok_gemini_key"),
+  byokModel: varchar("byok_model", { length: 100 }),
   /** Stripe subscription item ID — links this employee to a line item on the company subscription */
   stripeSubscriptionItemId: varchar("stripe_subscription_item_id", { length: 255 }),
   /** Monthly price in dollars for this employee (base + add-ons) */
