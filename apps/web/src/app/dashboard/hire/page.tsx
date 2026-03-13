@@ -412,6 +412,8 @@ function HireEmployeeWizard() {
         persona: buildPersona() || undefined,
         goals: form.goals || undefined,
         channels: form.channels,
+        capabilities: form.capabilities,
+        expertise: form.skills,
         toolsAllow,
         skills: skillSlugs,
         personalityConfig: form.personality,
@@ -431,11 +433,7 @@ function HireEmployeeWizard() {
       //   - First hire: returns { url } → redirect to Stripe Checkout
       //   - Subsequent hires: returns { employee } → line item added to existing subscription
       try {
-        const checkout = await api.createCheckoutSession({
-          ...hireData,
-          capabilities: form.capabilities,
-          expertise: form.skills,
-        });
+        const checkout = await api.createCheckoutSession(hireData as any);
         if (checkout.url) {
           // First hire — redirect to Stripe Checkout for payment
           window.location.href = checkout.url;
