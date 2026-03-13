@@ -1372,6 +1372,49 @@ function InboxContent() {
                     <Phone size={14} />
                   </button>
                 )}
+                {/* Stop button — interrupt whatever the employee is doing */}
+                {selectedEmployee.status === "active" && (
+                  <button
+                    onClick={async () => {
+                      // Abort any in-flight chat request
+                      if (chatAbortRef.current) {
+                        chatAbortRef.current.abort();
+                        chatAbortRef.current = null;
+                      }
+                      setSending(false);
+                      sendingGuardRef.current = false;
+                      sendingForRef.current = null;
+                      setPendingReplyId(null);
+                      // Add a system message so the user knows it was stopped
+                      setMessages((prev) => [
+                        ...prev,
+                        {
+                          id: `system-stop-${Date.now()}`,
+                          role: "assistant",
+                          content: `Stopped. ${selectedEmployee.name} has been interrupted and is ready for new instructions.`,
+                          timestamp: new Date(),
+                          mode: "system",
+                        },
+                      ]);
+                      // Kill running processes on the backend
+                      try {
+                        await api.stopEmployee(selectedId!);
+                      } catch (err: any) {
+                        console.error("Stop failed:", err.message);
+                      }
+                    }}
+                    title="Stop — interrupt whatever the employee is doing"
+                    style={{
+                      width: 32, height: 32, borderRadius: 8,
+                      border: "1px solid #ef4444",
+                      background: "rgba(239, 68, 68, 0.08)", color: "#ef4444",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      cursor: "pointer", transition: "all 0.15s",
+                    }}
+                  >
+                    <Square size={12} fill="#ef4444" />
+                  </button>
+                )}
                 {/* Restart container button */}
                 {selectedEmployee.status === "active" && (
                   <button
