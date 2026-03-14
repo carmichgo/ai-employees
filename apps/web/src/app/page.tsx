@@ -570,7 +570,7 @@ export default function LandingPage() {
           <Reveal delay={0}>
             <div className="lp-badge">
               <span className="lp-badge-dot" />
-              Powered by OpenClaw
+              Now available &middot; Powered by OpenClaw
             </div>
           </Reveal>
           <Reveal delay={0.1}>
@@ -591,9 +591,9 @@ export default function LandingPage() {
           </Reveal>
           <Reveal delay={0.2}>
             <p className="lp-hero-sub">
-              Deploy autonomous AI employees that get their own workstation,
-              tools, and credentials. They work 24/7, learn your business, and
-              scale instantly — from one employee to one hundred.
+              Deploy autonomous AI employees with their own workstation,
+              tools, and credentials. They work around the clock, learn your business,
+              and scale instantly — from one to a hundred.
             </p>
           </Reveal>
           <Reveal delay={0.3}>
