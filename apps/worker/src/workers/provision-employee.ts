@@ -1,16 +1,32 @@
-import { eq } from "drizzle-orm";
+import { eq, not, inArray } from "drizzle-orm";
 import crypto from "node:crypto";
-import { execSync, spawn } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { db, employees, companies } from "@ai-employees/db";
+import { execSync } from "node:child_process";
+import { mkdirSync, writeFileSync, existsSync } from "node:fs";
+import { db, employees, companies, users } from "@ai-employees/db";
 import { getResourcesForTier, type EmployeeTier } from "@ai-employees/shared";
 import {
   generateOpenClawConfig,
+  generateIdentityMd,
   generateSoulMd,
-  generateEmployeeEmail,
+  generateUserMd,
+  generateToolsMd,
+  generateAgentsMd,
+
   generateCredentialManagerScript,
+  generateSendEmailScript,
   generateCaptchaSolvingSkill,
   generateAccountCreationSkill,
+  generateTaskLoggingSkill,
+  generateMediaGenerationSkill,
+  generateRestartGatewaySkill,
+  generateTeamCommunicationSkill,
+  generateTaskManagementSkill,
+  generateImageScript,
+  generateVideoScript,
+  generateDocxSkill,
+  generateDocxInstallScript,
+  generateSkillBuildingSkill,
+  generateHeartbeatMd,
   type EmployeeInput,
 } from "@ai-employees/openclaw-config";
 import { docker, ensureNetwork, ensureImage } from "../docker/client.js";
@@ -18,8 +34,13 @@ import { docker, ensureNetwork, ensureImage } from "../docker/client.js";
 const OPENCLAW_IMAGE = process.env.OPENCLAW_IMAGE || "ghcr.io/carmichgo/openclaw:latest";
 const OPENCLAW_NETWORK = process.env.OPENCLAW_NETWORK || "ai-employees-internal";
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
 const BRAVE_API_KEY = process.env.BRAVE_API_KEY || "";
+const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID || "";
+const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || "";
+const INTERSERVICE_SECRET = process.env.INTERSERVICE_SECRET || "";
+const API_DOMAIN = process.env.API_DOMAIN || "";
 
 /** Derive a per-employee encryption key from the system key + employee ID */
 function deriveEmployeeEncryptionKey(employeeId: string): string {
@@ -48,11 +69,23 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
   });
   if (!employee) throw new Error(`Employee ${employeeId} not found`);
 
+  // Guard against duplicate runs (e.g. BullMQ stalled-job retry).
+  // If the employee already has a running container, skip silently.
+  if (employee.status === "active" && employee.containerHost && employee.containerPort) {
+    console.log(`[provision] Employee ${employeeId} is already active — skipping duplicate job`);
+    return;
+  }
+
   // Get company for slug and plan
   const company = await db.query.companies.findFirst({
     where: eq(companies.id, data.companyId),
   });
   if (!company) throw new Error(`Company ${data.companyId} not found`);
+
+  // Get company owner (first user / admin) so the employee knows their manager
+  const owner = await db.query.users.findFirst({
+    where: eq(users.companyId, data.companyId),
+  });
 
   try {
     // Update status
@@ -61,8 +94,8 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
       .set({ status: "provisioning", updatedAt: new Date() })
       .where(eq(employees.id, employeeId));
 
-    // Generate employee email
-    const emailAddress = generateEmployeeEmail(employee.name, company.slug);
+    // Use the email address configured by the manager (if any) — no fake email generation
+    const emailAddress = employee.emailAddress || null;
 
     // Ensure Docker network exists
     await ensureNetwork(OPENCLAW_NETWORK);
@@ -82,82 +115,199 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
       config: {},
     }));
 
+    // Determine resource limits based on employee tier
+    const tier = (employee.tier as EmployeeTier) || "junior";
+
     // Generate OpenClaw config
     const employeeInput: EmployeeInput = {
       id: employee.id,
       name: employee.name,
       jobTitle: employee.jobTitle,
       emoji: employee.emoji || undefined,
+      tier,
       persona: employee.persona,
       goals: employee.goals,
       personalityConfig: employee.personalityConfig as { autonomy?: string; proactivity?: string; communication?: string } | null,
+      authorityConfig: employee.authorityConfig as { defaultRole?: "manager" | "colleague"; members?: Array<{ slackUserId: string; name: string; role: "manager" | "colleague" }> } | null,
       companySlug: company.slug,
       companyName: company.name,
+      ownerName: owner?.name,
       modelConfig: employee.modelConfig as { primary: string; fallbacks?: string[] },
       toolsConfig: employee.toolsConfig as Record<string, unknown>,
       sandboxConfig: employee.sandboxConfig as Record<string, unknown>,
       channels: channelInputs,
     };
 
-    const config = generateOpenClawConfig(employeeInput, employee.gatewayToken!);
+    // Generate all OpenClaw workspace files per the OpenClaw documentation:
+    //   IDENTITY.md — Agent name, emoji, vibe
+    //   SOUL.md     — Persona, philosophy, values, communication style
+    //   USER.md     — Info about the human manager
+    //   TOOLS.md    — Tool usage notes and guidance
+    //   AGENTS.md   — Operating instructions, task logging, memory, safety
+    //   HEARTBEAT.md — Autonomous work loop instructions
+    const identityMd = generateIdentityMd(employeeInput);
     const soulMd = generateSoulMd(employeeInput);
+    const userMd = generateUserMd(employeeInput);
+    const toolsMd = generateToolsMd(employeeInput);
+    const agentsMd = generateAgentsMd(employeeInput);
+    const heartbeatMd = generateHeartbeatMd(employeeInput);
+    const config = generateOpenClawConfig(employeeInput, employee.gatewayToken!, soulMd);
 
-    // Determine resource limits based on employee tier
-    const tier = (employee.tier as EmployeeTier) || "junior";
     const resources = getResourcesForTier(tier);
 
-    // Write OpenClaw config + soul.md + skills to a host directory that gets bind-mounted
+    // Write OpenClaw config + workspace files + skills to a host directory that gets bind-mounted
     const configDir = `/opt/ai-employees/openclaw-configs/${employeeId}`;
     mkdirSync(`${configDir}/workspace`, { recursive: true });
     mkdirSync(`${configDir}/workspace/uploads`, { recursive: true });
+    mkdirSync(`${configDir}/workspace-main`, { recursive: true });
     mkdirSync(`${configDir}/credentials`, { recursive: true, mode: 0o700 });
     mkdirSync(`${configDir}/skills/captcha-solving`, { recursive: true });
     mkdirSync(`${configDir}/skills/account-creation`, { recursive: true });
+    mkdirSync(`${configDir}/skills/task-logging`, { recursive: true });
+    mkdirSync(`${configDir}/skills/media-generation`, { recursive: true });
+    mkdirSync(`${configDir}/skills/restart-gateway`, { recursive: true });
+    mkdirSync(`${configDir}/skills/team-communication`, { recursive: true });
+    mkdirSync(`${configDir}/skills/task-management`, { recursive: true });
+    mkdirSync(`${configDir}/skills/docx`, { recursive: true });
+    mkdirSync(`${configDir}/skills/skill-building`, { recursive: true });
+
+    // Write main config
     writeFileSync(`${configDir}/openclaw.json`, JSON.stringify(config, null, 2));
+
+    // Write OpenClaw workspace files (root .openclaw dir — loaded into system prompt)
+    writeFileSync(`${configDir}/IDENTITY.md`, identityMd);
     writeFileSync(`${configDir}/SOUL.md`, soulMd);
+    writeFileSync(`${configDir}/USER.md`, userMd);
+    writeFileSync(`${configDir}/TOOLS.md`, toolsMd);
+    writeFileSync(`${configDir}/AGENTS.md`, agentsMd);
+    writeFileSync(`${configDir}/HEARTBEAT.md`, heartbeatMd);
+
+    // Also write to workspace/ subdirectory (OpenClaw reads from here too)
+    writeFileSync(`${configDir}/workspace/IDENTITY.md`, identityMd);
     writeFileSync(`${configDir}/workspace/SOUL.md`, soulMd);
+    writeFileSync(`${configDir}/workspace/USER.md`, userMd);
+    writeFileSync(`${configDir}/workspace/TOOLS.md`, toolsMd);
+    writeFileSync(`${configDir}/workspace/AGENTS.md`, agentsMd);
+    writeFileSync(`${configDir}/workspace/HEARTBEAT.md`, heartbeatMd);
+
+    // Write to workspace-main/ (OpenClaw's runtime session workspace)
+    writeFileSync(`${configDir}/workspace-main/IDENTITY.md`, identityMd);
+    writeFileSync(`${configDir}/workspace-main/SOUL.md`, soulMd);
+    writeFileSync(`${configDir}/workspace-main/USER.md`, userMd);
+    writeFileSync(`${configDir}/workspace-main/TOOLS.md`, toolsMd);
+    writeFileSync(`${configDir}/workspace-main/AGENTS.md`, agentsMd);
+    writeFileSync(`${configDir}/workspace-main/HEARTBEAT.md`, heartbeatMd);
+
+    // Seed memory.md in both workspaces so the edit tool works from the start.
+    // OpenClaw's edit tool requires the file to exist — without this, the first
+    // edit attempt fails with "Edit failed" because there's nothing to find/replace.
+    const seedMemory = `# Memory\n\n_No notes yet. Update this file as you learn and complete tasks._\n`;
+    if (!existsSync(`${configDir}/workspace/memory.md`)) {
+      writeFileSync(`${configDir}/workspace/memory.md`, seedMemory);
+    }
+    if (!existsSync(`${configDir}/workspace-main/memory.md`)) {
+      writeFileSync(`${configDir}/workspace-main/memory.md`, seedMemory);
+    }
 
     // Write credential manager CLI script
     writeFileSync(`${configDir}/cred.js`, generateCredentialManagerScript(), { mode: 0o755 });
 
+    // Write send-email CLI script (sends via Resend API, bypasses blocked SMTP ports)
+    writeFileSync(`${configDir}/send-email.js`, generateSendEmailScript(), { mode: 0o755 });
+
     // Write skill files
     writeFileSync(`${configDir}/skills/captcha-solving/SKILL.md`, generateCaptchaSolvingSkill());
     writeFileSync(`${configDir}/skills/account-creation/SKILL.md`, generateAccountCreationSkill());
+    writeFileSync(`${configDir}/skills/task-logging/SKILL.md`, generateTaskLoggingSkill());
+    writeFileSync(`${configDir}/skills/media-generation/SKILL.md`, generateMediaGenerationSkill());
+    writeFileSync(`${configDir}/skills/restart-gateway/SKILL.md`, generateRestartGatewaySkill());
+    writeFileSync(`${configDir}/skills/team-communication/SKILL.md`, generateTeamCommunicationSkill());
+    writeFileSync(`${configDir}/skills/task-management/SKILL.md`, generateTaskManagementSkill());
+    writeFileSync(`${configDir}/skills/docx/SKILL.md`, generateDocxSkill());
+    writeFileSync(`${configDir}/skills/skill-building/SKILL.md`, generateSkillBuildingSkill());
+
+    // Write CLI wrapper scripts for image/video generation (installed into container below)
+    writeFileSync(`${configDir}/generate-image.sh`, generateImageScript(), { mode: 0o755 });
+    writeFileSync(`${configDir}/generate-video.sh`, generateVideoScript(), { mode: 0o755 });
 
     // Fix permissions for the node user (uid 1000) inside the container
     execSync(`chown -R 1000:1000 ${configDir}`);
+
+    // Remove any stale container with the same name (handles 409 conflicts after failed teardowns)
+    try {
+      const stale = docker.getContainer(employee.containerName!);
+      await stale.stop().catch(() => {});
+      await stale.remove({ force: true });
+      console.log(`[provision] Removed stale container ${employee.containerName}`);
+    } catch {
+      // No stale container — expected path
+    }
 
     // Create the container — OpenClaw starts directly with all built-in tools enabled
     const container = await docker.createContainer({
       Image: OPENCLAW_IMAGE,
       name: employee.containerName!,
-      Cmd: ["node", "openclaw.mjs", "gateway", "--bind", "lan", "--allow-unconfigured"],
+      // Start a TCP tunnel (0.0.0.0:18793 → 127.0.0.1:18792) so the API server
+      // proxy can reach the relay listener (which only binds to localhost).
+      // The relay-tunnel.cjs script is written to the config dir during provisioning.
+      // Then start the OpenClaw gateway as the main process.
+      Cmd: ["bash", "-c", [
+        // Auto-fix chromium symlink on startup if missing (handles cases where
+        // the install step timed out during provisioning or container was recreated)
+        `if [ ! -x /usr/local/bin/chromium ]; then`,
+        `  CHROME_BIN=$(find /home/node/.cache/ms-playwright -name chrome -path "*/chrome-linux64/*" 2>/dev/null | head -1);`,
+        `  if [ -n "$CHROME_BIN" ] && [ -x "$CHROME_BIN" ]; then`,
+        `    ln -sf "$CHROME_BIN" /usr/local/bin/chromium 2>/dev/null || sudo ln -sf "$CHROME_BIN" /usr/local/bin/chromium 2>/dev/null || true;`,
+        `  fi;`,
+        `fi;`,
+        `node /home/node/.openclaw/relay-tunnel.cjs &`,
+        `exec node openclaw.mjs gateway --bind lan --allow-unconfigured`,
+      ].join(" ")],
       Env: [
         `HOME=/home/node`,
-        `NODE_OPTIONS=--max-old-space-size=1536`,
+        `NODE_OPTIONS=--max-old-space-size=${getNodeHeapForTier(tier)}`,
         `OPENCLAW_GATEWAY_TOKEN=${employee.gatewayToken}`,
-        `ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}`,
+        // BYOK: use employee's own keys; Managed: use platform keys
+        `ANTHROPIC_API_KEY=${(employee as any).hostingMode === "byok" && (employee as any).byokAnthropicKey ? (employee as any).byokAnthropicKey : ANTHROPIC_API_KEY}`,
+        ...(() => {
+          const gemini = (employee as any).hostingMode === "byok" && (employee as any).byokGeminiKey ? (employee as any).byokGeminiKey : GEMINI_API_KEY;
+          return gemini ? [`GEMINI_API_KEY=${gemini}`] : [];
+        })(),
         ...(BRAVE_API_KEY ? [`BRAVE_API_KEY=${BRAVE_API_KEY}`] : []),
+        ...(TWILIO_ACCOUNT_SID ? [`TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}`] : []),
+        ...(TWILIO_AUTH_TOKEN ? [`TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}`] : []),
         `ENCRYPTION_KEY=${deriveEmployeeEncryptionKey(employeeId)}`,
-        `EMPLOYEE_EMAIL=${emailAddress}`,
+        `EMPLOYEE_ID=${employeeId}`,
+        ...(emailAddress ? [`EMPLOYEE_EMAIL=${emailAddress}`] : []),
         `EMPLOYEE_NAME=${employee.name}`,
         `EMPLOYEE_JOB_TITLE=${employee.jobTitle}`,
+        `COMPANY_ID=${data.companyId}`,
+        // Internal API URL — used by task-management, restart-gateway, team-communication, send-email skills
+        `BLITZ_API_URL=http://host.docker.internal:${process.env.API_PORT || "3001"}`,
+        `INTERSERVICE_SECRET=${INTERSERVICE_SECRET}`,
         // Email IMAP/SMTP credentials (if configured by company owner)
         ...buildEmailEnvVars(employee.provisionedAccounts as Record<string, unknown>),
       ],
       HostConfig: {
         Binds: [
           `${configDir}:/home/node/.openclaw`,
-          `${configDir}/workspace:/home/node/.openclaw/workspace`,
         ],
+        ExtraHosts: ["host.docker.internal:host-gateway"],
         NetworkMode: OPENCLAW_NETWORK,
         Memory: parseMemory(resources.memory),
         NanoCpus: parseCpus(resources.cpus),
+        // Chromium uses /dev/shm for tab rendering. Docker defaults it to 64MB which
+        // causes Chromium to crash with SIGBUS / "Aw, Snap!" on any non-trivial page.
+        ShmSize: 512 * 1024 * 1024, // 512MB
         RestartPolicy: { Name: "unless-stopped" },
       },
       Labels: {
         "ai-employees.employee-id": employeeId,
         "ai-employees.company-id": data.companyId,
+        // Traefik labels — expose the OpenClaw gateway externally so users can
+        // connect the OpenClaw browser extension via a local node host.
+        // External URL: https://{API_DOMAIN}/gw/{employeeId}/
+        ...(API_DOMAIN ? buildTraefikLabels(employeeId, API_DOMAIN) : {}),
       },
     });
 
@@ -178,25 +328,110 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
       console.log(`[provision] Could not copy bundled skills (non-critical, may not exist in image)`);
     }
 
+    // Create symlinks inside workspace-main pointing to sibling directories.
+    // This ensures edit/write tools can reach skills, workspace, and media
+    // even if workspaceOnly:false has a regression in the current OpenClaw version.
+    try {
+      execSync(
+        `docker exec ${employee.containerName} bash -c '` +
+        `cd /home/node/.openclaw/workspace-main && ` +
+        `ln -sfn ../skills skills 2>/dev/null; ` +
+        `ln -sfn ../workspace workspace-ref 2>/dev/null; ` +
+        `ln -sfn ../credentials credentials 2>/dev/null; ` +
+        `chown -h node:node skills workspace-ref credentials 2>/dev/null'`,
+        { timeout: 10000 },
+      );
+      console.log(`[provision] Created workspace-main symlinks for ${employee.name}`);
+    } catch {
+      console.log(`[provision] Could not create workspace-main symlinks (non-critical)`);
+    }
+
     // Get container info for host/port
     const info = await container.inspect();
-    const containerIp = info.NetworkSettings.Networks?.[OPENCLAW_NETWORK]?.IPAddress || null;
+    let containerIp = info.NetworkSettings.Networks?.[OPENCLAW_NETWORK]?.IPAddress || null;
 
-    // Update DB with container details + email (still provisioning until gateway ready)
+    // Update DB with container details (still provisioning until gateway ready)
     await db
       .update(employees)
       .set({
         containerId: info.Id,
         containerHost: containerIp,
         containerPort: 18789,
-        emailAddress,
         updatedAt: new Date(),
       })
       .where(eq(employees.id, employeeId));
 
-    // Wait for the OpenClaw gateway to be ready before marking active
+    // Install CLI tools synchronously BEFORE marking active.
+    // This installs Chromium, GitHub CLI, himalaya, credential manager, etc.
+    // The container is restarted at the end to pick up Chromium, so we need
+    // to re-fetch the IP and wait for the gateway after this step.
+    console.log(`[provision] Installing CLI tools for ${employee.name}...`);
+    installCliTools(employee.containerName!);
+
+    // After installCliTools restarts the container, poll until Docker reports it
+    // as "running" before checking IP — Docker needs a moment to assign the
+    // network IP, and heavy containers can take 15-30s to come up.
+    {
+      const maxWaitMs = 30_000;
+      const pollInterval = 2000;
+      const startWait = Date.now();
+      let containerRunning = false;
+      while (Date.now() - startWait < maxWaitMs) {
+        try {
+          const statusOut = execSync(
+            `docker inspect --format='{{.State.Status}}' ${employee.containerName}`,
+            { timeout: 5000, stdio: "pipe" },
+          ).toString().trim();
+          if (statusOut === "running") {
+            containerRunning = true;
+            break;
+          }
+          console.log(`[provision] Container status after restart: ${statusOut}, waiting...`);
+        } catch { /* ignore */ }
+        await new Promise((r) => setTimeout(r, pollInterval));
+      }
+      if (!containerRunning) {
+        console.log(`[provision] Container not running after ${maxWaitMs / 1000}s — will still attempt IP refresh`);
+      }
+      // Extra 3s for network IP assignment after "running" state
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+
+    // Get the new IP address after restart
+    try {
+      const refreshedInfo = await container.inspect();
+      const newIp = refreshedInfo.NetworkSettings.Networks?.[OPENCLAW_NETWORK]?.IPAddress || null;
+      if (newIp && newIp !== containerIp) {
+        containerIp = newIp;
+        await db
+          .update(employees)
+          .set({ containerHost: newIp, updatedAt: new Date() })
+          .where(eq(employees.id, employeeId));
+        console.log(`[provision] Updated container IP after CLI install: ${newIp}`);
+      } else if (!newIp) {
+        console.log(`[provision] WARNING: No IP address found after restart — gateway polling may fail`);
+      } else {
+        console.log(`[provision] Container IP unchanged after restart: ${containerIp}`);
+      }
+    } catch (inspectErr) {
+      const msg = inspectErr instanceof Error ? inspectErr.message : String(inspectErr);
+      console.log(`[provision] Could not refresh container IP after CLI install: ${msg.slice(0, 200)}`);
+    }
+
+    // Wait for the OpenClaw gateway to be ready before marking active.
+    // 300s timeout accounts for heavy containers after CLI tool installs
+    // (Chromium, LibreOffice, pandoc add significant startup weight).
     if (containerIp) {
-      await waitForGateway(containerIp, 18789, 60_000);
+      const result = await waitForGateway(containerIp, 18789, 300_000, employee.containerName!);
+      // Update DB if the IP changed during gateway polling (e.g. after container restart)
+      if (result.host !== containerIp) {
+        containerIp = result.host;
+        await db
+          .update(employees)
+          .set({ containerHost: containerIp, updatedAt: new Date() })
+          .where(eq(employees.id, employeeId));
+        console.log(`[provision] Updated container IP after gateway ready: ${containerIp}`);
+      }
     }
 
     await db
@@ -205,24 +440,23 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
       .where(eq(employees.id, employeeId));
 
     console.log(
-      `[provision] Employee ${employee.name} (${employeeId}) is now active at ${containerIp}:18789 — email: ${emailAddress}`,
+      `[provision] Employee ${employee.name} (${employeeId}) is now active at ${containerIp}:18789${emailAddress ? ` — email: ${emailAddress}` : ""}`,
     );
 
     // Create Slack channel for the employee if Slack is in their channels
     if (data.channels.includes("slack")) {
       createSlackChannel(employeeId);
     }
-
-    // Install CLI tools in background (doesn't block provisioning)
-    installCliTools(employee.containerName!, employeeId);
   } catch (error) {
     console.error(`[provision] Failed to provision employee ${employeeId}:`, error);
 
+    // Store full error including container diagnostics (truncate to 4000 chars for DB)
+    const fullError = error instanceof Error ? error.message : String(error);
     await db
       .update(employees)
       .set({
         status: "error",
-        errorMessage: error instanceof Error ? error.message : String(error),
+        errorMessage: fullError.slice(0, 4000),
         updatedAt: new Date(),
       })
       .where(eq(employees.id, employeeId));
@@ -238,17 +472,40 @@ export async function stopEmployee(employeeId: string): Promise<void> {
   if (!employee?.containerId) return;
 
   const container = docker.getContainer(employee.containerId);
-  await container.stop();
+  try {
+    await container.kill();
+  } catch (err: any) {
+    // Container may already be stopped — that's fine
+    if (!err.message?.includes("is not running") && !err.statusCode?.toString().startsWith("304")) {
+      throw err;
+    }
+  }
 }
 
 export async function startEmployee(employeeId: string): Promise<void> {
   const employee = await db.query.employees.findFirst({
     where: eq(employees.id, employeeId),
   });
-  if (!employee?.containerId) return;
+  if (!employee?.containerId) {
+    console.error(`[start] No containerId for employee ${employeeId}, setting error status`);
+    await db
+      .update(employees)
+      .set({ status: "error", errorMessage: "No container to start", updatedAt: new Date() })
+      .where(eq(employees.id, employeeId));
+    return;
+  }
 
   const container = docker.getContainer(employee.containerId);
-  await container.start();
+  try {
+    await container.start();
+  } catch (err: any) {
+    // Container may already be running (e.g. pause never killed it) — that's fine
+    if (err.statusCode === 304 || err.message?.includes("already started") || err.message?.includes("is already running")) {
+      console.log(`[start] Container for ${employeeId} already running, proceeding`);
+    } else {
+      throw err;
+    }
+  }
 
   // Get possibly-changed IP after start
   const info = await container.inspect();
@@ -257,7 +514,14 @@ export async function startEmployee(employeeId: string): Promise<void> {
 
   if (ip) {
     await db.update(employees).set({ containerHost: ip, updatedAt: new Date() }).where(eq(employees.id, employeeId));
-    await waitForGateway(ip, 18789, 30_000);
+    try {
+      const result = await waitForGateway(ip, 18789, 30_000, employee.containerName || undefined);
+      if (result.host !== ip) {
+        await db.update(employees).set({ containerHost: result.host, updatedAt: new Date() }).where(eq(employees.id, employeeId));
+      }
+    } catch {
+      console.log(`[start] Gateway not ready for ${employeeId} after restart, marking active anyway (container is running)`);
+    }
   }
 
   await db
@@ -327,13 +591,13 @@ export async function cleanupOrphanedContainers(): Promise<void> {
 
   if (containers.length === 0) return;
 
-  // Get active employee IDs from DB
-  const activeEmployees = await db.query.employees.findMany({
-    where: eq(employees.status, "active"),
+  // Keep containers for employees that are active, provisioning, or paused
+  const keepEmployees = await db.query.employees.findMany({
+    where: not(inArray(employees.status, ["terminated"])),
     columns: { id: true, containerName: true },
   });
-  const activeIds = new Set(activeEmployees.map((e) => e.id));
-  const activeNames = new Set(activeEmployees.map((e) => e.containerName).filter(Boolean));
+  const activeIds = new Set(keepEmployees.map((e) => e.id));
+  const activeNames = new Set(keepEmployees.map((e) => e.containerName).filter(Boolean));
 
   let removed = 0;
   for (const info of containers) {
@@ -361,27 +625,243 @@ export async function cleanupOrphanedContainers(): Promise<void> {
   }
 }
 
-/** Poll the gateway until it responds or timeout is reached */
-async function waitForGateway(host: string, port: number, timeoutMs: number): Promise<void> {
+/** Poll the gateway until it responds or timeout is reached. Throws on timeout.
+ *  Also checks Docker container health periodically to fail fast if the container is dead.
+ *  Re-inspects the container IP every 30s and after restarts to handle IP changes.
+ *  Monitors container restart count to detect crash loops and dumps logs periodically. */
+async function waitForGateway(
+  host: string,
+  port: number,
+  timeoutMs: number,
+  containerName?: string,
+): Promise<{ host: string }> {
   const start = Date.now();
   const interval = 2000;
-  while (Date.now() - start < timeoutMs) {
+  let attempts = 0;
+  let lastError = "";
+  let consecutiveFetchFails = 0;
+  let currentHost = host;
+  let lastLogDumpAt = 0;
+  let proactiveRestartDone = false;
+
+  /** Re-inspect the container to get the current network IP */
+  function refreshContainerIp(): string | null {
+    if (!containerName) return null;
     try {
-      const res = await fetch(`http://${host}:${port}/v1/models`, {
-        signal: AbortSignal.timeout(3000),
+      const network = process.env.OPENCLAW_NETWORK || OPENCLAW_NETWORK;
+      const ipOutput = execSync(
+        `docker inspect --format='{{.NetworkSettings.Networks.${network}.IPAddress}}' ${containerName}`,
+        { timeout: 5000, stdio: "pipe" },
+      ).toString().trim().replace(/^'|'$/g, "");
+      return ipOutput || null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Get the container's restart count to detect crash loops */
+  function getRestartCount(): number {
+    if (!containerName) return 0;
+    try {
+      const output = execSync(
+        `docker inspect --format='{{.RestartCount}}' ${containerName}`,
+        { timeout: 5000, stdio: "pipe" },
+      ).toString().trim().replace(/^'|'$/g, "");
+      return parseInt(output) || 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  /** Dump recent container logs for diagnostics and return them */
+  function dumpContainerLogs(label: string, lines = 30): string {
+    if (!containerName) return "";
+    try {
+      const logs = execSync(`docker logs --tail ${lines} ${containerName} 2>&1`, { timeout: 10_000, stdio: "pipe" })
+        .toString().trim();
+      if (logs) console.log(`[provision] ${label}:\n${logs}`);
+      return logs;
+    } catch { /* ignore log fetch errors */ return ""; }
+  }
+
+  /** Check if the gateway process is actually listening inside the container */
+  function isGatewayListening(): boolean {
+    if (!containerName) return false;
+    try {
+      // Check if any process is listening on the gateway port
+      const output = execSync(
+        `docker exec ${containerName} sh -c 'ss -tlnp 2>/dev/null | grep :${port} || netstat -tlnp 2>/dev/null | grep :${port} || true'`,
+        { timeout: 5000, stdio: "pipe" },
+      ).toString().trim();
+      return output.length > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  while (Date.now() - start < timeoutMs) {
+    attempts++;
+    try {
+      const res = await fetch(`http://${currentHost}:${port}/v1/models`, {
+        signal: AbortSignal.timeout(5000),
       });
       if (res.ok) {
-        console.log(`[provision] Gateway ready at ${host}:${port} (${Date.now() - start}ms)`);
-        return;
+        console.log(`[provision] Gateway ready at ${currentHost}:${port} (${Date.now() - start}ms, ${attempts} attempts)`);
+        return { host: currentHost };
       }
-    } catch {
-      // Not ready yet
+      lastError = `HTTP ${res.status}`;
+      consecutiveFetchFails = 0;
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      const cause = err instanceof Error && (err as any).cause?.message ? ` (cause: ${(err as any).cause.message})` : "";
+      lastError = `${errMsg}${cause}`;
+      consecutiveFetchFails++;
     }
+
+    // Every 30s (15 attempts), or after 10 consecutive fetch failures,
+    // check if the container is actually running and refresh IP.
+    if (containerName && (attempts % 15 === 0 || consecutiveFetchFails === 10)) {
+      try {
+        const statusOutput = execSync(
+          `docker inspect --format='{{.State.Status}} {{.State.ExitCode}} {{.State.OOMKilled}} {{.State.StartedAt}}' ${containerName}`,
+          { timeout: 5000, stdio: "pipe" },
+        ).toString().trim();
+        const parts = statusOutput.split(" ");
+        const [status, exitCode, oomKilled] = parts;
+        const startedAt = parts.slice(3).join(" ");
+        const restartCount = getRestartCount();
+        const listening = status === "running" ? isGatewayListening() : false;
+        const elapsedSec = Math.round((Date.now() - start) / 1000);
+        console.log(
+          `[provision] Container ${containerName} state: status=${status} exitCode=${exitCode} oomKilled=${oomKilled} restartCount=${restartCount} ` +
+          `listeningOn${port}=${listening} startedAt=${startedAt} ` +
+          `(${elapsedSec}s elapsed, polling ${currentHost}:${port}, consecutiveFails=${consecutiveFetchFails}, last error: ${lastError})`,
+        );
+
+        // Dump container logs periodically (every 60s) for diagnostics
+        const now = Date.now();
+        if (now - lastLogDumpAt >= 60_000) {
+          lastLogDumpAt = now;
+          dumpContainerLogs(`Container logs at ${elapsedSec}s`);
+        }
+
+        // Detect crash loops: if restart count is high, the gateway is repeatedly crashing
+        if (restartCount >= 3) {
+          console.log(`[provision] WARNING: Container has restarted ${restartCount} times — gateway may be crash-looping`);
+          dumpContainerLogs("Container logs (crash loop detected)", 50);
+        }
+
+        if (status === "running") {
+          // Container is running but gateway not responding — refresh IP in case it changed
+          const newIp = refreshContainerIp();
+          if (newIp && newIp !== currentHost) {
+            console.log(`[provision] Container IP changed: ${currentHost} → ${newIp}`);
+            currentHost = newIp;
+            consecutiveFetchFails = 0;
+          }
+
+          // If gateway has been refusing connections for 120s+ and hasn't been
+          // proactively restarted yet, force a restart to clear stuck state
+          if (!proactiveRestartDone && elapsedSec >= 120 && consecutiveFetchFails >= 20 && !listening) {
+            console.log(`[provision] Gateway not listening after ${elapsedSec}s — proactively restarting container...`);
+            dumpContainerLogs("Container logs before proactive restart", 50);
+            try {
+              execSync(`docker restart -t 15 ${containerName}`, { timeout: 30_000 });
+              console.log(`[provision] Proactive restart complete, waiting 15s for gateway to initialize...`);
+              await new Promise((r) => setTimeout(r, 15_000));
+              consecutiveFetchFails = 0;
+              proactiveRestartDone = true;
+              const newIpAfterRestart = refreshContainerIp();
+              if (newIpAfterRestart) {
+                if (newIpAfterRestart !== currentHost) {
+                  console.log(`[provision] Container IP after proactive restart: ${currentHost} → ${newIpAfterRestart}`);
+                }
+                currentHost = newIpAfterRestart;
+              }
+            } catch (restartErr) {
+              const msg = restartErr instanceof Error ? restartErr.message : String(restartErr);
+              console.log(`[provision] Proactive restart failed: ${msg.slice(0, 200)}`);
+              proactiveRestartDone = true; // Don't retry
+            }
+          }
+        } else if (status === "exited" || status === "dead") {
+          // Container is dead — log diagnostics and try to restart
+          console.log(`[provision] Container is ${status} (exit=${exitCode}, oom=${oomKilled}). Attempting restart...`);
+          dumpContainerLogs("Container logs before restart", 50);
+
+          try {
+            execSync(`docker start ${containerName}`, { timeout: 30_000 });
+            console.log(`[provision] Container restarted, waiting 10s for it to initialize...`);
+            await new Promise((r) => setTimeout(r, 10_000));
+            consecutiveFetchFails = 0;
+
+            // Re-inspect to get the new IP after restart
+            const newIp = refreshContainerIp();
+            if (newIp) {
+              if (newIp !== currentHost) {
+                console.log(`[provision] Container IP after restart: ${currentHost} → ${newIp}`);
+              }
+              currentHost = newIp;
+            }
+          } catch (restartErr) {
+            const msg = restartErr instanceof Error ? restartErr.message : String(restartErr);
+            console.log(`[provision] Failed to restart container: ${msg.slice(0, 200)}`);
+          }
+        } else if (status === "restarting") {
+          console.log(`[provision] Container is restarting (Docker restart policy), waiting for it to come back...`);
+          await new Promise((r) => setTimeout(r, 5000));
+          const newIp = refreshContainerIp();
+          if (newIp) {
+            if (newIp !== currentHost) {
+              console.log(`[provision] Container IP after Docker restart: ${currentHost} → ${newIp}`);
+            }
+            currentHost = newIp;
+            consecutiveFetchFails = 0;
+          }
+        }
+      } catch {
+        // docker inspect failed — container might be gone entirely
+        console.log(`[provision] Could not inspect container ${containerName} (${Math.round((Date.now() - start) / 1000)}s elapsed)`);
+      }
+    } else if (attempts % 15 === 0) {
+      console.log(`[provision] Still waiting for gateway at ${currentHost}:${port} (${Math.round((Date.now() - start) / 1000)}s elapsed, last error: ${lastError})`);
+    }
+
     await new Promise((r) => setTimeout(r, interval));
   }
-  // Timed out — mark active anyway so the user isn't stuck in provisioning forever.
-  // The chat proxy will retry with IP refresh if needed.
-  console.log(`[provision] Gateway health check timed out after ${timeoutMs}ms, marking active anyway`);
+
+  // Final diagnostic dump on timeout — capture logs for error message
+  let containerLogs = "";
+  let finalDiag = "";
+  if (containerName) {
+    containerLogs = dumpContainerLogs("Container logs at timeout", 80);
+    const restartCount = getRestartCount();
+    const listening = isGatewayListening();
+    // Get container state
+    let containerState = "unknown";
+    try {
+      containerState = execSync(
+        `docker inspect --format='status={{.State.Status}} exitCode={{.State.ExitCode}} oomKilled={{.State.OOMKilled}} restartCount={{.RestartCount}}' ${containerName}`,
+        { timeout: 5000, stdio: "pipe" },
+      ).toString().trim().replace(/^'|'$/g, "");
+    } catch { /* ignore */ }
+    finalDiag = `\n\n--- Container Diagnostics ---\n${containerState}\nlisteningOnPort${port}=${listening}\nrestartCount=${restartCount}\n\n--- Last ${Math.min(containerLogs.split("\n").length, 40)} lines of container logs ---\n${containerLogs.split("\n").slice(-40).join("\n")}`;
+    console.log(`[provision] Final state: restartCount=${restartCount} listeningOn${port}=${listening}`);
+  }
+
+  throw new Error(`Gateway at ${currentHost}:${port} did not respond within ${timeoutMs}ms (${attempts} attempts, last error: ${lastError})${finalDiag}`);
+}
+
+/** Scale Node.js heap to the tier — leave room for Chromium + OS overhead */
+function getNodeHeapForTier(tier: string): number {
+  // Container memory: junior=2GB, senior/expert=4GB
+  // Reserve ~40% for Chromium + OS, give ~60% to Node
+  const heapByTier: Record<string, number> = {
+    junior: 1024,  // 1GB heap in 2GB container (leaves ~1GB for Chromium)
+    senior: 2048,  // 2GB heap in 4GB container (leaves ~2GB for Chromium)
+    expert: 2048,  // 2GB heap in 4GB container
+  };
+  return heapByTier[tier] || 1024;
 }
 
 function parseMemory(mem: string): number {
@@ -402,121 +882,211 @@ function parseCpus(cpus: string): number {
 }
 
 /**
- * Install CLI tools into the container in the background.
- * Skills like github, himalaya, nano-pdf etc. are bundled as SKILL.md files
- * but need their CLI binaries to actually work.
+ * Install CLI tools into the container synchronously.
+ * This MUST complete before the employee is marked "active" so that
+ * all tools (Chromium, gh, himalaya, etc.) are available immediately.
+ *
+ * The container is restarted at the end so the gateway picks up Chromium.
+ * The caller is responsible for re-fetching the container IP after this.
  */
-function installCliTools(containerName: string, employeeId: string): void {
-  const script = `
-    set -e
+function installCliTools(containerName: string): void {
+  const steps: Array<{ name: string; cmd: string; timeout: number }> = [
+    {
+      name: "system packages + sudo",
+      cmd: `docker exec -u root ${containerName} bash -c '
+        apt-get update -qq &&
+        apt-get install -y -qq --no-install-recommends \
+          jq tmux ffmpeg python3-pip ca-certificates gnupg sudo &&
+        echo "node ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+      '`,
+      timeout: 120_000,
+    },
+    {
+      // Single robust step: try playwright first, fall back to apt
+      name: "Chromium browser",
+      cmd: `docker exec -u root ${containerName} bash -c '
+        INSTALLED=0
 
-    # Install system packages + sudo access (as root)
-    docker exec -u root ${containerName} bash -c '
-      apt-get update -qq &&
-      apt-get install -y -qq --no-install-recommends \
-        jq tmux ffmpeg python3-pip ca-certificates gnupg sudo \
-        2>/dev/null &&
-      echo "node ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers &&
-      echo "Sudo access granted to node user"
-    '
+        # Method 1: playwright-core (preferred — matches OpenClaw browser config)
+        if command -v npx >/dev/null 2>&1; then
+          echo "[chromium] Trying playwright-core install..."
+          cd /app
+          npx playwright-core install-deps chromium 2>&1 || echo "[chromium] install-deps had warnings"
+          su -s /bin/bash node -c "cd /app && npx playwright-core install chromium 2>&1" || echo "[chromium] binary install had warnings"
+          CHROME_BIN=$(find /home/node/.cache/ms-playwright -name chrome -path "*/chrome-linux64/*" 2>/dev/null | head -1)
+          if [ -n "$CHROME_BIN" ] && [ -x "$CHROME_BIN" ]; then
+            ln -sf "$CHROME_BIN" /usr/local/bin/chromium
+            echo "[chromium] Installed via playwright: $CHROME_BIN"
+            INSTALLED=1
+          else
+            echo "[chromium] playwright install did not produce a working binary"
+          fi
+        else
+          echo "[chromium] npx not found, skipping playwright method"
+        fi
 
-    # Install Chromium browser dependencies (for OpenClaw browser tool)
-    # Uses playwright-core's install-deps to get the right system libraries
-    docker exec -u root ${containerName} bash -c '
-      cd /app && npx playwright-core install-deps chromium 2>/dev/null
-    '
+        # Method 2: apt fallback
+        if [ "$INSTALLED" = "0" ]; then
+          echo "[chromium] Trying apt install fallback..."
+          apt-get install -y -qq chromium 2>&1 || apt-get install -y -qq chromium-browser 2>&1 || true
+          for bin in /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$bin" ]; then
+              ln -sf "$bin" /usr/local/bin/chromium
+              echo "[chromium] Installed via apt: $bin"
+              INSTALLED=1
+              break
+            fi
+          done
+        fi
 
-    # Install Chromium browser binary via playwright-core (as node user)
-    docker exec ${containerName} bash -c '
-      cd /app && npx playwright-core install chromium 2>/dev/null
-    '
-
-    # Create symlink so OpenClaw auto-detects the browser
-    docker exec -u root ${containerName} bash -c '
-      CHROME_BIN=$(find /home/node/.cache/ms-playwright -name chrome -path "*/chrome-linux64/*" 2>/dev/null | head -1) &&
-      if [ -n "$CHROME_BIN" ]; then
-        ln -sf "$CHROME_BIN" /usr/local/bin/chromium &&
-        echo "Chromium linked: $CHROME_BIN -> /usr/local/bin/chromium"
-      fi
-    '
-
-    # Install GitHub CLI (gh)
-    docker exec -u root ${containerName} bash -c '
-      curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg &&
-      echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list &&
-      apt-get update -qq &&
-      apt-get install -y -qq gh
-    '
-
-    # Install himalaya email CLI
-    docker exec -u root ${containerName} bash -c '
-      curl -fsSL https://raw.githubusercontent.com/pimalaya/himalaya/master/install.sh | sh 2>/dev/null &&
-      mv /root/.local/bin/himalaya /usr/local/bin/himalaya 2>/dev/null || true
-    '
-
-    # Install credential manager CLI (cred) — symlink the script as a global command
-    docker exec -u root ${containerName} bash -c '
-      cat > /usr/local/bin/cred << "CREDEOF"
+        # Verify
+        if [ -x /usr/local/bin/chromium ]; then
+          echo "[chromium] Ready at /usr/local/bin/chromium"
+        else
+          echo "[chromium] ERROR: All installation methods failed"
+          exit 1
+        fi
+      '`,
+      timeout: 180_000,
+    },
+    {
+      name: "GitHub CLI (gh)",
+      cmd: `docker exec -u root ${containerName} bash -c '
+        curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg 2>/dev/null &&
+        echo "deb [arch=\$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list &&
+        apt-get update -qq &&
+        apt-get install -y -qq gh
+      '`,
+      timeout: 60_000,
+    },
+    {
+      name: "himalaya email CLI",
+      cmd: `docker exec -u root ${containerName} bash -c '
+        curl -fsSL https://raw.githubusercontent.com/pimalaya/himalaya/master/install.sh | sh 2>/dev/null &&
+        mv /root/.local/bin/himalaya /usr/local/bin/himalaya 2>/dev/null || true
+      '`,
+      timeout: 60_000,
+    },
+    {
+      name: "credential manager (cred)",
+      cmd: `docker exec -u root ${containerName} bash -c '
+        cat > /usr/local/bin/cred << "CREDEOF"
 #!/bin/bash
 exec node /home/node/.openclaw/cred.js "$@"
 CREDEOF
-      chmod +x /usr/local/bin/cred &&
-      echo "Credential manager (cred) installed"
-    '
+        chmod +x /usr/local/bin/cred
+      '`,
+      timeout: 10_000,
+    },
+    {
+      name: "2captcha CLI (solve-captcha)",
+      cmd: `docker exec -u root ${containerName} bash -c '
+        curl -fsSL https://github.com/2captcha/cli/releases/latest/download/solve-captcha-linux-amd64 -o /usr/local/bin/solve-captcha 2>/dev/null &&
+        chmod +x /usr/local/bin/solve-captcha || true
+      '`,
+      timeout: 30_000,
+    },
+    {
+      name: "oathtool (TOTP 2FA)",
+      cmd: `docker exec -u root ${containerName} bash -c '
+        apt-get install -y -qq oathtool 2>/dev/null || true
+      '`,
+      timeout: 30_000,
+    },
+    {
+      name: "media generation CLI wrappers",
+      cmd: `docker exec -u root ${containerName} bash -c '
+        cp /home/node/.openclaw/generate-image.sh /usr/local/bin/generate-image 2>/dev/null &&
+        cp /home/node/.openclaw/generate-video.sh /usr/local/bin/generate-video 2>/dev/null &&
+        chmod +x /usr/local/bin/generate-image /usr/local/bin/generate-video
+      '`,
+      timeout: 10_000,
+    },
+    {
+      name: "Python deps for media generation",
+      cmd: `docker exec ${containerName} bash -c '
+        pip3 install -q --break-system-packages google-genai Pillow 2>/dev/null || true
+      '`,
+      timeout: 60_000,
+    },
+    {
+      name: "DOCX skill deps (pandoc, LibreOffice, poppler, docx npm)",
+      cmd: `docker exec -u root ${containerName} bash -c '
+        ${generateDocxInstallScript()}
+      ' && docker exec ${containerName} bash -c '
+        npm install -g docx 2>/dev/null || true
+      '`,
+      timeout: 180_000,
+    },
+    {
+      name: "gogcli (Google Workspace CLI)",
+      cmd: `docker exec -u root ${containerName} bash -c '
+        GOG_VERSION=$(curl -fsSL https://api.github.com/repos/steipete/gogcli/releases/latest 2>/dev/null | grep -o "\"tag_name\":\"[^\"]*\"" | head -1 | cut -d"\"" -f4 | sed "s/^v//") &&
+        if [ -n "$GOG_VERSION" ]; then
+          curl -fsSL "https://github.com/steipete/gogcli/releases/download/v$GOG_VERSION/gogcli_\${GOG_VERSION}_linux_amd64.tar.gz" -o /tmp/gogcli.tar.gz &&
+          tar xzf /tmp/gogcli.tar.gz -C /usr/local/bin &&
+          rm -f /tmp/gogcli.tar.gz &&
+          chmod +x /usr/local/bin/gog
+        fi
+      '`,
+      timeout: 60_000,
+    },
+    {
+      name: "send-email CLI wrapper",
+      cmd: `docker exec -u root ${containerName} bash -c '
+        cat > /usr/local/bin/send-email << "SENDEMAILEOF"
+#!/bin/bash
+exec node /home/node/.openclaw/send-email.js "$@"
+SENDEMAILEOF
+        chmod +x /usr/local/bin/send-email
+      '`,
+      timeout: 10_000,
+    },
+  ];
 
-    # Install 2captcha CLI solver
-    docker exec -u root ${containerName} bash -c '
-      curl -fsSL https://github.com/2captcha/cli/releases/latest/download/solve-captcha-linux-amd64 -o /usr/local/bin/solve-captcha 2>/dev/null &&
-      chmod +x /usr/local/bin/solve-captcha &&
-      echo "2captcha CLI (solve-captcha) installed" ||
-      echo "2captcha CLI install skipped (non-critical)"
-    '
+  for (const step of steps) {
+    try {
+      const output = execSync(step.cmd, { timeout: step.timeout, stdio: "pipe" });
+      const out = output.toString().trim();
+      if (out) console.log(`[cli-tools] ${out.split("\n").pop()}`);
+      console.log(`[cli-tools] ✓ ${step.name}`);
+    } catch (err: unknown) {
+      // Log stderr so we can diagnose failures — but don't abort provisioning
+      const execErr = err as { stderr?: Buffer; message?: string };
+      const stderr = execErr.stderr?.toString().trim().slice(0, 300) || "";
+      const msg = execErr.message?.slice(0, 200) || String(err).slice(0, 200);
+      console.log(`[cli-tools] ✗ ${step.name} failed: ${msg}`);
+      if (stderr) console.log(`[cli-tools]   stderr: ${stderr}`);
+    }
+  }
 
-    # Install oathtool for TOTP 2FA code generation
-    docker exec -u root ${containerName} bash -c '
-      apt-get install -y -qq oathtool 2>/dev/null &&
-      echo "oathtool installed" || true
-    '
-
-    # Restart container so gateway picks up newly installed Chromium browser
-    echo "[cli-tools] Restarting container to pick up Chromium..."
-    docker restart ${containerName}
-
-    echo "[cli-tools] Installation complete for ${containerName}"
-  `;
-
-  const child = spawn("bash", ["-c", script], {
-    detached: true,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-
-  child.stdout?.on("data", (d: Buffer) => console.log(`[cli-tools] ${d.toString().trim()}`));
-  child.stderr?.on("data", (d: Buffer) => console.log(`[cli-tools:err] ${d.toString().trim()}`));
-  child.on("close", async (code) => {
-    console.log(`[cli-tools] Finished for ${containerName} (exit ${code})`);
-
-    // After docker restart, the container gets a new IP address.
-    // Update the DB so the chat proxy uses the correct IP, and wait for gateway.
-    if (code === 0) {
-      try {
-        const container = docker.getContainer(containerName);
-        const info = await container.inspect();
-        const newIp = info.NetworkSettings.Networks?.[OPENCLAW_NETWORK]?.IPAddress || null;
-        if (newIp) {
-          await db
-            .update(employees)
-            .set({ containerHost: newIp, updatedAt: new Date() })
-            .where(eq(employees.id, employeeId));
-          console.log(`[cli-tools] Updated container IP for ${containerName}: ${newIp}`);
-          // Wait for gateway to be ready after restart
-          await waitForGateway(newIp, 18789, 30_000);
+  // Restart container so the gateway picks up Chromium and other new binaries.
+  // Use a longer timeout (60s) — heavy containers with Chromium + LibreOffice
+  // can take 30+ seconds to stop and restart. Retry once on failure.
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      console.log(`[cli-tools] Restarting container to pick up installed tools (attempt ${attempt})...`);
+      execSync(`docker restart ${containerName}`, { timeout: 60_000 });
+      console.log(`[cli-tools] Container restarted successfully`);
+      break;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.log(`[cli-tools] Container restart attempt ${attempt} failed: ${msg.slice(0, 200)}`);
+      if (attempt === 1) {
+        // Before retrying, try a stop + start sequence which can be more reliable
+        try {
+          console.log(`[cli-tools] Trying stop + start fallback...`);
+          execSync(`docker stop -t 30 ${containerName}`, { timeout: 40_000, stdio: "pipe" });
+          execSync(`docker start ${containerName}`, { timeout: 30_000, stdio: "pipe" });
+          console.log(`[cli-tools] Container started via stop+start fallback`);
+          break;
+        } catch (fallbackErr) {
+          const fbMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+          console.log(`[cli-tools] Stop+start fallback also failed: ${fbMsg.slice(0, 200)}`);
         }
-      } catch (err) {
-        console.error(`[cli-tools] Failed to update container IP after restart:`, err);
       }
     }
-  });
-  child.unref();
+  }
 }
 
 /**
@@ -575,6 +1145,27 @@ function archiveSlackChannel(employeeId: string): void {
   })
     .then(() => console.log(`[teardown] Slack channel archive requested for ${employeeId}`))
     .catch((err: Error) => console.log(`[teardown] Slack channel archive failed: ${err.message}`));
+}
+
+/**
+ * Build Traefik labels to expose an employee's OpenClaw gateway externally.
+ * This enables users to connect the OpenClaw browser extension by running
+ * a local node host pointed at https://{API_DOMAIN}/gw/{employeeId}/
+ *
+ * The gateway itself handles auth via OPENCLAW_GATEWAY_TOKEN.
+ */
+function buildTraefikLabels(employeeId: string, apiDomain: string): Record<string, string> {
+  // Traefik router/service names must be alphanumeric + hyphens
+  const routerId = `gw-${employeeId.replace(/[^a-z0-9-]/g, "")}`;
+  return {
+    "traefik.enable": "true",
+    [`traefik.http.routers.${routerId}.rule`]: `Host(\`${apiDomain}\`) && PathPrefix(\`/gw/${employeeId}\`)`,
+    [`traefik.http.routers.${routerId}.entrypoints`]: "websecure",
+    [`traefik.http.routers.${routerId}.tls.certresolver`]: "letsencrypt",
+    [`traefik.http.middlewares.${routerId}-strip.stripprefix.prefixes`]: `/gw/${employeeId}`,
+    [`traefik.http.routers.${routerId}.middlewares`]: `${routerId}-strip`,
+    [`traefik.http.services.${routerId}.loadbalancer.server.port`]: "18789",
+  };
 }
 
 /** Webmail URLs by provider for browser-based email access */

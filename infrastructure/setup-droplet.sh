@@ -45,6 +45,11 @@ ufw default allow outgoing
 ufw allow ssh
 ufw allow 80/tcp    # HTTP (Traefik)
 ufw allow 443/tcp   # HTTPS (Traefik)
+ufw allow 3001/tcp  # API server (WebSocket relay for browser extension)
+ufw allow out 25/tcp   # SMTP (outbound)
+ufw allow out 465/tcp  # SMTPS (outbound)
+ufw allow out 587/tcp  # SMTP submission (outbound)
+ufw allow out 993/tcp  # IMAPS (outbound)
 ufw --force enable
 
 # Create app directory
@@ -75,9 +80,17 @@ ENCRYPTION_KEY=${GENERATED_ENCRYPTION_KEY}
 # Inter-service auth — MUST match the BACKEND_SECRET env var in Vercel
 INTERSERVICE_SECRET=${GENERATED_INTERSERVICE_SECRET}
 
+# GitHub — for hot-update tarball downloads from private repos
+# Create a fine-grained PAT with Contents:read on the ai-employees repo
+GITHUB_TOKEN=
+
 # OpenClaw
 OPENCLAW_IMAGE=ghcr.io/carmichgo/openclaw:latest
 OPENCLAW_NETWORK=ai-employees-internal
+
+# Google Gemini API (for Nano Banana image gen + Veo 3 video gen)
+# Get from: https://aistudio.google.com/apikey
+GEMINI_API_KEY=
 
 # API
 API_PORT=3001

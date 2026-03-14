@@ -5,12 +5,12 @@
  * The token identifies which employee trigger to fire.
  * This route requires NO authentication — the token IS the auth.
  *
- * The webhook is proxied to the employee's droplet for processing.
+ * The webhook is proxied to the employee's dedicated droplet for processing.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { triggers, employees, companies } from "@/lib/schema";
+import { triggers, employees } from "@/lib/schema";
 
 export async function POST(
   request: NextRequest,
@@ -27,23 +27,23 @@ export async function POST(
     return NextResponse.json({ error: "Webhook not found or disabled" }, { status: 404 });
   }
 
-  // Get the company's droplet
-  const [company] = await db
+  // Get the employee's dedicated droplet
+  const [employee] = await db
     .select()
-    .from(companies)
-    .where(eq(companies.id, trigger.companyId))
+    .from(employees)
+    .where(eq(employees.id, trigger.employeeId))
     .limit(1);
 
   if (
-    !company ||
-    company.dropletStatus !== "active" ||
-    !company.dropletIp ||
-    !company.interserviceSecret
+    !employee ||
+    employee.dropletStatus !== "active" ||
+    !employee.dropletIp ||
+    !employee.interserviceSecret
   ) {
     return NextResponse.json({ error: "Service unavailable" }, { status: 503 });
   }
 
-  // Forward the webhook to the droplet
+  // Forward the webhook to the employee's droplet
   let body: unknown = {};
   try {
     body = await request.json();
@@ -53,10 +53,13 @@ export async function POST(
   }
 
   try {
-    const dropletUrl = `http://${company.dropletIp}:3001/webhooks/${token}`;
+    const dropletUrl = `http://${employee.dropletIp}:3001/webhooks/${token}`;
     const res = await fetch(dropletUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-interservice-secret": employee.interserviceSecret,
+      },
       body: JSON.stringify(body),
     });
 

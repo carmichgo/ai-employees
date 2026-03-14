@@ -186,7 +186,9 @@ export async function employeeRoutes(fastify: FastifyInstance) {
         return reply.status(404).send({ error: "Employee not found" });
       }
 
-      if (employee.status !== "active") {
+      // Accept both "active" and "paused" — the Vercel route may have already set
+      // status to "paused" before calling us, so we still need to stop the container.
+      if (employee.status !== "active" && employee.status !== "paused") {
         return reply.status(400).send({ error: "Employee is not active" });
       }
 
@@ -290,10 +292,17 @@ export async function employeeRoutes(fastify: FastifyInstance) {
 
 function sanitizeEmployee(e: Record<string, unknown>) {
   // Remove sensitive fields from API responses
-  const { gatewayToken, ...safe } = e as { gatewayToken?: string } & Record<
+  const { gatewayToken, ...safe } = e as { gatewayToken?: string; id?: string; dropletIp?: string } & Record<
     string,
     unknown
   >;
+
+  // Derive external gateway URL for browser extension relay.
+  // Uses the API server's own gateway proxy (/gw/:id) — no DNS or Traefik needed.
+  if (safe.id && safe.dropletIp) {
+    safe.gatewayUrl = `http://${safe.dropletIp}:${process.env.API_PORT || 3001}/gw/${safe.id}`;
+  }
+
   return safe;
 }
 

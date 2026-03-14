@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq, and } from "drizzle-orm";
+import { eq, and, not } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { employees } from "@/lib/schema";
+import { employees, tasks } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
 import { updateEmployeeSchema } from "@ai-employees/shared";
-import { getCompanyBackend, createBackendClient } from "@/lib/backend";
+import { getEmployeeBackend, createBackendClient } from "@/lib/backend";
+import { destroyEmployeeDroplet, pollEmployeeDropletStatus, checkDropletHealth } from "@/lib/digitalocean";
+
+export const maxDuration = 60;
 
 async function authenticate(request: NextRequest) {
   const token =
@@ -15,10 +18,10 @@ async function authenticate(request: NextRequest) {
 }
 
 function sanitize(emp: Record<string, unknown>) {
-  const { gatewayToken, ...safe } = emp as { gatewayToken?: string } & Record<
-    string,
-    unknown
-  >;
+  const { gatewayToken, interserviceSecret, ...safe } = emp as {
+    gatewayToken?: string;
+    interserviceSecret?: string;
+  } & Record<string, unknown>;
   return safe;
 }
 
@@ -40,6 +43,53 @@ export async function GET(
 
   if (!employee) {
     return NextResponse.json({ error: "Employee not found" }, { status: 404 });
+  }
+
+  // If employee is provisioning and has a droplet, poll DO for IP/status updates
+  if (employee.status === "provisioning" && employee.dropletId) {
+    try {
+      const pollResult = await pollEmployeeDropletStatus(id);
+      if (pollResult.status === "active" && pollResult.ip) {
+        // Re-fetch the updated employee record
+        const [updated] = await db
+          .select()
+          .from(employees)
+          .where(eq(employees.id, id))
+          .limit(1);
+        if (updated) {
+          // If droplet is active with an IP, check if it's actually healthy
+          // and auto-recover the status from "provisioning" to "active".
+          // This fixes the case where a restart fallback set status to
+          // "provisioning" but reprovision failed, leaving it stuck.
+          if (updated.dropletIp) {
+            const health = await checkDropletHealth(updated.dropletIp);
+            if (health.ok) {
+              await db
+                .update(employees)
+                .set({ status: "active", dropletStatus: "active", errorMessage: null, updatedAt: new Date() } as any)
+                .where(eq(employees.id, id));
+
+              // Fire-and-forget: hot-update the droplet to deploy latest code
+              // after reboot recovery (power-cycle preserves old disk image).
+              if (updated.interserviceSecret) {
+                const backend = createBackendClient({
+                  url: `http://${updated.dropletIp}:3001`,
+                  secret: updated.interserviceSecret,
+                });
+                backend.hotUpdate().catch((err: any) => {
+                  console.error("[employee-get] post-reboot hot-update failed:", err.message);
+                });
+              }
+
+              return NextResponse.json({ employee: sanitize({ ...updated, status: "active", dropletStatus: "active", errorMessage: null }) });
+            }
+          }
+          return NextResponse.json({ employee: sanitize(updated) });
+        }
+      }
+    } catch (err: any) {
+      console.error("[employee-get] pollEmployeeDropletStatus failed:", err.message);
+    }
   }
 
   return NextResponse.json({ employee: sanitize(employee) });
@@ -72,12 +122,24 @@ export async function PATCH(
   if (input.persona !== undefined) updateData.persona = input.persona;
   if (input.goals !== undefined) updateData.goals = input.goals;
   if (input.modelConfig) updateData.modelConfig = input.modelConfig;
+  if (input.personalityConfig) updateData.personalityConfig = input.personalityConfig;
+  if (input.toolsAllow) updateData.toolsConfig = { allow: input.toolsAllow };
 
   const [updated] = await db
     .update(employees)
     .set(updateData)
     .where(eq(employees.id, id))
     .returning();
+
+  // If personality or tools config changed, regenerate configs on the droplet (fire-and-forget)
+  const needsRegen = input.personalityConfig || input.toolsAllow;
+  if (needsRegen && updated.dropletIp && updated.interserviceSecret && updated.dropletStatus === "active") {
+    fetch(`http://${updated.dropletIp}:3001/internal/regenerate-configs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-interservice-secret": updated.interserviceSecret },
+      signal: AbortSignal.timeout(15000),
+    }).catch(() => {});
+  }
 
   return NextResponse.json({ employee: sanitize(updated) });
 }
@@ -101,8 +163,8 @@ export async function DELETE(
     return NextResponse.json({ error: "Employee not found" }, { status: 404 });
   }
 
-  // Try backend teardown if droplet is active (best-effort — don't block on failure)
-  const backendConfig = await getCompanyBackend(session.companyId);
+  // Try backend teardown if employee has an active droplet (best-effort)
+  const backendConfig = await getEmployeeBackend(id);
   if (backendConfig) {
     try {
       const backend = createBackendClient(backendConfig);
@@ -112,10 +174,40 @@ export async function DELETE(
     }
   }
 
+  // Destroy the employee's dedicated droplet
+  if (employee.dropletId) {
+    try {
+      await destroyEmployeeDroplet(id);
+    } catch (err: any) {
+      console.error("Failed to destroy employee droplet:", err.message);
+    }
+  }
+
+  // Remove Stripe subscription item if it exists (prorates the invoice)
+  if (employee.stripeSubscriptionItemId) {
+    try {
+      const { removeEmployeeFromSubscription } = await import("@/lib/stripe");
+      await removeEmployeeFromSubscription(employee.stripeSubscriptionItemId);
+    } catch (err: any) {
+      console.error("Failed to remove Stripe subscription item:", err.message);
+      // Continue — still terminate the employee in DB
+    }
+  }
+
+  // Archive all non-completed tasks for this employee
+  try {
+    await db
+      .update(tasks)
+      .set({ status: "archived", updatedAt: new Date() })
+      .where(and(eq(tasks.employeeId, id), not(eq(tasks.status, "completed"))));
+  } catch {
+    // Non-fatal — tasks table may not exist or column may be missing
+  }
+
   // Always mark as terminated in the DB
   const [updated] = await db
     .update(employees)
-    .set({ status: "terminated", updatedAt: new Date() })
+    .set({ status: "terminated", stripeSubscriptionItemId: null, updatedAt: new Date() })
     .where(eq(employees.id, id))
     .returning();
 

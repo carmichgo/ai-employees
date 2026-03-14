@@ -14,6 +14,7 @@ import {
   readdirSync,
   readFileSync,
   unlinkSync,
+  rmSync,
   statSync,
   existsSync,
 } from "node:fs";
@@ -43,12 +44,14 @@ export async function fileRoutes(fastify: FastifyInstance) {
   // POST /internal/employees/:id/files — upload a file (JSON with base64 content)
   fastify.post<{ Params: { id: string } }>(
     "/internal/employees/:id/files",
+    { bodyLimit: 15 * 1024 * 1024 }, // 15MB to accommodate base64 overhead (~33%) on 10MB files
     async (request, reply) => {
       const { id } = request.params;
       const body = request.body as {
         name: string;
         content: string; // base64 encoded
         mimeType?: string;
+        folder?: string; // optional target folder relative to config base (e.g. "workspace/uploads" or "workspace-main/reports")
       };
 
       if (!body.name || !body.content) {
@@ -61,15 +64,31 @@ export async function fileRoutes(fastify: FastifyInstance) {
       if (!employee) return reply.status(404).send({ error: "Employee not found" });
 
       const filename = sanitizeFilename(body.name);
-      const uploadsDir = getUploadsDir(id);
-      mkdirSync(uploadsDir, { recursive: true });
+
+      // Determine target directory
+      let targetDir: string;
+      if (body.folder) {
+        // Prevent path traversal
+        const normalized = path.normalize(body.folder).replace(/^(\.\.(\/|\\|$))+/, "");
+        if (normalized.includes("..")) {
+          return reply.status(400).send({ error: "Invalid folder path" });
+        }
+        const baseDir = path.join(CONFIG_BASE, id);
+        targetDir = path.join(baseDir, normalized);
+        if (!targetDir.startsWith(baseDir + "/")) {
+          return reply.status(400).send({ error: "Invalid folder path" });
+        }
+      } else {
+        targetDir = getUploadsDir(id);
+      }
+      mkdirSync(targetDir, { recursive: true });
 
       const buffer = Buffer.from(body.content, "base64");
       if (buffer.length > MAX_FILE_SIZE) {
         return reply.status(413).send({ error: "File too large (max 10MB)" });
       }
 
-      const filePath = path.join(uploadsDir, filename);
+      const filePath = path.join(targetDir, filename);
       writeFileSync(filePath, buffer);
 
       // Fix ownership so the container can read the file
@@ -183,11 +202,31 @@ export async function fileRoutes(fastify: FastifyInstance) {
         ".gif": "image/gif",
         ".webp": "image/webp",
         ".svg": "image/svg+xml",
+        ".bmp": "image/bmp",
         ".pdf": "application/pdf",
         ".txt": "text/plain",
+        ".md": "text/markdown",
         ".json": "application/json",
         ".csv": "text/csv",
+        ".tsv": "text/tab-separated-values",
         ".html": "text/html",
+        ".xml": "application/xml",
+        ".yaml": "text/yaml",
+        ".yml": "text/yaml",
+        ".js": "text/javascript",
+        ".ts": "text/typescript",
+        ".css": "text/css",
+        ".py": "text/x-python",
+        ".sh": "text/x-shellscript",
+        ".sql": "text/x-sql",
+        ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        ".zip": "application/zip",
+        ".gz": "application/gzip",
+        ".mp3": "audio/mpeg",
+        ".mp4": "video/mp4",
+        ".wav": "audio/wav",
       };
       const contentType = mimeTypes[ext] || "application/octet-stream";
 
@@ -196,6 +235,84 @@ export async function fileRoutes(fastify: FastifyInstance) {
         .header("Content-Type", contentType)
         .header("Cache-Control", "public, max-age=300")
         .send(content);
+    },
+  );
+
+  // GET /internal/employees/:id/documents — list all files in workspace (recursive)
+  // Returns the full directory tree of employee-created files for the manager to browse
+  fastify.get<{ Params: { id: string } }>(
+    "/internal/employees/:id/documents",
+    async (request, reply) => {
+      const { id } = request.params;
+
+      const employee = await db.query.employees.findFirst({
+        where: eq(employees.id, id),
+      });
+      if (!employee) return reply.status(404).send({ error: "Employee not found" });
+
+      const configBase = path.join(CONFIG_BASE, id);
+      const workspaceDir = path.join(configBase, "workspace");
+      const workspaceMainDir = path.join(configBase, "workspace-main");
+
+      const files: Array<{
+        name: string;
+        path: string;
+        size: number;
+        modifiedAt: string;
+        type: string;
+      }> = [];
+
+      // Skip directories that are internal/not useful to the manager
+      const skipDirs = new Set(["node_modules", ".git", ".cache", "__pycache__", ".npm", ".local"]);
+
+      const walk = (dir: string, relativeTo: string) => {
+        try {
+          const entries = readdirSync(dir, { withFileTypes: true });
+          for (const entry of entries) {
+            const fullPath = path.join(dir, entry.name);
+            const relPath = path.relative(relativeTo, fullPath);
+
+            if (entry.isDirectory()) {
+              if (!skipDirs.has(entry.name) && !entry.name.startsWith(".")) {
+                walk(fullPath, relativeTo);
+              }
+            } else if (entry.isFile()) {
+              try {
+                const stat = statSync(fullPath);
+                const ext = path.extname(entry.name).toLowerCase();
+                files.push({
+                  name: entry.name,
+                  path: relPath,
+                  size: stat.size,
+                  modifiedAt: stat.mtime.toISOString(),
+                  type: ext.slice(1) || "file",
+                });
+              } catch { /* skip unreadable files */ }
+            }
+          }
+        } catch { /* skip unreadable directories */ }
+      };
+
+      // Walk workspace/ (uploads, config files)
+      if (existsSync(workspaceDir)) {
+        walk(workspaceDir, workspaceDir);
+      }
+
+      // Walk workspace-main/ (employee-created files at runtime)
+      if (existsSync(workspaceMainDir)) {
+        walk(workspaceMainDir, configBase);
+      }
+
+      // Also include skills files (installed SKILL.md files)
+      const skillsDir = path.join(configBase, "skills");
+      if (existsSync(skillsDir)) {
+        walk(skillsDir, configBase);
+      }
+
+      // Sort by most recently modified first
+      files.sort((a, b) => new Date(b.modifiedAt).getTime() - new Date(a.modifiedAt).getTime());
+
+      return { files };
     },
   );
 
@@ -214,6 +331,87 @@ export async function fileRoutes(fastify: FastifyInstance) {
 
       unlinkSync(filePath);
       return { message: "File deleted" };
+    },
+  );
+
+  // DELETE /internal/employees/:id/workspace/* — delete a file or directory
+  fastify.delete<{ Params: { id: string; "*": string } }>(
+    "/internal/employees/:id/workspace/*",
+    async (request, reply) => {
+      const { id } = request.params;
+      const filePath = request.params["*"];
+
+      if (!filePath) {
+        return reply.status(400).send({ error: "File path required" });
+      }
+
+      // Prevent path traversal
+      const normalized = path.normalize(filePath).replace(/^(\.\.(\/|\\|$))+/, "");
+      if (normalized.includes("..")) {
+        return reply.status(400).send({ error: "Invalid path" });
+      }
+
+      const baseDir = path.join(CONFIG_BASE, id);
+      const fullPath = path.join(baseDir, normalized);
+
+      if (!fullPath.startsWith(baseDir + "/")) {
+        return reply.status(400).send({ error: "Invalid path" });
+      }
+
+      if (!existsSync(fullPath)) {
+        return reply.status(404).send({ error: "File not found" });
+      }
+
+      const stat = statSync(fullPath);
+      if (stat.isDirectory()) {
+        rmSync(fullPath, { recursive: true, force: true });
+        return { message: "Folder deleted" };
+      }
+
+      unlinkSync(fullPath);
+      return { message: "File deleted" };
+    },
+  );
+
+  // POST /internal/employees/:id/public-url — generate a temporary public URL for a workspace file
+  fastify.post<{ Params: { id: string }; Body: { filePath: string; expiresIn?: number } }>(
+    "/internal/employees/:id/public-url",
+    async (request, reply) => {
+      const { id } = request.params;
+      const { filePath, expiresIn } = request.body || {};
+
+      if (!filePath) {
+        return reply.status(400).send({ error: "filePath required" });
+      }
+
+      const employee = await db.query.employees.findFirst({
+        where: eq(employees.id, id),
+      });
+      if (!employee) return reply.status(404).send({ error: "Employee not found" });
+
+      const platformUrl = process.env.PLATFORM_URL || "https://ai-employees-ten.vercel.app";
+      const interserviceSecret = process.env.INTERSERVICE_SECRET || "";
+
+      try {
+        const res = await fetch(`${platformUrl}/api/employees/${id}/public-url`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-interservice-secret": interserviceSecret,
+          },
+          body: JSON.stringify({ filePath, expiresIn: expiresIn || 86400 }),
+          signal: AbortSignal.timeout(15000),
+        });
+
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({ error: "Failed" }));
+          return reply.status(res.status).send(body);
+        }
+
+        return await res.json();
+      } catch (err: any) {
+        return reply.status(502).send({ error: `Failed to generate URL: ${err.message}` });
+      }
     },
   );
 }

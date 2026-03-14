@@ -181,6 +181,22 @@ export async function POST(request: NextRequest) {
     `;
 
     await sql`
+      CREATE TABLE IF NOT EXISTS token_usage_logs (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        company_id UUID NOT NULL REFERENCES companies(id),
+        employee_id UUID NOT NULL REFERENCES employees(id),
+        source VARCHAR(30) NOT NULL,
+        model VARCHAR(100) NOT NULL,
+        tokens_input INTEGER NOT NULL DEFAULT 0,
+        tokens_output INTEGER NOT NULL DEFAULT 0,
+        estimated_cost_usd NUMERIC(10,6) NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `;
+    await sql`CREATE INDEX IF NOT EXISTS idx_token_usage_employee_created ON token_usage_logs(employee_id, created_at)`;
+    await sql`CREATE INDEX IF NOT EXISTS idx_token_usage_company_created ON token_usage_logs(company_id, created_at)`;
+
+    await sql`
       CREATE TABLE IF NOT EXISTS triggers (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
@@ -205,17 +221,26 @@ export async function POST(request: NextRequest) {
     `;
 
     // Migrations for existing databases — add columns that may be missing
-    await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS credentials JSONB NOT NULL DEFAULT '[]'`;
+
+    // Companies: droplet fields
     await sql`ALTER TABLE companies ADD COLUMN IF NOT EXISTS droplet_id VARCHAR(50)`;
     await sql`ALTER TABLE companies ADD COLUMN IF NOT EXISTS droplet_ip VARCHAR(45)`;
     await sql`ALTER TABLE companies ADD COLUMN IF NOT EXISTS droplet_region VARCHAR(20) DEFAULT 'nyc3'`;
     await sql`ALTER TABLE companies ADD COLUMN IF NOT EXISTS droplet_size VARCHAR(50) DEFAULT 's-2vcpu-4gb'`;
     await sql`ALTER TABLE companies ADD COLUMN IF NOT EXISTS droplet_status VARCHAR(20) DEFAULT 'none'`;
     await sql`ALTER TABLE companies ADD COLUMN IF NOT EXISTS interservice_secret VARCHAR(255)`;
+    // Companies: Stripe billing
+    await sql`ALTER TABLE companies ADD COLUMN IF NOT EXISTS stripe_customer_id VARCHAR(255)`;
 
-    // v2 migrations: personality config + tasks table
+    // Employees: credentials, personality, tier, Stripe, authority
+    await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS credentials JSONB NOT NULL DEFAULT '[]'`;
     await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS personality_config JSONB NOT NULL DEFAULT '{"autonomy": "high", "proactivity": "proactive", "communication": "concise"}'`;
+    await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS tier VARCHAR(20) NOT NULL DEFAULT 'junior'`;
+    await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS stripe_subscription_item_id VARCHAR(255)`;
+    await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS price_monthly INTEGER`;
+    await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS authority_config JSONB NOT NULL DEFAULT '{"defaultRole": "manager", "members": []}'`;
 
+    // Tasks table
     await sql`
       CREATE TABLE IF NOT EXISTS tasks (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -226,13 +251,81 @@ export async function POST(request: NextRequest) {
         status VARCHAR(20) NOT NULL DEFAULT 'pending',
         priority VARCHAR(20) NOT NULL DEFAULT 'medium',
         source VARCHAR(20) NOT NULL DEFAULT 'manager',
+        category VARCHAR(100),
+        due_date TIMESTAMPTZ,
         completed_at TIMESTAMPTZ,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
       )
     `;
+    // Tasks: add columns that may be missing if table already existed
+    await sql`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS category VARCHAR(100)`;
+    await sql`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS due_date TIMESTAMPTZ`;
 
-    return NextResponse.json({ success: true, message: "All tables created" });
+    // Task comments table
+    await sql`
+      CREATE TABLE IF NOT EXISTS task_comments (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        task_id UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        author_type VARCHAR(20) NOT NULL,
+        author_name VARCHAR(200) NOT NULL,
+        content TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `;
+
+    // Subscriptions table (one per company — employees are line items)
+    await sql`
+      CREATE TABLE IF NOT EXISTS subscriptions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        company_id UUID NOT NULL REFERENCES companies(id),
+        stripe_subscription_id VARCHAR(255) NOT NULL UNIQUE,
+        stripe_customer_id VARCHAR(255) NOT NULL,
+        status VARCHAR(30) NOT NULL DEFAULT 'incomplete',
+        current_period_start TIMESTAMPTZ,
+        current_period_end TIMESTAMPTZ,
+        cancel_at_period_end BOOLEAN NOT NULL DEFAULT false,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `;
+
+    // Spreadsheet tables (Airtable-style built-in database)
+    await sql`
+      CREATE TABLE IF NOT EXISTS spreadsheet_tables (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+        name VARCHAR(255) NOT NULL,
+        description TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `;
+    await sql`
+      CREATE TABLE IF NOT EXISTS spreadsheet_columns (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        table_id UUID NOT NULL REFERENCES spreadsheet_tables(id) ON DELETE CASCADE,
+        name VARCHAR(255) NOT NULL,
+        type VARCHAR(30) NOT NULL DEFAULT 'text',
+        options JSONB NOT NULL DEFAULT '{}',
+        position INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `;
+    await sql`
+      CREATE TABLE IF NOT EXISTS spreadsheet_rows (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        table_id UUID NOT NULL REFERENCES spreadsheet_tables(id) ON DELETE CASCADE,
+        cells JSONB NOT NULL DEFAULT '{}',
+        position INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `;
+    await sql`CREATE INDEX IF NOT EXISTS idx_spreadsheet_columns_table_id ON spreadsheet_columns(table_id, position)`;
+    await sql`CREATE INDEX IF NOT EXISTS idx_spreadsheet_rows_table_id ON spreadsheet_rows(table_id, position)`;
+
+    return NextResponse.json({ success: true, message: "All tables and migrations applied" });
   } catch (error: any) {
     console.error("Setup error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });

@@ -62,7 +62,7 @@ export default function RegisterPage() {
               marginBottom: 20,
             }}
           >
-            AI
+            B
           </div>
           <h1
             style={{
@@ -155,7 +155,7 @@ export default function RegisterPage() {
                     whiteSpace: "nowrap",
                   }}
                 >
-                  .aiemployees.com
+                  .blitzer.ai
                 </span>
               </div>
             </div>

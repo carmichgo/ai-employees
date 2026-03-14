@@ -1,0 +1,55 @@
+{
+  "manifest_version": 3,
+  "name": "Blitzer AI – Browser Relay",
+  "version": "1.0.0",
+  "description": "Connect your Chrome browser to your Blitzer AI employees so they can browse using your real sessions.",
+  "permissions": [
+    "debugger",
+    "activeTab",
+    "tabs",
+    "storage",
+    "alarms",
+    "webNavigation"
+  ],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Blitzer AI Browser Relay (click to attach/detach)",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.blitzerai.com/*",
+        "https://blitzerai.com/*",
+        "http://localhost:3000/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    }
+  ],
+  "externally_connectable": {
+    "matches": [
+      "https://www.blitzerai.com/*",
+      "https://blitzerai.com/*",
+      "http://localhost:3000/*"
+    ]
+  }
+}

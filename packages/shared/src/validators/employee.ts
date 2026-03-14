@@ -5,6 +5,18 @@ export const personalityConfigSchema = z.object({
   proactivity: z.enum(["very-proactive", "proactive", "balanced", "reactive"]).default("proactive"),
   communication: z.enum(["concise", "detailed", "casual", "formal"]).default("concise"),
   bossTechnicalLevel: z.enum(["very-technical", "technical", "somewhat-technical", "non-technical"]).optional(),
+  approvalMode: z.boolean().optional(),
+});
+
+export const authorityMemberSchema = z.object({
+  slackUserId: z.string().min(1),
+  name: z.string().min(1).max(100),
+  role: z.enum(["manager", "colleague"]),
+});
+
+export const authorityConfigSchema = z.object({
+  defaultRole: z.enum(["manager", "colleague"]).default("manager"),
+  members: z.array(authorityMemberSchema).default([]),
 });
 
 export const createEmployeeSchema = z.object({
@@ -21,8 +33,9 @@ export const createEmployeeSchema = z.object({
       fallbacks: z.array(z.string()).optional(),
     })
     .optional(),
+  phoneNumber: z.string().max(20).optional(),
   channels: z
-    .array(z.enum(["slack", "discord", "telegram", "whatsapp", "email", "webchat", "signal", "teams", "google-chat", "matrix"]))
+    .array(z.enum(["slack", "discord", "telegram", "whatsapp", "email", "webchat", "voice-chat", "phone", "signal", "teams", "google-chat", "matrix"]))
     .optional(),
   toolsAllow: z
     .array(z.string())
@@ -30,6 +43,7 @@ export const createEmployeeSchema = z.object({
   skills: z
     .array(z.string().max(100))
     .optional(),
+  authorityConfig: authorityConfigSchema.optional(),
 });
 
 export const updateEmployeeSchema = createEmployeeSchema.partial();
@@ -37,3 +51,5 @@ export const updateEmployeeSchema = createEmployeeSchema.partial();
 export type CreateEmployeeInput = z.infer<typeof createEmployeeSchema>;
 export type UpdateEmployeeInput = z.infer<typeof updateEmployeeSchema>;
 export type PersonalityConfigInput = z.infer<typeof personalityConfigSchema>;
+export type AuthorityConfigInput = z.infer<typeof authorityConfigSchema>;
+export type AuthorityMemberInput = z.infer<typeof authorityMemberSchema>;

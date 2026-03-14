@@ -15,10 +15,10 @@
     "bullmq": "^5.30.0",
     "dockerode": "^4.0.0",
     "drizzle-orm": "^0.38.0",
-    "ioredis": "^5.4.0"
+    "ioredis": "^5.4.0",
+    "@types/dockerode": "^3.3.0"
   },
   "devDependencies": {
-    "@types/dockerode": "^3.3.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"
   }

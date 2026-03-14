@@ -158,6 +158,7 @@ export async function DELETE(
     .update(employees)
     .set({
       provisionedAccounts: rest,
+      emailAddress: null,
       updatedAt: new Date(),
     })
     .where(eq(employees.id, id));

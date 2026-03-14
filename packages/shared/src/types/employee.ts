@@ -19,6 +19,8 @@ export type PlanTier = "starter" | "professional" | "enterprise";
 
 export type EmployeeTier = "junior" | "senior" | "expert";
 
+export type HostingMode = "managed" | "byok";
+
 export interface ModelConfig {
   primary: string;
   fallbacks?: string[];
@@ -39,6 +41,19 @@ export interface ProvisionedAccounts {
   browser?: { enabled: boolean };
 }
 
+export type AuthorityRole = "manager" | "colleague";
+
+export interface AuthorityMember {
+  slackUserId: string;
+  name: string;
+  role: AuthorityRole;
+}
+
+export interface AuthorityConfig {
+  defaultRole: AuthorityRole;
+  members: AuthorityMember[];
+}
+
 export interface EmployeeCreateInput {
   name: string;
   jobTitle: string;
@@ -47,4 +62,9 @@ export interface EmployeeCreateInput {
   goals?: string;
   modelConfig?: ModelConfig;
   channels?: ChannelType[];
+  authorityConfig?: AuthorityConfig;
+  hostingMode?: HostingMode;
+  byokAnthropicKey?: string;
+  byokGeminiKey?: string;
+  byokModel?: string;
 }

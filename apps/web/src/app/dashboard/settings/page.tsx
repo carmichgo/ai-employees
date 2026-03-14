@@ -3,16 +3,7 @@
 import { Suspense, useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
-import { Building2, User, Server, RefreshCw, Trash2, Link2, Unlink, CheckCircle2, ExternalLink } from "lucide-react";
-
-const DROPLET_STATUS_LABELS: Record<string, { label: string; color: string }> = {
-  none: { label: "Not provisioned", color: "var(--text-tertiary)" },
-  provisioning: { label: "Provisioning...", color: "#d97706" },
-  booting: { label: "Booting...", color: "#d97706" },
-  active: { label: "Active", color: "#16a34a" },
-  error: { label: "Error", color: "#dc2626" },
-  destroyed: { label: "Destroyed", color: "var(--text-tertiary)" },
-};
+import { Building2, User, Link2, Unlink, CheckCircle2, ExternalLink, Download, Chrome } from "lucide-react";
 
 const cssVars = `
   :root {
@@ -61,10 +52,6 @@ export default function SettingsPage() {
 function SettingsContent() {
   const [company, setCompany] = useState<any>(null);
   const [user, setUser] = useState<any>(null);
-  const [droplet, setDroplet] = useState<any>(null);
-  const [dropletLoading, setDropletLoading] = useState(false);
-  const [buildLogs, setBuildLogs] = useState<string | null>(null);
-  const [logsLoading, setLogsLoading] = useState(false);
   const [integrations, setIntegrations] = useState<Record<string, any>>({});
   const [integrationsLoading, setIntegrationsLoading] = useState(false);
   const [slackNotice, setSlackNotice] = useState<{ type: "success" | "error" | "denied"; message: string } | null>(null);
@@ -75,7 +62,6 @@ function SettingsContent() {
       setCompany(data.company);
       setUser(data.user);
     });
-    loadDroplet();
     loadIntegrations();
 
     // Handle Slack OAuth redirect params
@@ -90,49 +76,6 @@ function SettingsContent() {
       setSlackNotice({ type: "error", message: `Slack connection failed: ${reason}` });
     }
   }, [searchParams]);
-
-  const loadDroplet = useCallback(async () => {
-    try {
-      const data = await api.getDropletStatus();
-      setDroplet(data.droplet);
-
-      // Auto-poll while provisioning or while Phase 2 is still building
-      if (
-        data.droplet.status === "provisioning" ||
-        data.droplet.status === "booting" ||
-        (data.droplet.status === "active" && data.droplet.phase === "provisioning")
-      ) {
-        setTimeout(loadDroplet, 10000);
-      }
-    } catch {
-      setDroplet({ status: "none" });
-    }
-  }, []);
-
-  const handleProvision = async () => {
-    setDropletLoading(true);
-    try {
-      await api.provisionDroplet();
-      loadDroplet();
-    } catch (err: any) {
-      alert(err.message);
-    } finally {
-      setDropletLoading(false);
-    }
-  };
-
-  const handleDestroy = async () => {
-    if (!confirm("Are you sure? This will destroy all running AI employees on this infrastructure.")) return;
-    setDropletLoading(true);
-    try {
-      await api.destroyDroplet();
-      setDroplet({ status: "destroyed" });
-    } catch (err: any) {
-      alert(err.message);
-    } finally {
-      setDropletLoading(false);
-    }
-  };
 
   const loadIntegrations = useCallback(async () => {
     try {
@@ -182,8 +125,6 @@ function SettingsContent() {
       </div>
     );
   }
-
-  const dropletStatusInfo = DROPLET_STATUS_LABELS[droplet?.status || "none"] || DROPLET_STATUS_LABELS.none;
 
   /* ---- shared style objects ---- */
 
@@ -252,13 +193,6 @@ function SettingsContent() {
     border: "1px solid var(--text)",
   };
 
-  const btnSecondary: React.CSSProperties = {
-    ...btnBase,
-    background: "var(--bg)",
-    color: "var(--text)",
-    border: "1px solid var(--border)",
-  };
-
   const btnDanger: React.CSSProperties = {
     ...btnBase,
     background: "var(--bg)",
@@ -275,15 +209,6 @@ function SettingsContent() {
     border: "1px solid var(--border)",
     background: "var(--bg-secondary)",
   };
-
-  const statusDot = (color: string, pulsing = false): React.CSSProperties => ({
-    display: "inline-block",
-    width: 8,
-    height: 8,
-    borderRadius: "50%",
-    backgroundColor: color,
-    ...(pulsing ? { animation: "pulse 1.5s ease-in-out infinite" } : {}),
-  });
 
   return (
     <div style={{ maxWidth: 600, animation: "settingsFadeIn 0.3s ease-out" }}>
@@ -309,182 +234,12 @@ function SettingsContent() {
           {[
             { label: "Name", value: company.name },
             { label: "Slug", value: company.slug },
-            { label: "Plan", value: company.plan, capitalize: true },
-            { label: "Max Employees", value: company.maxEmployees },
           ].map((item) => (
             <div key={item.label} style={kvRow}>
               <span style={kvLabel}>{item.label}</span>
-              <span style={{
-                ...kvValue,
-                textTransform: item.capitalize ? "capitalize" : undefined,
-              }}>
-                {item.value}
-              </span>
+              <span style={kvValue}>{item.value}</span>
             </div>
           ))}
-        </div>
-      </div>
-
-      {/* Infrastructure Card */}
-      <div style={sectionCard}>
-        <div style={sectionHeader}>
-          <Server size={16} style={{ color: "var(--text-tertiary)" }} />
-          <h3 style={sectionTitle}>Infrastructure</h3>
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          <div style={kvRow}>
-            <span style={kvLabel}>Status</span>
-            <span style={{
-              fontSize: 12,
-              fontWeight: 600,
-              color: dropletStatusInfo.color,
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-            }}>
-              {(droplet?.status === "provisioning" || droplet?.status === "booting") && (
-                <span style={statusDot("#d97706", true)} />
-              )}
-              {droplet?.status === "active" && (
-                <span style={statusDot("#16a34a")} />
-              )}
-              {dropletStatusInfo.label}
-            </span>
-          </div>
-
-          {droplet?.status === "active" && droplet?.phase && (
-            <div style={kvRow}>
-              <span style={kvLabel}>Services</span>
-              <span style={{
-                fontSize: 12,
-                fontWeight: 600,
-                color: droplet.phase === "ready" ? "#16a34a" : droplet.phase === "failed" ? "#dc2626" : "#d97706",
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-              }}>
-                {droplet.phase === "provisioning" && (
-                  <span style={statusDot("#d97706", true)} />
-                )}
-                {droplet.phase === "ready" && (
-                  <span style={statusDot("#16a34a")} />
-                )}
-                {droplet.phase === "provisioning" ? "Building..." : droplet.phase === "ready" ? "Ready" : droplet.phase === "failed" ? "Build Failed" : droplet.phase}
-              </span>
-            </div>
-          )}
-
-          {droplet?.ip && (
-            <div style={kvRow}>
-              <span style={kvLabel}>IP Address</span>
-              <span style={{
-                ...kvValue,
-                fontFamily: "'SF Mono', 'Fira Code', 'Fira Mono', 'Roboto Mono', monospace",
-                fontSize: 12,
-                color: "var(--text-secondary)",
-                background: "var(--bg-secondary)",
-                padding: "2px 8px",
-                borderRadius: "var(--radius-sm)",
-              }}>
-                {droplet.ip}
-              </span>
-            </div>
-          )}
-
-          {droplet?.region && droplet?.status !== "none" && (
-            <div style={kvRow}>
-              <span style={kvLabel}>Region</span>
-              <span style={kvValue}>{droplet.region}</span>
-            </div>
-          )}
-
-          {droplet?.size && droplet?.status !== "none" && (
-            <div style={kvRow}>
-              <span style={kvLabel}>Size</span>
-              <span style={kvValue}>{droplet.size}</span>
-            </div>
-          )}
-
-          <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-            {(!droplet || droplet.status === "none" || droplet.status === "destroyed") && (
-              <button
-                onClick={handleProvision}
-                disabled={dropletLoading}
-                style={{
-                  ...btnPrimary,
-                  ...(dropletLoading ? { opacity: 0.5, cursor: "not-allowed" } : {}),
-                }}
-              >
-                Provision Infrastructure
-              </button>
-            )}
-            {(droplet?.status === "provisioning" || droplet?.status === "booting") && (
-              <button
-                onClick={loadDroplet}
-                style={btnSecondary}
-              >
-                <RefreshCw size={12} /> Refresh
-              </button>
-            )}
-            {(droplet?.status === "active" || droplet?.status === "booting" || droplet?.status === "provisioning" || droplet?.status === "error") && (
-              <button
-                onClick={handleDestroy}
-                disabled={dropletLoading}
-                style={{
-                  ...btnDanger,
-                  ...(dropletLoading ? { opacity: 0.5, cursor: "not-allowed" } : {}),
-                }}
-              >
-                <Trash2 size={12} /> Destroy
-              </button>
-            )}
-            {droplet?.status === "active" && (
-              <button
-                onClick={async () => {
-                  setLogsLoading(true);
-                  try {
-                    const data = await api.getDropletLogs();
-                    setBuildLogs(data.logs);
-                  } catch {
-                    setBuildLogs("Failed to fetch logs");
-                  } finally {
-                    setLogsLoading(false);
-                  }
-                }}
-                disabled={logsLoading}
-                style={{
-                  ...btnSecondary,
-                  ...(logsLoading ? { opacity: 0.5, cursor: "not-allowed" } : {}),
-                }}
-              >
-                {logsLoading ? "Loading..." : "View Build Logs"}
-              </button>
-            )}
-          </div>
-
-          {buildLogs && (
-            <div style={{
-              marginTop: 8,
-              padding: 14,
-              backgroundColor: "var(--bg-secondary)",
-              borderRadius: "var(--radius-md)",
-              border: "1px solid var(--border)",
-              maxHeight: 300,
-              overflow: "auto",
-            }}>
-              <pre style={{
-                fontSize: 11,
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-all",
-                margin: 0,
-                fontFamily: "'SF Mono', 'Fira Code', 'Fira Mono', 'Roboto Mono', monospace",
-                color: "var(--text-secondary)",
-                lineHeight: 1.6,
-              }}>
-                {buildLogs}
-              </pre>
-            </div>
-          )}
         </div>
       </div>
 
@@ -609,6 +364,29 @@ function SettingsContent() {
             }}>
               Coming soon
             </span>
+          </div>
+
+          {/* Chrome Extension */}
+          <div style={integrationCard}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <Chrome size={22} style={{ color: "var(--text-tertiary)" }} />
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>Chrome Extension</div>
+                <div style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 2 }}>
+                  Let employees browse using your real Chrome session
+                </div>
+              </div>
+            </div>
+            <a
+              href="/blitzer-chrome-extension.zip"
+              download
+              style={{
+                ...btnPrimary,
+                textDecoration: "none",
+              }}
+            >
+              <Download size={12} /> Download
+            </a>
           </div>
         </div>
       </div>

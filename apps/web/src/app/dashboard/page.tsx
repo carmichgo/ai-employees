@@ -23,6 +23,17 @@ export default function DashboardOverview() {
   const [error, setError] = useState<string | null>(null);
   const [user, setUser] = useState<any>(null);
   const [company, setCompany] = useState<any>(null);
+  const [activityMap, setActivityMap] = useState<Record<string, { activityStatus: string; currentTask: string | null; inProgressCount: number; pendingCount: number }>>({});
+
+  const fetchActivity = () => {
+    api.getEmployeeActivity().then((res) => {
+      const map: typeof activityMap = {};
+      for (const a of res.activity) {
+        map[a.employeeId] = { activityStatus: a.activityStatus, currentTask: a.currentTask, inProgressCount: a.inProgressCount, pendingCount: a.pendingCount || 0 };
+      }
+      setActivityMap(map);
+    }).catch(() => {});
+  };
 
   useEffect(() => {
     api.getDashboard().then(setData).catch((err) => {
@@ -33,6 +44,9 @@ export default function DashboardOverview() {
       setUser(res.user);
       setCompany(res.company);
     }).catch(() => {});
+    fetchActivity();
+    const interval = setInterval(fetchActivity, 15_000);
+    return () => clearInterval(interval);
   }, []);
 
   if (error) {
@@ -127,7 +141,7 @@ export default function DashboardOverview() {
       </div>
 
       {/* Stat cards */}
-      <div style={{
+      <div className="grid-stats" style={{
         display: "grid",
         gridTemplateColumns: "repeat(4, 1fr)",
         gap: 12,
@@ -302,6 +316,13 @@ export default function DashboardOverview() {
               terminated: { bg: "var(--bg-secondary)", text: "var(--text-tertiary)", dot: "var(--text-tertiary)" },
             };
             const sc = statusColors[emp.status] || statusColors.active;
+            const act = activityMap[emp.id];
+            const actColors: Record<string, { dot: string; bg: string; text: string }> = {
+              working: { dot: "#16a34a", bg: "rgba(22, 163, 74, 0.08)", text: "#16a34a" },
+              idle: { dot: "#d97706", bg: "rgba(217, 119, 6, 0.08)", text: "#d97706" },
+              offline: { dot: "#a3a3a3", bg: "rgba(163, 163, 163, 0.08)", text: "#a3a3a3" },
+            };
+            const ac = act ? actColors[act.activityStatus] || actColors.offline : null;
 
             return (
               <Link
@@ -333,23 +354,40 @@ export default function DashboardOverview() {
                     gap: 12,
                     marginBottom: 12,
                   }}>
-                    <div
-                      style={{
-                        width: 40,
-                        height: 40,
-                        borderRadius: 10,
-                        background: "var(--bg-secondary)",
-                        border: "1px solid var(--border)",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontSize: 20,
-                        flexShrink: 0,
-                      }}
-                    >
-                      {emp.emoji || "A"}
+                    <div style={{ position: "relative", flexShrink: 0 }}>
+                      <div
+                        style={{
+                          width: 40,
+                          height: 40,
+                          borderRadius: 10,
+                          background: "var(--bg-secondary)",
+                          border: "1px solid var(--border)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: 20,
+                        }}
+                      >
+                        {emp.emoji || "A"}
+                      </div>
+                      {emp.status === "active" && act && (
+                        <>
+                          <span style={{
+                            position: "absolute", bottom: -2, right: -2,
+                            width: 10, height: 10, borderRadius: "50%",
+                            background: ac!.dot, border: "2px solid #fff", zIndex: 1,
+                          }} />
+                          {act.activityStatus === "working" && (
+                            <span className="dash-pulse" style={{
+                              position: "absolute", bottom: -2, right: -2,
+                              width: 10, height: 10, borderRadius: "50%",
+                              background: ac!.dot, opacity: 0.4, zIndex: 0,
+                            }} />
+                          )}
+                        </>
+                      )}
                     </div>
-                    <div style={{ overflow: "hidden" }}>
+                    <div style={{ overflow: "hidden", flex: 1 }}>
                       <div style={{
                         fontWeight: 600,
                         fontSize: 14,
@@ -363,39 +401,76 @@ export default function DashboardOverview() {
                       </div>
                       <div style={{
                         fontSize: 12,
-                        color: "var(--text-tertiary)",
+                        color: act?.activityStatus === "working" ? "#16a34a" : "var(--text-tertiary)",
                         whiteSpace: "nowrap",
                         overflow: "hidden",
                         textOverflow: "ellipsis",
                       }}>
-                        {emp.jobTitle}
+                        {act?.activityStatus === "working" && act.currentTask
+                          ? act.currentTask
+                          : emp.jobTitle}
                       </div>
                     </div>
                   </div>
-                  <div style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 6,
-                    fontSize: 12,
-                    fontWeight: 500,
-                    color: sc.text,
-                    background: sc.bg,
-                    padding: "3px 10px",
-                    borderRadius: 99,
-                  }}>
-                    <span style={{
-                      width: 6,
-                      height: 6,
-                      borderRadius: "50%",
-                      background: sc.dot,
-                      flexShrink: 0,
-                    }} />
-                    <span style={{ textTransform: "capitalize" }}>{emp.status}</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <div style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      fontSize: 12,
+                      fontWeight: 500,
+                      color: sc.text,
+                      background: sc.bg,
+                      padding: "3px 10px",
+                      borderRadius: 99,
+                    }}>
+                      <span style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: "50%",
+                        background: sc.dot,
+                        flexShrink: 0,
+                      }} />
+                      <span style={{ textTransform: "capitalize" }}>{emp.status}</span>
+                    </div>
+                    {emp.status === "active" && act && (
+                      <div style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 4,
+                        fontSize: 11,
+                        fontWeight: 500,
+                        color: ac!.text,
+                        background: ac!.bg,
+                        padding: "3px 8px",
+                        borderRadius: 99,
+                      }}>
+                        <span style={{
+                          width: 5, height: 5, borderRadius: "50%",
+                          background: ac!.dot, flexShrink: 0,
+                        }} />
+                        {act.activityStatus === "working"
+                          ? `Working (${act.inProgressCount})`
+                          : act.activityStatus === "idle" && act.pendingCount > 0
+                            ? `Idle — ${act.pendingCount} pending`
+                            : act.activityStatus === "idle"
+                              ? "Idle"
+                              : "Offline"}
+                      </div>
+                    )}
                   </div>
                 </div>
               </Link>
             );
           })}
+          <style>{`
+            @keyframes dashPulse {
+              0% { transform: scale(1); opacity: 0.4; }
+              50% { transform: scale(2); opacity: 0; }
+              100% { transform: scale(1); opacity: 0; }
+            }
+            .dash-pulse { animation: dashPulse 2s ease-in-out infinite; }
+          `}</style>
         </div>
       )}
     </div>

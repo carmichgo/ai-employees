@@ -20,6 +20,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { eq, and } from "drizzle-orm";
 import { db, employees, companies } from "@ai-employees/db";
+import { recordTokenUsage, extractUsage } from "../usage.js";
 
 // Types we reference — kept minimal so we don't need the Slack packages at compile time
 type SlackApp = { message: Function; event: Function; start: Function; stop: Function };
@@ -36,15 +37,29 @@ function emojiToSlackIcon(emoji: string | null): string | undefined {
   return undefined;
 }
 
+interface AuthorityMember {
+  slackUserId: string;
+  name: string;
+  role: "manager" | "colleague";
+}
+
+interface AuthorityConfig {
+  defaultRole: "manager" | "colleague";
+  members: AuthorityMember[];
+}
+
 interface EmployeeMapping {
   id: string;
+  companyId: string;
   name: string;
   emoji: string | null;
   jobTitle: string;
   containerHost: string | null;
   containerPort: number | null;
   gatewayToken: string | null;
+  modelConfig: unknown;
   slackChannelId: string | null;
+  authorityConfig: AuthorityConfig | null;
 }
 
 export class SlackProxy {
@@ -110,6 +125,21 @@ export class SlackProxy {
     try {
       this.webClient = new WebClient(botToken) as SlackWebClient;
 
+      // Verify the bot token is valid before starting Socket Mode
+      // (invalid tokens cause unhandled rejections that crash the process)
+      try {
+        const authResult: any = await (this.webClient as any).auth?.test?.();
+        if (!authResult?.ok) {
+          console.error("[slack-proxy] Bot token auth.test failed, Slack proxy disabled");
+          this.webClient = null;
+          return;
+        }
+      } catch (authErr) {
+        console.error("[slack-proxy] Bot token is invalid, Slack proxy disabled:", authErr);
+        this.webClient = null;
+        return;
+      }
+
       this.app = new BoltApp({
         token: botToken,
         appToken,
@@ -117,6 +147,12 @@ export class SlackProxy {
         signingSecret: signingSecret || undefined,
         logLevel: LogLevel.WARN,
       }) as SlackApp;
+
+      // Catch errors emitted by the Bolt app (e.g. socket disconnects)
+      // to prevent unhandled EventEmitter errors from crashing the process
+      (this.app as any).error?.(async (error: any) => {
+        console.error("[slack-proxy] Bolt app error:", error);
+      });
 
       // Register message handler
       this.app.message(async ({ message, client }: any) => {
@@ -137,6 +173,9 @@ export class SlackProxy {
       console.log(`[slack-proxy] Connected to Slack for company ${company.slug} (${company.id})`);
     } catch (err) {
       console.error("[slack-proxy] Failed to start:", err);
+      // Clean up to prevent dangling connections
+      this.app = null;
+      this.webClient = null;
     }
   }
 
@@ -179,15 +218,27 @@ export class SlackProxy {
       const slackInfo = accounts.slack as Record<string, unknown> | undefined;
       const channelId = slackInfo?.channelId as string | undefined;
 
+      const authorityRaw = (emp.authorityConfig as Record<string, unknown>) || {};
+      const authorityConfig: AuthorityConfig | null =
+        authorityRaw.defaultRole
+          ? {
+              defaultRole: (authorityRaw.defaultRole as "manager" | "colleague") || "manager",
+              members: (authorityRaw.members as AuthorityMember[]) || [],
+            }
+          : null;
+
       const mapping: EmployeeMapping = {
         id: emp.id,
+        companyId: emp.companyId,
         name: emp.name,
         emoji: emp.emoji,
         jobTitle: emp.jobTitle,
         containerHost: emp.containerHost,
         containerPort: emp.containerPort,
         gatewayToken: emp.gatewayToken,
+        modelConfig: emp.modelConfig,
         slackChannelId: channelId || null,
+        authorityConfig,
       };
 
       if (channelId) {
@@ -263,13 +314,16 @@ export class SlackProxy {
       // Update local mapping
       this.channelToEmployee.set(channelId, {
         id: emp.id,
+        companyId: emp.companyId,
         name: emp.name,
         emoji: emp.emoji,
         jobTitle: emp.jobTitle,
         containerHost: emp.containerHost,
         containerPort: emp.containerPort,
         gatewayToken: emp.gatewayToken,
+        modelConfig: emp.modelConfig,
         slackChannelId: channelId,
+        authorityConfig: null,
       });
 
       console.log(`[slack-proxy] Created channel #${channelName} (${channelId}) for ${emp.name}`);
@@ -289,7 +343,7 @@ export class SlackProxy {
   private async findExistingChannel(
     channelName: string,
     employeeId: string,
-    emp: { name: string; emoji: string | null; jobTitle: string; containerHost: string | null; containerPort: number | null; gatewayToken: string | null; provisionedAccounts: unknown },
+    emp: { companyId: string; name: string; emoji: string | null; jobTitle: string; containerHost: string | null; containerPort: number | null; gatewayToken: string | null; modelConfig: unknown; provisionedAccounts: unknown },
   ): Promise<string | null> {
     if (!this.webClient) return null;
 
@@ -314,13 +368,16 @@ export class SlackProxy {
 
         this.channelToEmployee.set(existing.id, {
           id: employeeId,
+          companyId: emp.companyId,
           name: emp.name,
           emoji: emp.emoji,
           jobTitle: emp.jobTitle,
           containerHost: emp.containerHost,
           containerPort: emp.containerPort,
           gatewayToken: emp.gatewayToken,
+          modelConfig: emp.modelConfig,
           slackChannelId: existing.id,
+          authorityConfig: null,
         });
 
         console.log(`[slack-proxy] Found existing channel #${channelName} (${existing.id}) for ${emp.name}`);
@@ -403,6 +460,33 @@ export class SlackProxy {
     }
   }
 
+  /**
+   * Resolve a Slack user's authority level for a given employee.
+   * Returns { role, displayName } based on the employee's authorityConfig.
+   */
+  private resolveAuthority(
+    employee: EmployeeMapping,
+    slackUserId: string,
+    slackUserName?: string,
+  ): { role: "manager" | "colleague"; displayName: string } {
+    const displayName = slackUserName || slackUserId;
+    const config = employee.authorityConfig;
+
+    if (!config) {
+      // No authority config — everyone is a manager (backward compatible)
+      return { role: "manager", displayName };
+    }
+
+    // Check if this user is explicitly listed
+    const member = config.members.find((m) => m.slackUserId === slackUserId);
+    if (member) {
+      return { role: member.role, displayName: member.name || displayName };
+    }
+
+    // Fall back to default role
+    return { role: config.defaultRole, displayName };
+  }
+
   /** Handle incoming Slack messages */
   private async handleMessage(message: any, client: any): Promise<void> {
     if (message.bot_id || message.subtype === "bot_message") return;
@@ -422,11 +506,22 @@ export class SlackProxy {
     });
     if (!freshEmp || freshEmp.status !== "active") return;
 
+    // Also refresh authority config from fresh data
+    const authorityRaw = (freshEmp.authorityConfig as Record<string, unknown>) || {};
+    const freshAuthority: AuthorityConfig | null =
+      authorityRaw.defaultRole
+        ? {
+            defaultRole: (authorityRaw.defaultRole as "manager" | "colleague") || "manager",
+            members: (authorityRaw.members as AuthorityMember[]) || [],
+          }
+        : null;
+
     employee = {
       ...employee,
       containerHost: freshEmp.containerHost,
       containerPort: freshEmp.containerPort,
       gatewayToken: freshEmp.gatewayToken,
+      authorityConfig: freshAuthority,
     };
 
     if (!employee.containerHost || !employee.containerPort) {
@@ -434,12 +529,45 @@ export class SlackProxy {
       return;
     }
 
+    // Resolve sender's authority level
+    const slackUserId = message.user as string;
+    const slackUserName = message.user_profile?.display_name || message.user_profile?.real_name || message.username || undefined;
+    const { role: senderRole, displayName: senderName } = this.resolveAuthority(employee, slackUserId, slackUserName);
+
+    // Prefix the message with sender context so the employee knows who's talking and their authority
+    const authorityTag = senderRole === "manager" ? "Manager" : "Colleague";
+    const taggedText = `[Message from ${senderName} (${authorityTag})]\n${text}`;
+
     // Fetch recent conversation history from Slack so the employee has context
     const history = await this.fetchChannelHistory(channelId, message.ts);
-    // Build messages array: history + current message
+
+    // Inject memory.md as system context if it exists — persistent memory the employee maintains.
+    // Check workspace-main first (OpenClaw's runtime session workspace), then workspace/.
+    const systemMessages: Array<{ role: "system"; content: string }> = [];
+    const memoryPaths = [
+      `/opt/ai-employees/openclaw-configs/${employee.id}/workspace-main/memory.md`,
+      `/opt/ai-employees/openclaw-configs/${employee.id}/workspace/memory.md`,
+    ];
+    for (const memoryPath of memoryPaths) {
+      try {
+        const memoryMd = readFileSync(memoryPath, "utf-8");
+        if (memoryMd.trim()) {
+          systemMessages.push({
+            role: "system",
+            content: "# Your Memory (from memory.md)\n\nThe following is your persistent memory — context you wrote down to carry over between sessions:\n\n" + memoryMd,
+          });
+          break;
+        }
+      } catch {
+        // memory.md doesn't exist at this path — try next
+      }
+    }
+
+    // Build messages array: memory context + history + current message (with authority tag)
     const messages = [
+      ...systemMessages,
       ...history,
-      { role: "user" as const, content: text },
+      { role: "user" as const, content: taggedText },
     ];
 
     const sendToContainer = (host: string) => {
@@ -457,6 +585,9 @@ export class SlackProxy {
     };
 
     try {
+      // Track request sent
+      try { await db.update(employees).set({ lastRequestSentAt: new Date() } as any).where(eq(employees.id, employee.id)); } catch {}
+
       let res: Response;
       try {
         res = await sendToContainer(employee.containerHost!);
@@ -485,6 +616,9 @@ export class SlackProxy {
         }
       }
 
+      // Track response received
+      try { await db.update(employees).set({ lastResponseAt: new Date() } as any).where(eq(employees.id, employee.id)); } catch {}
+
       if (!res.ok) {
         const errText = await res.text();
         console.error(`[slack-proxy] Container error for ${employee.name}:`, errText);
@@ -492,8 +626,20 @@ export class SlackProxy {
         return;
       }
 
-      const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+      const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }>; usage?: unknown };
       const reply = data.choices?.[0]?.message?.content || "I couldn't generate a response.";
+
+      // Record token usage
+      const usageData = extractUsage(data);
+      if (usageData) {
+        recordTokenUsage({
+          companyId: employee.companyId,
+          employeeId: employee.id,
+          source: "slack",
+          model: (employee.modelConfig as { primary?: string })?.primary || "anthropic/claude-sonnet-4-5-20250929",
+          ...usageData,
+        });
+      }
 
       const chunks = splitMessage(reply, 3900);
       for (const chunk of chunks) {
@@ -601,6 +747,21 @@ export class SlackProxy {
     return this.running;
   }
 
+  /** Post a proactive notification from an employee to their Slack channel */
+  async postNotification(employeeId: string, message: string): Promise<boolean> {
+    if (!this.webClient || !this.running) return false;
+
+    // Find the employee's channel mapping
+    for (const [channelId, emp] of this.channelToEmployee.entries()) {
+      if (emp.id === employeeId) {
+        await this.postAsEmployee(this.webClient, channelId, emp, message);
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   /** Create Slack channels for all active employees that don't have one yet */
   async reconcileChannels(): Promise<Array<{ name: string; channelId: string | null }>> {
     if (!this.companyId || !this.webClient) return [];
@@ -682,13 +843,16 @@ export class SlackProxy {
     try {
       const mapping: EmployeeMapping = {
         id: emp.id,
+        companyId: emp.companyId,
         name: emp.name,
         emoji: emp.emoji,
         jobTitle: emp.jobTitle,
         containerHost: emp.containerHost,
         containerPort: emp.containerPort,
         gatewayToken: emp.gatewayToken,
+        modelConfig: emp.modelConfig,
         slackChannelId: channelId,
+        authorityConfig: null,
       };
       await this.postAsEmployee(this.webClient, channelId, mapping, text);
       return true;

@@ -10,13 +10,15 @@
     "db:migrate": "turbo db:migrate --filter=@ai-employees/db",
     "db:seed": "turbo db:seed --filter=@ai-employees/db"
   },
-  "devDependencies": {
-    "next": "^15.2.0",
+  "dependencies": {
     "turbo": "^2.4.0",
     "typescript": "^5.7.0"
   },
+  "devDependencies": {
+    "next": "^15.2.0"
+  },
   "packageManager": "pnpm@9.15.0",
   "engines": {
-    "node": ">=22.0.0"
+    "node": "22.x"
   }
 }

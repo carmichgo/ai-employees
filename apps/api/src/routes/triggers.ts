@@ -14,6 +14,7 @@ import type { FastifyInstance } from "fastify";
 import crypto from "node:crypto";
 import { eq, and } from "drizzle-orm";
 import { db, employees, triggers } from "@ai-employees/db";
+import { recordTokenUsage, extractUsage } from "../usage.js";
 
 export async function triggerRoutes(fastify: FastifyInstance) {
   // ───────────────────────────────────────────────────
@@ -49,6 +50,9 @@ export async function triggerRoutes(fastify: FastifyInstance) {
 
       // Send to the employee's container as a chat message
       try {
+        // Track request sent
+        try { await db.update(employees).set({ lastRequestSentAt: new Date() } as any).where(eq(employees.id, trigger.employeeId)); } catch {}
+
         const containerUrl = `http://${employee.containerHost}:${employee.containerPort}/v1/chat/completions`;
         const res = await fetch(containerUrl, {
           method: "POST",
@@ -57,7 +61,7 @@ export async function triggerRoutes(fastify: FastifyInstance) {
             Authorization: `Bearer ${employee.gatewayToken}`,
           },
           body: JSON.stringify({
-            model: (employee.modelConfig as { primary: string }).primary,
+            model: "default",
             messages: [
               {
                 role: "user",
@@ -66,6 +70,9 @@ export async function triggerRoutes(fastify: FastifyInstance) {
             ],
           }),
         });
+
+        // Track response received
+        try { await db.update(employees).set({ lastResponseAt: new Date() } as any).where(eq(employees.id, trigger.employeeId)); } catch {}
 
         // Update last run
         await db
@@ -81,7 +88,21 @@ export async function triggerRoutes(fastify: FastifyInstance) {
 
         const data = (await res.json()) as {
           choices?: { message?: { content?: string } }[];
+          usage?: unknown;
         };
+
+        // Record token usage
+        const usageData = extractUsage(data);
+        if (usageData) {
+          const model = (employee.modelConfig as { primary: string }).primary;
+          recordTokenUsage({
+            companyId: employee.companyId,
+            employeeId: trigger.employeeId,
+            source: "webhook",
+            model,
+            ...usageData,
+          });
+        }
 
         return {
           ok: true,

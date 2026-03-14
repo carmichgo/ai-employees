@@ -16,9 +16,30 @@ export const employees = pgTable("employees", {
   tier: varchar("tier", { length: 20 }).notNull().default("junior"),
   // junior | senior | expert
 
+  // Hosting mode — "managed" uses platform API keys, "byok" uses customer's own keys
+  hostingMode: varchar("hosting_mode", { length: 20 }).notNull().default("managed"),
+  // managed | byok
+
+  // BYOK fields — only populated when hostingMode = "byok"
+  byokAnthropicKey: text("byok_anthropic_key"), // encrypted
+  byokGeminiKey: text("byok_gemini_key"), // encrypted
+  byokModel: varchar("byok_model", { length: 100 }), // user-selected model (e.g. "anthropic/claude-sonnet-4-5-20250929")
+
+  // Stripe billing — links this employee to a line item on the company subscription
+  stripeSubscriptionItemId: varchar("stripe_subscription_item_id", { length: 255 }),
+  priceMonthly: integer("price_monthly"),
+
   // Status & lifecycle
   status: varchar("status", { length: 20 }).notNull().default("provisioning"),
   // provisioning | onboarding | active | paused | terminated | error
+
+  // Per-employee DigitalOcean droplet
+  dropletId: varchar("droplet_id", { length: 50 }),
+  dropletIp: varchar("droplet_ip", { length: 45 }),
+  dropletRegion: varchar("droplet_region", { length: 20 }),
+  dropletSize: varchar("droplet_size", { length: 50 }),
+  dropletStatus: varchar("droplet_status", { length: 20 }).default("none"),
+  interserviceSecret: varchar("interservice_secret", { length: 255 }),
 
   // OpenClaw container
   containerId: varchar("container_id", { length: 100 }),
@@ -29,7 +50,7 @@ export const employees = pgTable("employees", {
 
   // Configuration
   modelConfig: jsonb("model_config").notNull().default({
-    primary: "anthropic/claude-opus-4-6",
+    primary: "anthropic/claude-sonnet-4-5-20250929",
   }),
   persona: text("persona"),
   goals: text("goals"),
@@ -40,6 +61,16 @@ export const employees = pgTable("employees", {
   }),
   toolsConfig: jsonb("tools_config").notNull().default({}),
   sandboxConfig: jsonb("sandbox_config").notNull().default({}),
+
+  // Authority — who can assign tasks vs. who can only ask questions
+  authorityConfig: jsonb("authority_config").notNull().default({
+    defaultRole: "manager",
+    members: [],
+  }),
+  // {
+  //   defaultRole: "manager" | "colleague" — what role do unrecognized Slack users get
+  //   members: [{ slackUserId: "U...", name: "Alice", role: "manager" | "colleague" }]
+  // }
 
   // Provisioned accounts
   emailAddress: varchar("email_address", { length: 255 }),
@@ -53,6 +84,8 @@ export const employees = pgTable("employees", {
   // Metadata
   configHash: varchar("config_hash", { length: 64 }),
   lastHealthAt: timestamp("last_health_at", { withTimezone: true }),
+  lastRequestSentAt: timestamp("last_request_sent_at", { withTimezone: true }),
+  lastResponseAt: timestamp("last_response_at", { withTimezone: true }),
   errorMessage: text("error_message"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

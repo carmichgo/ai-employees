@@ -6,9 +6,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { employees, companies } from "@/lib/schema";
+import { employees } from "@/lib/schema";
 import { verifyToken } from "@/lib/auth";
-import { getCompanyBackend } from "@/lib/backend";
+import { getEmployeeBackend } from "@/lib/backend";
+
+// Increase body size limit for file uploads (default 4.5MB is too small for 10MB files)
+export const maxDuration = 60;
 
 async function authenticate(request: NextRequest) {
   const token =
@@ -23,64 +26,103 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await authenticate(request);
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    const session = await authenticate(request);
+    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { id } = await params;
+    const { id } = await params;
 
-  // Verify employee belongs to company
-  const [employee] = await db
-    .select()
-    .from(employees)
-    .where(and(eq(employees.id, id), eq(employees.companyId, session.companyId)))
-    .limit(1);
+    // Verify employee belongs to company (explicit columns to avoid SELECT * breakage)
+    const [employee] = await db
+      .select({ id: employees.id, companyId: employees.companyId })
+      .from(employees)
+      .where(and(eq(employees.id, id), eq(employees.companyId, session.companyId)))
+      .limit(1);
 
-  if (!employee) {
-    return NextResponse.json({ error: "Employee not found" }, { status: 404 });
+    if (!employee) {
+      return NextResponse.json({ error: "Employee not found" }, { status: 404 });
+    }
+
+    // Get the backend
+    const backend = await getEmployeeBackend(id);
+    if (!backend) {
+      return NextResponse.json({ error: "Employee backend not available" }, { status: 503 });
+    }
+
+    // Parse multipart form data.
+    // Primary: use request.formData() directly (works for most files).
+    // Fallback: read raw stream and reconstruct (for cases where Next.js
+    // has issues with the direct approach).
+    let formData: FormData;
+    try {
+      formData = await request.formData();
+    } catch (directErr: any) {
+      console.warn("[upload] request.formData() failed, trying raw stream fallback:", directErr.message);
+      // Fallback: read body as raw stream and reconstruct
+      try {
+        const contentType = request.headers.get("content-type") || "";
+        const rawBuffer = await request.arrayBuffer();
+        if (rawBuffer.byteLength > 10 * 1024 * 1024 + 4096) {
+          return NextResponse.json({ error: "File too large (max 10MB)" }, { status: 413 });
+        }
+        const rawBody = new Blob([rawBuffer], { type: contentType });
+        formData = await new Response(rawBody).formData();
+      } catch (fallbackErr: any) {
+        console.error("[upload] formData parse error:", fallbackErr.message);
+        return NextResponse.json(
+          { error: `Failed to parse upload: ${fallbackErr.message}` },
+          { status: 400 },
+        );
+      }
+    }
+
+    const file = formData.get("file") as File | null;
+    const folder = formData.get("folder") as string | null;
+
+    if (!file) {
+      return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    }
+
+    // Convert to base64 and proxy to droplet
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const base64 = buffer.toString("base64");
+
+    const res = await fetch(`${backend.url}/internal/employees/${id}/files`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-interservice-secret": backend.secret,
+      },
+      body: JSON.stringify({
+        name: file.name,
+        content: base64,
+        mimeType: file.type || "application/octet-stream",
+        ...(folder ? { folder } : {}),
+      }),
+      signal: AbortSignal.timeout(30000),
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      let parsed: Record<string, unknown> = {};
+      try { parsed = JSON.parse(text); } catch {}
+      const errorMsg = (parsed.error as string) || `Backend returned ${res.status}: ${text.slice(0, 200)}`;
+      console.error("[upload] backend error:", res.status, text.slice(0, 500));
+      return NextResponse.json({ error: errorMsg }, { status: res.status });
+    }
+
+    const data = await res.json();
+    return NextResponse.json(data, { status: 201 });
+  } catch (err: any) {
+    console.error("[upload] unhandled error:", err.name, err.message);
+    if (err.name === "TimeoutError" || err.name === "AbortError") {
+      return NextResponse.json({ error: "Upload timed out — backend did not respond in time" }, { status: 504 });
+    }
+    return NextResponse.json(
+      { error: `Upload failed: ${err.message || "unknown error"}` },
+      { status: 502 },
+    );
   }
-
-  // Get the backend
-  const backend = await getCompanyBackend(session.companyId);
-  if (!backend) {
-    return NextResponse.json({ error: "Company backend not available" }, { status: 503 });
-  }
-
-  // Read multipart form data
-  const formData = await request.formData();
-  const file = formData.get("file") as File | null;
-
-  if (!file) {
-    return NextResponse.json({ error: "No file provided" }, { status: 400 });
-  }
-
-  if (file.size > 10 * 1024 * 1024) {
-    return NextResponse.json({ error: "File too large (max 10MB)" }, { status: 413 });
-  }
-
-  // Convert to base64 and proxy to droplet
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const base64 = buffer.toString("base64");
-
-  const res = await fetch(`${backend.url}/internal/employees/${id}/files`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-interservice-secret": backend.secret,
-    },
-    body: JSON.stringify({
-      name: file.name,
-      content: base64,
-      mimeType: file.type,
-    }),
-  });
-
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({ error: "Upload failed" }));
-    return NextResponse.json(body, { status: res.status });
-  }
-
-  const data = await res.json();
-  return NextResponse.json(data, { status: 201 });
 }
 
 // GET — list files
@@ -94,7 +136,7 @@ export async function GET(
   const { id } = await params;
 
   const [employee] = await db
-    .select()
+    .select({ id: employees.id, companyId: employees.companyId })
     .from(employees)
     .where(and(eq(employees.id, id), eq(employees.companyId, session.companyId)))
     .limit(1);
@@ -103,23 +145,28 @@ export async function GET(
     return NextResponse.json({ error: "Employee not found" }, { status: 404 });
   }
 
-  const backend = await getCompanyBackend(session.companyId);
+  const backend = await getEmployeeBackend(id);
   if (!backend) {
     return NextResponse.json({ files: [] });
   }
 
-  const res = await fetch(`${backend.url}/internal/employees/${id}/files`, {
-    headers: {
-      "x-interservice-secret": backend.secret,
-    },
-  });
+  try {
+    const res = await fetch(`${backend.url}/internal/employees/${id}/files`, {
+      headers: {
+        "x-interservice-secret": backend.secret,
+      },
+      signal: AbortSignal.timeout(15000),
+    });
 
-  if (!res.ok) {
+    if (!res.ok) {
+      return NextResponse.json({ files: [] });
+    }
+
+    const data = await res.json();
+    return NextResponse.json(data);
+  } catch {
     return NextResponse.json({ files: [] });
   }
-
-  const data = await res.json();
-  return NextResponse.json(data);
 }
 
 // DELETE — delete a file
@@ -139,7 +186,7 @@ export async function DELETE(
   }
 
   const [employee] = await db
-    .select()
+    .select({ id: employees.id, companyId: employees.companyId })
     .from(employees)
     .where(and(eq(employees.id, id), eq(employees.companyId, session.companyId)))
     .limit(1);
@@ -148,25 +195,30 @@ export async function DELETE(
     return NextResponse.json({ error: "Employee not found" }, { status: 404 });
   }
 
-  const backend = await getCompanyBackend(session.companyId);
+  const backend = await getEmployeeBackend(id);
   if (!backend) {
-    return NextResponse.json({ error: "Company backend not available" }, { status: 503 });
+    return NextResponse.json({ error: "Employee backend not available" }, { status: 503 });
   }
 
-  const res = await fetch(
-    `${backend.url}/internal/employees/${id}/files/${encodeURIComponent(filename)}`,
-    {
-      method: "DELETE",
-      headers: {
-        "x-interservice-secret": backend.secret,
+  try {
+    const res = await fetch(
+      `${backend.url}/internal/employees/${id}/files/${encodeURIComponent(filename)}`,
+      {
+        method: "DELETE",
+        headers: {
+          "x-interservice-secret": backend.secret,
+        },
+        signal: AbortSignal.timeout(15000),
       },
-    },
-  );
+    );
 
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({ error: "Delete failed" }));
-    return NextResponse.json(body, { status: res.status });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ error: "Delete failed" }));
+      return NextResponse.json(body, { status: res.status });
+    }
+
+    return NextResponse.json({ message: "File deleted" });
+  } catch {
+    return NextResponse.json({ error: "Failed to reach employee backend" }, { status: 502 });
   }
-
-  return NextResponse.json({ message: "File deleted" });
 }

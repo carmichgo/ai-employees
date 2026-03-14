@@ -1,15 +1,17 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import {
   ArrowLeft, Pause, Play, Trash2, Loader2, Server, Mail, Cpu, Clock, Calendar,
   MessageCircle, Save, X, Eye, EyeOff, ChevronDown, Upload, FileText, Zap,
   Webhook, Timer, Plus, ToggleLeft, ToggleRight, Copy, Check, KeyRound, Globe, Edit3,
-  MessageSquare, Send, Smartphone, Gamepad2, Shield, MonitorSmartphone, Hash, Radio,
+  MessageSquare, Send, Smartphone, Gamepad2, Shield, MonitorSmartphone, Hash, Radio, Phone, Headphones,
+  Monitor, Sparkles, RotateCw, Square, RefreshCw,
 } from "lucide-react";
 import Link from "next/link";
+import { CAPABILITY_OPTIONS, getAddonPrice, type EmployeeTier } from "@ai-employees/shared";
 
 const EMAIL_PROVIDERS: Record<string, { label: string; smtpHost: string; smtpPort: number; imapHost: string; imapPort: number; webmail: string; note?: string }> = {
   gmail: { label: "Google / Gmail", smtpHost: "smtp.gmail.com", smtpPort: 587, imapHost: "imap.gmail.com", imapPort: 993, webmail: "https://mail.google.com", note: "Use an App Password (Google Account > Security > App Passwords)" },
@@ -104,6 +106,18 @@ const CHANNEL_META: Record<string, {
     fields: [],
     helpText: "Email is configured in the Email Account section below.",
   },
+  phone: {
+    label: "Phone (Twilio)",
+    icon: Phone,
+    fields: [],
+    helpText: "Phone calling is configured in the Phone Number section below.",
+  },
+  "voice-chat": {
+    label: "Web Voice Call",
+    icon: Headphones,
+    fields: [],
+    helpText: "Voice calling through the dashboard — speak and your employee responds with voice in real time.",
+  },
 };
 
 const TRIGGER_PRESETS = [
@@ -123,9 +137,11 @@ function formatFileSize(bytes: number): string {
 export default function EmployeeDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [employee, setEmployee] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [hireBanner, setHireBanner] = useState<{ billed: boolean; price: string } | null>(null);
 
   // Email config state
   const [emailConfig, setEmailConfig] = useState<any>(null);
@@ -175,7 +191,52 @@ export default function EmployeeDetailPage() {
   const [credSaving, setCredSaving] = useState(false);
   const [credNotice, setCredNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
+  // API Keys state
+  const [showNewApiKey, setShowNewApiKey] = useState(false);
+  const [editingApiKeyId, setEditingApiKeyId] = useState<string | null>(null);
+  const [apiKeyLabel, setApiKeyLabel] = useState("");
+  const [apiKeyValue, setApiKeyValue] = useState("");
+  const [apiKeyNotes, setApiKeyNotes] = useState("");
+  const [showApiKeyValue, setShowApiKeyValue] = useState(false);
+  const [apiKeySaving, setApiKeySaving] = useState(false);
+  const [apiKeyNotice, setApiKeyNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  // Skills state
+  const [skillsList, setSkillsList] = useState<Array<{ id: string; skillSlug: string; source: string; enabled: boolean; config: Record<string, unknown>; createdAt: string }>>([]);
+  const [showInstallSkill, setShowInstallSkill] = useState(false);
+  const [installMode, setInstallMode] = useState<"slug" | "upload">("slug");
+  const [newSkillSlug, setNewSkillSlug] = useState("");
+  const [newSkillContent, setNewSkillContent] = useState("");
+  const [skillExtraFiles, setSkillExtraFiles] = useState<Array<{ name: string; content: string }>>([]);
+  const [skillSaving, setSkillSaving] = useState(false);
+  const [skillNotice, setSkillNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  // Capabilities state
+  const [capabilitiesList, setCapabilitiesList] = useState<string[]>([]);
+  const [capabilitiesSaving, setCapabilitiesSaving] = useState(false);
+  const [capabilitiesNotice, setCapabilitiesNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  // Relay state
+  const [relayInfo, setRelayInfo] = useState<{ available: boolean; employeeName?: string; gatewayUrl?: string; gatewayToken?: string; wsUrl?: string; relayToken?: string; command?: string } | null>(null);
+  const [relayLoading, setRelayLoading] = useState(false);
+  const [showRelayToken, setShowRelayToken] = useState(false);
+  const [copiedRelay, setCopiedRelay] = useState<string | null>(null);
+  const [extensionStatus, setExtensionStatus] = useState<"idle" | "connecting" | "connected" | "not-installed" | "error">("idle");
+  const [extensionError, setExtensionError] = useState<string | null>(null);
+
   const employeeId = params.id as string;
+
+  // Show hire confirmation banner from URL params
+  useEffect(() => {
+    if (searchParams.get("hired") === "true") {
+      setHireBanner({
+        billed: searchParams.get("billed") === "true",
+        price: searchParams.get("price") || "",
+      });
+      // Clean URL params without full reload
+      window.history.replaceState({}, "", `/dashboard/employees/${employeeId}`);
+    }
+  }, [searchParams, employeeId]);
 
   useEffect(() => {
     api.getEmployee(employeeId).then((res) => {
@@ -197,15 +258,40 @@ export default function EmployeeDetailPage() {
     api.listTriggers(employeeId).then((res) => setTriggersList(res.triggers || [])).catch(() => {});
     api.listCredentials(employeeId).then((res) => setCredentialsList(res.credentials || [])).catch(() => {});
     api.listChannels(employeeId).then((res) => setChannelsList(res.channels || [])).catch(() => {});
+    api.listSkills(employeeId).then((res) => setSkillsList(res.skills || [])).catch(() => {});
+    api.getCapabilities(employeeId).then((res) => setCapabilitiesList(res.capabilities || [])).catch(() => {});
+    api.getRelayInfo(employeeId).then((res) => setRelayInfo(res)).catch(() => {});
   }, [employeeId]);
 
-  // Auto-poll while provisioning
+  // Auto-poll while provisioning, with auto-reprovision for stuck employees
+  const reprovisionAttempts = useRef(0);
+  const provisioningStartRef = useRef<number | null>(null);
   useEffect(() => {
-    if (!employee || (employee.status !== "provisioning" && employee.status !== "onboarding")) return;
-    const interval = setInterval(() => {
-      api.getEmployee(employeeId).then((res) => {
+    if (!employee || (employee.status !== "provisioning" && employee.status !== "onboarding")) {
+      provisioningStartRef.current = null;
+      reprovisionAttempts.current = 0;
+      return;
+    }
+    if (!provisioningStartRef.current) provisioningStartRef.current = Date.now();
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await api.getEmployee(employeeId);
         setEmployee(res.employee);
-      }).catch(() => {});
+
+        // If still provisioning after 2 minutes, try reprovision (up to 3 times, every 2 min)
+        const elapsed = provisioningStartRef.current ? Date.now() - provisioningStartRef.current : 0;
+        const nextAttemptThreshold = 120000 + reprovisionAttempts.current * 120000;
+        if (
+          res.employee.status === "provisioning" &&
+          reprovisionAttempts.current < 3 &&
+          elapsed > nextAttemptThreshold
+        ) {
+          reprovisionAttempts.current += 1;
+          console.log(`[auto-reprovision] Attempt ${reprovisionAttempts.current}/3 for stuck employee`, employeeId);
+          fetch(`/api/employees/${employeeId}/reprovision`, { method: "POST" }).catch(() => {});
+        }
+      } catch {}
     }, 4000);
     return () => clearInterval(interval);
   }, [employee?.status, employeeId]);
@@ -213,14 +299,22 @@ export default function EmployeeDetailPage() {
   // ── Employee actions ──
   const handlePause = async () => {
     setActionLoading(true);
-    const res = await api.pauseEmployee(employeeId);
-    setEmployee(res.employee);
+    try {
+      const res = await api.pauseEmployee(employeeId);
+      setEmployee(res.employee);
+    } catch (err: any) {
+      alert(`Failed to pause: ${err.message}`);
+    }
     setActionLoading(false);
   };
   const handleResume = async () => {
     setActionLoading(true);
-    const res = await api.resumeEmployee(employeeId);
-    setEmployee(res.employee);
+    try {
+      const res = await api.resumeEmployee(employeeId);
+      setEmployee(res.employee);
+    } catch (err: any) {
+      alert(`Failed to resume: ${err.message}`);
+    }
     setActionLoading(false);
   };
   const handleTerminate = async () => {
@@ -231,6 +325,101 @@ export default function EmployeeDetailPage() {
       router.push("/dashboard/employees");
     } catch (err: any) {
       alert(`Failed to terminate: ${err.message}`);
+      setActionLoading(false);
+    }
+  };
+  const handleReboot = async () => {
+    if (!confirm(`Reboot ${employee.name}'s server? This power-cycles the entire droplet and takes 1-2 minutes.`)) return;
+    setActionLoading(true);
+    try {
+      const res = await api.rebootEmployee(employeeId);
+      if (!res.success) {
+        alert(`Reboot failed: ${(res as any).error || "Unknown error"}`);
+      }
+      // Refresh — status should now be "provisioning", which triggers auto-polling
+      const empRes = await api.getEmployee(employeeId);
+      setEmployee(empRes.employee);
+    } catch (err: any) {
+      alert(`Reboot failed: ${err.message}`);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleReactivate = async () => {
+    if (!confirm(`Reactivate ${employee.name}? This will create a new server and takes 2-3 minutes.`)) return;
+    setActionLoading(true);
+    try {
+      const res = await api.reactivateEmployee(employeeId);
+      alert(res.message);
+      const empRes = await api.getEmployee(employeeId);
+      setEmployee(empRes.employee);
+    } catch (err: any) {
+      alert(`Reactivate failed: ${err.message}`);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleRestart = async () => {
+    setActionLoading(true);
+    try {
+      if (employee.dropletIp) {
+        const res = await api.restartEmployee(employeeId);
+        if (!res.success) {
+          // Restart failed (API unreachable) — auto-fallback to reboot
+          if (employee.dropletId) {
+            const rebootRes = await api.rebootEmployee(employeeId);
+            if (!rebootRes.success) {
+              alert(`Restart and reboot both failed.`);
+            }
+          } else {
+            alert(`Restart failed. Try Reboot instead.`);
+          }
+        }
+      } else if (employee.dropletId) {
+        // No IP stored — reboot to get a fresh IP
+        await api.rebootEmployee(employeeId);
+      } else {
+        const res = await fetch(`/api/employees/${employeeId}/reprovision`, { method: "POST" });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({ error: "Unknown error" }));
+          alert(`Provisioning failed: ${data.error || "Unknown error"}`);
+        }
+      }
+      const empRes = await api.getEmployee(employeeId);
+      setEmployee(empRes.employee);
+    } catch (err: any) {
+      alert(`Restart failed: ${err.message}`);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleForceReset = async () => {
+    if (!confirm(`Force reset ${employee.name}? This will recreate the container while preserving memory and files. The employee will be unavailable for ~30 seconds.`)) return;
+    setActionLoading(true);
+    try {
+      const res = await fetch(`/api/employees/${employeeId}/force-reset`, { method: "POST" });
+      const data = await res.json();
+      alert(data.message || "Force reset triggered");
+      const empRes = await api.getEmployee(employeeId);
+      setEmployee(empRes.employee);
+    } catch (err: any) {
+      alert(`Force reset failed: ${err.message}`);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleStop = async () => {
+    setActionLoading(true);
+    try {
+      const res = await api.stopEmployee(employeeId);
+      alert(res.message);
+    } catch (err: any) {
+      alert(`Stop failed: ${err.message}`);
+    } finally {
       setActionLoading(false);
     }
   };
@@ -429,10 +618,175 @@ export default function EmployeeDetailPage() {
     }
   };
 
+  // ── API Key handlers ──
+  const resetApiKeyForm = () => {
+    setApiKeyLabel(""); setApiKeyValue(""); setApiKeyNotes("");
+    setShowApiKeyValue(false); setEditingApiKeyId(null); setShowNewApiKey(false);
+  };
+  const handleSaveApiKey = async () => {
+    setApiKeySaving(true);
+    setApiKeyNotice(null);
+    try {
+      const data: { id?: string; type: "api_key"; label: string; apiKey?: string; notes?: string } = { type: "api_key", label: apiKeyLabel };
+      if (apiKeyValue) data.apiKey = apiKeyValue;
+      if (apiKeyNotes) data.notes = apiKeyNotes;
+      if (editingApiKeyId) data.id = editingApiKeyId;
+      const res = await api.saveCredential(employeeId, data);
+      if (editingApiKeyId) {
+        setCredentialsList((prev) => prev.map((c) => (c.id === editingApiKeyId ? res.credential : c)));
+      } else {
+        setCredentialsList((prev) => [...prev, res.credential]);
+      }
+      resetApiKeyForm();
+      setApiKeyNotice({ type: "success", message: editingApiKeyId ? "API key updated" : "API key added" });
+    } catch (err: any) {
+      setApiKeyNotice({ type: "error", message: err.message });
+    } finally {
+      setApiKeySaving(false);
+    }
+  };
+  const handleEditApiKey = (cred: any) => {
+    setEditingApiKeyId(cred.id);
+    setApiKeyLabel(cred.label);
+    setApiKeyValue("");
+    setApiKeyNotes(cred.notes || "");
+    setShowNewApiKey(true);
+  };
+  const handleDeleteApiKey = async (credId: string) => {
+    if (!confirm("Remove this API key? The employee will lose access.")) return;
+    try {
+      await api.deleteCredential(employeeId, credId);
+      setCredentialsList((prev) => prev.filter((c) => c.id !== credId));
+      setApiKeyNotice({ type: "success", message: "API key removed" });
+    } catch (err: any) {
+      setApiKeyNotice({ type: "error", message: err.message });
+    }
+  };
+
   const copyWebhookUrl = (token: string) => {
     navigator.clipboard.writeText(`${window.location.origin}/api/webhooks/${token}`);
     setCopiedToken(token);
     setTimeout(() => setCopiedToken(null), 2000);
+  };
+
+  // ── Skill handlers ──
+  const handleInstallSkill = async () => {
+    setSkillSaving(true);
+    setSkillNotice(null);
+    try {
+      const data: { slug: string; source?: string; content?: string; files?: Array<{ name: string; content: string }> } = { slug: newSkillSlug.trim().toLowerCase() };
+      if (installMode === "upload" && newSkillContent.trim()) {
+        data.content = newSkillContent.trim();
+        data.source = "custom";
+        if (skillExtraFiles.length > 0) {
+          data.files = skillExtraFiles;
+        }
+      }
+      const res = await api.installSkill(employeeId, data);
+      setSkillsList((prev) => [...prev, res.skill]);
+      setNewSkillSlug("");
+      setNewSkillContent("");
+      setSkillExtraFiles([]);
+      setShowInstallSkill(false);
+      setSkillNotice({ type: "success", message: res.message });
+    } catch (err: any) {
+      setSkillNotice({ type: "error", message: err.message });
+    } finally {
+      setSkillSaving(false);
+    }
+  };
+
+  const handleToggleSkill = async (skill: { id: string; skillSlug: string; enabled: boolean }) => {
+    try {
+      const res = await api.toggleSkill(employeeId, skill.skillSlug, !skill.enabled);
+      setSkillsList((prev) => prev.map((s) => s.id === skill.id ? { ...s, enabled: res.skill.enabled } : s));
+    } catch (err: any) {
+      setSkillNotice({ type: "error", message: err.message });
+    }
+  };
+
+  const handleUninstallSkill = async (slug: string) => {
+    if (!confirm(`Uninstall skill "${slug}"? This will remove it from ${employee.name}.`)) return;
+    try {
+      await api.uninstallSkill(employeeId, slug);
+      setSkillsList((prev) => prev.filter((s) => s.skillSlug !== slug));
+      setSkillNotice({ type: "success", message: `Skill "${slug}" uninstalled` });
+    } catch (err: any) {
+      setSkillNotice({ type: "error", message: err.message });
+    }
+  };
+
+  // ── Capability handlers ──
+  const handleToggleCapability = async (capId: string) => {
+    const newCaps = capabilitiesList.includes(capId)
+      ? capabilitiesList.filter((c) => c !== capId)
+      : [...capabilitiesList, capId];
+
+    // Show price difference and confirm
+    const tier = (employee?.tier || "junior") as EmployeeTier;
+    const price = getAddonPrice("capabilities", capId, tier);
+    const isAdding = !capabilitiesList.includes(capId);
+    const cap = CAPABILITY_OPTIONS.find((c) => c.id === capId);
+
+    if (price !== "free" && isAdding) {
+      if (!confirm(`Adding "${cap?.label || capId}" will add $${price}/mo to your plan. Continue?`)) return;
+    } else if (price !== "free" && !isAdding) {
+      if (!confirm(`Removing "${cap?.label || capId}" will reduce your plan by $${price}/mo. Continue?`)) return;
+    }
+
+    setCapabilitiesSaving(true);
+    setCapabilitiesNotice(null);
+    try {
+      const res = await api.updateCapabilities(employeeId, newCaps);
+      setCapabilitiesList(res.capabilities);
+      setCapabilitiesNotice({ type: "success", message: res.message });
+    } catch (err: any) {
+      setCapabilitiesNotice({ type: "error", message: err.message });
+    } finally {
+      setCapabilitiesSaving(false);
+    }
+  };
+
+  const handleSkillFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+    const allFiles = Array.from(fileList);
+    // Find the SKILL.md (or first .md file) for the main content
+    const mdFile = allFiles.find((f) => f.name.toLowerCase() === "skill.md") || allFiles.find((f) => f.name.toLowerCase().endsWith(".md"));
+    const extraFiles = allFiles.filter((f) => f !== mdFile);
+
+    // Read all files
+    let pendingReads = allFiles.length;
+    const readResults = new Map<string, string>();
+    for (const file of allFiles) {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        readResults.set(file.name, ev.target?.result as string);
+        pendingReads--;
+        if (pendingReads === 0) {
+          // All files read — update state
+          if (mdFile) {
+            setNewSkillContent(readResults.get(mdFile.name) || "");
+            // Auto-derive slug from the first .md filename
+            const slug = mdFile.name.replace(/\.md$/i, "").replace(/^SKILL$/i, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+            if (slug && !newSkillSlug) setNewSkillSlug(slug);
+          }
+          const extras: Array<{ name: string; content: string }> = [];
+          for (const f of extraFiles) {
+            const content = readResults.get(f.name);
+            if (content) extras.push({ name: f.name, content });
+          }
+          setSkillExtraFiles(extras);
+        }
+      };
+      reader.readAsText(file);
+    }
+  };
+
+  const copyRelayValue = (key: string, value: string) => {
+    navigator.clipboard.writeText(value);
+    setCopiedRelay(key);
+    setTimeout(() => setCopiedRelay(null), 2000);
   };
 
   if (loading || !employee) {
@@ -446,13 +800,46 @@ export default function EmployeeDetailPage() {
 
   return (
     <div className="animate-in" style={{ maxWidth: 800 }}>
+      <style>{`
+        @media (max-width: 768px) {
+          .emp-header { flex-direction: column !important; gap: 16px !important; }
+          .emp-header .emp-actions { align-self: flex-start; }
+          .emp-grid-2 { grid-template-columns: 1fr !important; }
+        }
+      `}</style>
       {/* Back link */}
       <Link href="/dashboard/employees" style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "var(--text-secondary)", textDecoration: "none", fontSize: 13, marginBottom: 24, transition: "color 0.15s" }}>
         <ArrowLeft size={14} /> Back to Employees
       </Link>
 
+      {/* Hire confirmation banner */}
+      {hireBanner && (
+        <div style={{
+          background: "var(--green-muted)",
+          border: "1px solid var(--green)",
+          borderRadius: "var(--radius-md)",
+          padding: "12px 16px",
+          marginBottom: 24,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--green)" }}>
+            <Check size={16} />
+            <span style={{ fontWeight: 500 }}>
+              {employee?.name || "Employee"} has been hired!
+              {hireBanner.billed && hireBanner.price && ` Added to your subscription — $${hireBanner.price}/mo.`}
+              {hireBanner.billed && !hireBanner.price && " Added to your subscription."}
+            </span>
+          </div>
+          <button onClick={() => setHireBanner(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--green)", padding: 4 }}>
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
       {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 32 }}>
+      <div className="emp-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 32 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
           <div style={{
             width: 64, height: 64, borderRadius: "var(--radius-lg)",
@@ -470,11 +857,16 @@ export default function EmployeeDetailPage() {
             </div>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div className="emp-actions" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {(employee.status === "active" || employee.status === "paused") && (
-            <Link href={`/dashboard/employees/${employeeId}/chat`} className="btn-primary btn-sm" style={{ gap: 6, textDecoration: "none" }}>
-              <MessageCircle size={14} /> Chat
-            </Link>
+            <>
+              <Link href={`/dashboard/inbox?employee=${employeeId}`} className="btn-primary btn-sm" style={{ gap: 6, textDecoration: "none" }}>
+                <MessageCircle size={14} /> Chat
+              </Link>
+              <Link href={`/dashboard/employees/${employeeId}/documents`} className="btn-secondary btn-sm" style={{ gap: 6, textDecoration: "none" }}>
+                <FileText size={14} /> Documents
+              </Link>
+            </>
           )}
           {employee.status === "active" && (
             <button className="btn-secondary btn-sm" onClick={handlePause} disabled={actionLoading} style={{ gap: 6 }}><Pause size={14} /> Pause</button>
@@ -482,8 +874,20 @@ export default function EmployeeDetailPage() {
           {employee.status === "paused" && (
             <button className="btn-primary btn-sm" onClick={handleResume} disabled={actionLoading} style={{ gap: 6 }}><Play size={14} /> Resume</button>
           )}
+          {employee.status === "active" && employee.dropletStatus === "active" && (
+            <button className="btn-sm" onClick={handleStop} disabled={actionLoading} style={{ gap: 6, background: "rgba(239,68,68,0.08)", color: "#ef4444", border: "1px solid #ef4444" }}><Square size={14} fill="#ef4444" /> Stop</button>
+          )}
+          {employee.status !== "terminated" && employee.status !== "paused" && (employee.dropletIp || employee.dropletId) && (
+            <button className="btn-secondary btn-sm" onClick={handleRestart} disabled={actionLoading} style={{ gap: 6 }}><RefreshCw size={14} /> Restart</button>
+          )}
+          {employee.status !== "terminated" && employee.dropletId && (
+            <button className="btn-secondary btn-sm" onClick={handleReboot} disabled={actionLoading} style={{ gap: 6 }}><RotateCw size={14} /> Reboot</button>
+          )}
           {employee.status !== "terminated" && (
             <button className="btn-danger btn-sm" onClick={handleTerminate} disabled={actionLoading} style={{ gap: 6 }}><Trash2 size={14} /> Terminate</button>
+          )}
+          {employee.status === "terminated" && (
+            <button className="btn-primary btn-sm" onClick={handleReactivate} disabled={actionLoading} style={{ gap: 6 }}><Play size={14} /> Reactivate</button>
           )}
         </div>
       </div>
@@ -493,26 +897,50 @@ export default function EmployeeDetailPage() {
         <div className="card animate-in" style={{ padding: 32, textAlign: "center", marginBottom: 24, background: "#ffffff", border: "1px solid var(--border)" }}>
           <Loader2 size={40} style={{ color: "var(--blue)", animation: "spin 2s linear infinite", marginBottom: 16 }} />
           <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
-          <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 8, color: "var(--text)" }}>Setting up {employee.name}&apos;s workstation...</h3>
+          <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 8, color: "var(--text)" }}>
+            {employee.dropletId ? `Rebooting ${employee.name}'s server...` : `Setting up ${employee.name}'s workstation...`}
+          </h3>
           <p style={{ color: "var(--text-secondary)", fontSize: 14, maxWidth: 400, margin: "0 auto" }}>
-            Spinning up an isolated environment, installing tools, and configuring accounts.
+            {employee.dropletId
+              ? "Power-cycling the server and waiting for it to come back online. This usually takes 1-2 minutes."
+              : "Spinning up an isolated environment, installing tools, and configuring accounts."}
           </p>
           <div style={{ marginTop: 24, height: 3, background: "var(--border)", borderRadius: 2, overflow: "hidden", maxWidth: 300, margin: "24px auto 0" }}>
             <div style={{ height: "100%", width: "60%", background: "var(--blue)", borderRadius: 2, animation: "shimmer 2s ease-in-out infinite" }} />
           </div>
+          <button
+            className="btn-secondary btn-sm"
+            onClick={handleRestart}
+            disabled={actionLoading}
+            style={{ marginTop: 20, fontSize: 12 }}
+          >
+            {actionLoading ? "Restarting..." : "Retry"}
+          </button>
         </div>
       )}
 
       {/* Error state */}
-      {employee.status === "error" && employee.errorMessage && (
+      {employee.status === "error" && (
         <div className="card" style={{ padding: 20, marginBottom: 24, borderColor: "rgba(220, 38, 38, 0.15)", background: "rgba(220, 38, 38, 0.04)" }}>
           <div style={{ fontWeight: 600, color: "var(--red)", marginBottom: 6, fontSize: 14 }}>Error</div>
-          <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>{employee.errorMessage}</div>
+          {employee.errorMessage && (
+            <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 12 }}>{employee.errorMessage}</div>
+          )}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button className="btn-primary btn-sm" onClick={handleRestart} disabled={actionLoading} style={{ gap: 6 }}>
+              <RefreshCw size={14} /> Restart
+            </button>
+            {employee.dropletId && (
+              <button className="btn-secondary btn-sm" onClick={handleReboot} disabled={actionLoading} style={{ gap: 6 }}>
+                <RotateCw size={14} /> Reboot Server
+              </button>
+            )}
+          </div>
         </div>
       )}
 
       {/* Details grid */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+      <div className="emp-grid-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
         <div className="card" style={{ padding: 20, background: "#ffffff", border: "1px solid var(--border)" }}>
           <p className="label" style={{ marginBottom: 12 }}>Persona</p>
           <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6, maxHeight: 200, overflow: "auto" }}>
@@ -527,10 +955,48 @@ export default function EmployeeDetailPage() {
         </div>
       </div>
 
+      {/* Approval Mode Toggle */}
+      <div className="card" style={{ padding: "16px 20px", marginBottom: 16, background: "#ffffff", border: "1px solid var(--border)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 14, color: "var(--text)" }}>Require approval for batch work</div>
+            <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>
+              {employee.name} must get your OK before continuing with repetitive tasks (videos, posts, reports, etc.)
+            </div>
+          </div>
+          <button
+            onClick={async () => {
+              const pc = (employee.personalityConfig as any) || {};
+              const newVal = !pc.approvalMode;
+              try {
+                const res = await api.updateEmployee(employee.id, {
+                  personalityConfig: { ...pc, approvalMode: newVal },
+                });
+                setEmployee(res.employee);
+              } catch (err: any) {
+                alert(`Failed: ${err.message}`);
+              }
+            }}
+            style={{
+              width: 44, height: 24, borderRadius: 12, border: "none", cursor: "pointer", flexShrink: 0,
+              background: (employee.personalityConfig as any)?.approvalMode ? "var(--blue, #2563eb)" : "var(--border, #e5e5e5)",
+              position: "relative", transition: "background 0.2s",
+            }}
+          >
+            <div style={{
+              width: 18, height: 18, borderRadius: 9, background: "#fff",
+              position: "absolute", top: 3,
+              left: (employee.personalityConfig as any)?.approvalMode ? 23 : 3,
+              transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+            }} />
+          </button>
+        </div>
+      </div>
+
       {/* Technical details */}
       <div className="card" style={{ padding: 20, marginBottom: 16, background: "#ffffff", border: "1px solid var(--border)" }}>
         <p className="label" style={{ marginBottom: 16 }}>Technical Details</p>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, fontSize: 13 }}>
+        <div className="emp-grid-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, fontSize: 13 }}>
           {[
             { icon: Server, label: "Container", value: employee.containerName || "\u2014" },
             { icon: Server, label: "Host", value: employee.containerHost ? `${employee.containerHost}:${employee.containerPort}` : "\u2014" },
@@ -552,6 +1018,252 @@ export default function EmployeeDetailPage() {
           })}
         </div>
       </div>
+
+      {/* ════════════════════════════════════════════════════════════ */}
+      {/* BROWSER EXTENSION RELAY */}
+      {/* ════════════════════════════════════════════════════════════ */}
+      {relayInfo?.available && (
+        <div className="card" style={{ padding: 20, marginBottom: 16, background: "#ffffff", border: "1px solid var(--border)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <Monitor size={14} style={{ color: "var(--text-tertiary)" }} />
+              <p className="label" style={{ margin: 0 }}>Browser Extension Relay</p>
+            </div>
+            {extensionStatus === "connected" && (
+              <span style={{ fontSize: 11, color: "var(--green)", display: "flex", alignItems: "center", gap: 4 }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--green)", display: "inline-block" }} />
+                Connected
+              </span>
+            )}
+          </div>
+
+          <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 14 }}>
+            Connect your Chrome browser to {employee.name} so they can browse websites using your real browser session (bypasses bot detection, uses your logins).
+          </div>
+
+          {/* One-click connect button */}
+          <div style={{ marginBottom: 16 }}>
+            <button
+              onClick={async () => {
+                setExtensionStatus("connecting");
+                setExtensionError(null);
+                // The extension ID — auto-detected via content script or manually saved
+                let extensionId = (window as any).__BLITZER_EXTENSION_ID || localStorage.getItem("blitzer_extension_id");
+                if (!extensionId) {
+                  // Try ping/pong detection — the content script may not have set the global yet
+                  const detected = await new Promise<string | null>((resolve) => {
+                    const timeout = setTimeout(() => resolve(null), 1500);
+                    const handler = (e: Event) => {
+                      clearTimeout(timeout);
+                      window.removeEventListener("blitzer-extension-pong", handler);
+                      resolve((e as CustomEvent).detail?.extensionId || null);
+                    };
+                    window.addEventListener("blitzer-extension-pong", handler);
+                    window.dispatchEvent(new Event("blitzer-extension-ping"));
+                  });
+                  if (detected) {
+                    extensionId = detected;
+                    localStorage.setItem("blitzer_extension_id", detected);
+                  }
+                }
+                if (!extensionId) {
+                  setExtensionStatus("not-installed");
+                  setExtensionError("Extension not detected. Install the Blitzer AI extension, then enter its ID below.");
+                  return;
+                }
+                try {
+                  const chromeApi = (globalThis as any).chrome;
+                  if (!chromeApi?.runtime?.sendMessage) throw new Error("no chrome API");
+                  chromeApi.runtime.sendMessage(
+                    extensionId,
+                    {
+                      action: "connect",
+                      employeeId,
+                      employeeName: relayInfo.employeeName || employee.name,
+                      wsUrl: relayInfo.wsUrl,
+                      relayToken: relayInfo.relayToken,
+                      gatewayToken: relayInfo.gatewayToken,
+                      apiBaseUrl: window.location.origin,
+                      authToken: localStorage.getItem("token") || "",
+                    },
+                    (response: any) => {
+                      if (chromeApi.runtime.lastError) {
+                        setExtensionStatus("not-installed");
+                        setExtensionError("Could not reach extension. Make sure it's installed and the ID is correct.");
+                        return;
+                      }
+                      if (response?.ok) {
+                        setExtensionStatus("connected");
+                      } else {
+                        setExtensionStatus("error");
+                        setExtensionError(response?.error || "Connection failed");
+                      }
+                    },
+                  );
+                } catch {
+                  setExtensionStatus("not-installed");
+                  setExtensionError("Chrome extension API not available. Are you using Chrome?");
+                }
+              }}
+              disabled={extensionStatus === "connecting"}
+              style={{
+                width: "100%",
+                padding: "10px 16px",
+                background: extensionStatus === "connected" ? "var(--green)" : "var(--text)",
+                color: "#fff",
+                border: "none",
+                borderRadius: "var(--radius-md)",
+                fontSize: 13,
+                fontWeight: 500,
+                cursor: extensionStatus === "connecting" ? "wait" : "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+              }}
+            >
+              {extensionStatus === "connecting" && "Connecting..."}
+              {extensionStatus === "connected" && <><Check size={14} /> Connected to {employee.name}</>}
+              {(extensionStatus === "idle" || extensionStatus === "error" || extensionStatus === "not-installed") && (
+                <><Monitor size={14} /> Connect Chrome Extension</>
+              )}
+            </button>
+
+            {extensionStatus === "not-installed" && (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 12, color: "#ef4444", marginBottom: 8 }}>{extensionError}</div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <input
+                    type="text"
+                    placeholder="Paste extension ID here"
+                    style={{
+                      flex: 1, fontSize: 12, padding: "6px 10px",
+                      border: "1px solid var(--border)", borderRadius: "var(--radius-sm)",
+                      background: "var(--bg-secondary)", color: "var(--text)",
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        const id = (e.target as HTMLInputElement).value.trim();
+                        if (id) {
+                          localStorage.setItem("blitzer_extension_id", id);
+                          setExtensionStatus("idle");
+                          setExtensionError(null);
+                        }
+                      }
+                    }}
+                  />
+                  <button
+                    onClick={() => {
+                      const input = document.querySelector('input[placeholder="Paste extension ID here"]') as HTMLInputElement;
+                      if (input?.value.trim()) {
+                        localStorage.setItem("blitzer_extension_id", input.value.trim());
+                        setExtensionStatus("idle");
+                        setExtensionError(null);
+                      }
+                    }}
+                    style={{
+                      padding: "6px 12px", fontSize: 12, background: "var(--bg-secondary)",
+                      border: "1px solid var(--border)", borderRadius: "var(--radius-sm)",
+                      cursor: "pointer", color: "var(--text)",
+                    }}
+                  >
+                    Save
+                  </button>
+                </div>
+                <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 6 }}>
+                  Find the ID in <code style={{ fontSize: 10, background: "var(--bg-secondary)", padding: "1px 4px", borderRadius: 3 }}>chrome://extensions</code> after loading the extension.
+                </div>
+              </div>
+            )}
+
+            {extensionStatus === "error" && extensionError && (
+              <div style={{ fontSize: 12, color: "#ef4444", marginTop: 8 }}>{extensionError}</div>
+            )}
+          </div>
+
+          {/* Collapsible manual setup */}
+          <details style={{ marginTop: 4 }}>
+            <summary style={{ fontSize: 12, color: "var(--text-tertiary)", cursor: "pointer", marginBottom: 10 }}>
+              Manual setup (CLI)
+            </summary>
+
+            {/* Gateway URL */}
+            <div style={{ marginBottom: 10 }}>
+              <label style={{ fontSize: 12, color: "var(--text-tertiary)", display: "block", marginBottom: 4 }}>Gateway URL</label>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <code style={{
+                  flex: 1, fontSize: 11, background: "var(--bg-secondary)", padding: "6px 10px",
+                  borderRadius: "var(--radius-sm)", border: "1px solid var(--border)",
+                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)",
+                }}>
+                  {relayInfo.gatewayUrl}
+                </code>
+                <button
+                  onClick={() => copyRelayValue("url", relayInfo.gatewayUrl!)}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: copiedRelay === "url" ? "var(--green)" : "var(--text-tertiary)", padding: 4, flexShrink: 0 }}
+                  title="Copy URL"
+                >
+                  {copiedRelay === "url" ? <Check size={13} /> : <Copy size={13} />}
+                </button>
+              </div>
+            </div>
+
+            {/* Gateway Token */}
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 12, color: "var(--text-tertiary)", display: "block", marginBottom: 4 }}>Gateway Token</label>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <code style={{
+                  flex: 1, fontSize: 11, background: "var(--bg-secondary)", padding: "6px 10px",
+                  borderRadius: "var(--radius-sm)", border: "1px solid var(--border)",
+                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)",
+                }}>
+                  {showRelayToken ? relayInfo.gatewayToken : "\u2022".repeat(32)}
+                </code>
+                <button
+                  onClick={() => setShowRelayToken(!showRelayToken)}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", padding: 4, flexShrink: 0 }}
+                  title={showRelayToken ? "Hide token" : "Show token"}
+                >
+                  {showRelayToken ? <EyeOff size={13} /> : <Eye size={13} />}
+                </button>
+                <button
+                  onClick={() => copyRelayValue("token", relayInfo.gatewayToken!)}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: copiedRelay === "token" ? "var(--green)" : "var(--text-tertiary)", padding: 4, flexShrink: 0 }}
+                  title="Copy token"
+                >
+                  {copiedRelay === "token" ? <Check size={13} /> : <Copy size={13} />}
+                </button>
+              </div>
+            </div>
+
+            {/* Quick command */}
+            <div style={{
+              background: "var(--bg-secondary)", borderRadius: "var(--radius-md)",
+              padding: 12, border: "1px solid var(--border)",
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>Run this on your local machine:</span>
+                <button
+                  onClick={() => copyRelayValue("cmd", relayInfo.command!)}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: copiedRelay === "cmd" ? "var(--green)" : "var(--text-tertiary)", padding: 2, fontSize: 11, display: "flex", alignItems: "center", gap: 4 }}
+                >
+                  {copiedRelay === "cmd" ? <><Check size={11} /> Copied</> : <><Copy size={11} /> Copy</>}
+                </button>
+              </div>
+              <code style={{
+                display: "block", fontSize: 11, color: "var(--text)", lineHeight: 1.6,
+                wordBreak: "break-all", fontFamily: "monospace",
+              }}>
+                {relayInfo.command}
+              </code>
+            </div>
+          </details>
+
+          <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 10 }}>
+            After connecting, {employee.name} can use <code style={{ fontSize: 10, background: "var(--bg-secondary)", padding: "1px 4px", borderRadius: 3 }}>--browser-profile chrome</code> to control your real Chrome browser.
+          </div>
+        </div>
+      )}
 
       {/* ════════════════════════════════════════════════════════════ */}
       {/* CHANNELS SECTION */}
@@ -774,6 +1486,264 @@ export default function EmployeeDetailPage() {
       </div>
 
       {/* ════════════════════════════════════════════════════════════ */}
+      {/* CAPABILITIES SECTION */}
+      {/* ════════════════════════════════════════════════════════════ */}
+      <div className="card" style={{ padding: 20, marginBottom: 16, background: "#ffffff", border: "1px solid var(--border)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Cpu size={14} style={{ color: "var(--text-tertiary)" }} />
+            <p className="label" style={{ margin: 0 }}>Capabilities</p>
+            <span style={{ fontSize: 11, color: "var(--text-tertiary)", background: "var(--bg-secondary)", padding: "2px 6px", borderRadius: "var(--radius-sm)" }}>
+              {capabilitiesList.length}
+            </span>
+          </div>
+        </div>
+
+        {capabilitiesNotice && (
+          <div style={{
+            padding: "8px 12px", borderRadius: "var(--radius-md)", marginBottom: 12, fontSize: 13,
+            background: capabilitiesNotice.type === "success" ? "rgba(34, 197, 94, 0.08)" : "rgba(220, 38, 38, 0.08)",
+            color: capabilitiesNotice.type === "success" ? "var(--green)" : "var(--red)",
+            border: `1px solid ${capabilitiesNotice.type === "success" ? "rgba(34, 197, 94, 0.15)" : "rgba(220, 38, 38, 0.15)"}`,
+          }}>
+            {capabilitiesNotice.message}
+          </div>
+        )}
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 8 }}>
+          {CAPABILITY_OPTIONS.map((cap) => {
+            const active = capabilitiesList.includes(cap.id);
+            const tier = (employee?.tier || "junior") as EmployeeTier;
+            const price = getAddonPrice("capabilities", cap.id, tier);
+            return (
+              <div
+                key={cap.id}
+                onClick={() => !capabilitiesSaving && handleToggleCapability(cap.id)}
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: "var(--radius-md)",
+                  border: `1px solid ${active ? "var(--blue)" : "var(--border)"}`,
+                  background: active ? "rgba(59, 130, 246, 0.04)" : "#ffffff",
+                  cursor: capabilitiesSaving ? "wait" : "pointer",
+                  opacity: capabilitiesSaving ? 0.6 : 1,
+                  transition: "all 0.15s",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontSize: 13, fontWeight: 500, color: active ? "var(--blue)" : "var(--text)" }}>
+                    {cap.label}
+                  </span>
+                  {active ? <ToggleRight size={16} style={{ color: "var(--blue)" }} /> : <ToggleLeft size={16} style={{ color: "var(--text-tertiary)" }} />}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 4 }}>
+                  {cap.desc}
+                </div>
+                {price !== "free" && (
+                  <div style={{ fontSize: 11, fontWeight: 500, color: "var(--orange, #f59e0b)", marginTop: 4 }}>
+                    +${price}/mo
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ════════════════════════════════════════════════════════════ */}
+      {/* SKILLS SECTION */}
+      {/* ════════════════════════════════════════════════════════════ */}
+      <div className="card" style={{ padding: 20, marginBottom: 16, background: "#ffffff", border: "1px solid var(--border)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Sparkles size={14} style={{ color: "var(--text-tertiary)" }} />
+            <p className="label" style={{ margin: 0 }}>Skills</p>
+            <span style={{ fontSize: 11, color: "var(--text-tertiary)", background: "var(--bg-secondary)", padding: "2px 6px", borderRadius: "var(--radius-sm)" }}>
+              {skillsList.length}
+            </span>
+          </div>
+          {!showInstallSkill && (
+            <button
+              className="btn-secondary btn-sm"
+              onClick={() => setShowInstallSkill(true)}
+              style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
+            >
+              <Plus size={12} /> Install Skill
+            </button>
+          )}
+        </div>
+
+        {/* Skill notice */}
+        {skillNotice && (
+          <div style={{
+            padding: "8px 12px", borderRadius: "var(--radius-md)", marginBottom: 12, fontSize: 13,
+            background: skillNotice.type === "success" ? "rgba(34, 197, 94, 0.08)" : "rgba(220, 38, 38, 0.08)",
+            color: skillNotice.type === "success" ? "var(--green)" : "var(--red)",
+            border: `1px solid ${skillNotice.type === "success" ? "rgba(34, 197, 94, 0.15)" : "rgba(220, 38, 38, 0.15)"}`,
+          }}>
+            {skillNotice.message}
+          </div>
+        )}
+
+        {/* Install skill form */}
+        {showInstallSkill && (
+          <div style={{ background: "var(--bg-secondary)", borderRadius: "var(--radius-md)", padding: 16, marginBottom: 16, display: "flex", flexDirection: "column", gap: 12, border: "1px solid var(--border)" }}>
+            {/* Mode toggle */}
+            <div style={{ display: "flex", gap: 6 }}>
+              <button
+                onClick={() => setInstallMode("slug")}
+                style={{
+                  fontSize: 12, padding: "4px 12px", borderRadius: "var(--radius-sm)",
+                  background: installMode === "slug" ? "var(--blue)" : "transparent",
+                  color: installMode === "slug" ? "#fff" : "var(--text-secondary)",
+                  border: `1px solid ${installMode === "slug" ? "var(--blue)" : "var(--border)"}`,
+                  cursor: "pointer",
+                }}
+              >
+                By Name
+              </button>
+              <button
+                onClick={() => setInstallMode("upload")}
+                style={{
+                  fontSize: 12, padding: "4px 12px", borderRadius: "var(--radius-sm)",
+                  background: installMode === "upload" ? "var(--blue)" : "transparent",
+                  color: installMode === "upload" ? "#fff" : "var(--text-secondary)",
+                  border: `1px solid ${installMode === "upload" ? "var(--blue)" : "var(--border)"}`,
+                  cursor: "pointer",
+                }}
+              >
+                Upload SKILL.md
+              </button>
+            </div>
+
+            <div>
+              <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>
+                Skill Slug
+              </label>
+              <input
+                type="text"
+                placeholder="e.g., linkedin-posting"
+                value={newSkillSlug}
+                onChange={(e) => setNewSkillSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
+                className="input"
+                style={{ width: "100%", fontSize: 13, fontFamily: "monospace" }}
+              />
+              <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 4 }}>
+                Lowercase letters, numbers, and hyphens only (e.g. <code style={{ fontSize: 10, background: "#ffffff", padding: "1px 4px", borderRadius: 3 }}>my-custom-skill</code>)
+              </div>
+            </div>
+
+            {installMode === "upload" && (
+              <>
+                <div>
+                  <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>
+                    Upload skill files (SKILL.md + optional scripts/templates)
+                  </label>
+                  <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                    <label style={{
+                      fontSize: 12, padding: "6px 12px", borderRadius: "var(--radius-sm)",
+                      background: "#ffffff", border: "1px solid var(--border)", cursor: "pointer",
+                      display: "flex", alignItems: "center", gap: 6, color: "var(--text-secondary)",
+                    }}>
+                      <Upload size={12} /> Choose Files
+                      <input
+                        type="file"
+                        accept=".md,.txt,.py,.sh,.js,.ts,.json,.yaml,.yml,.html,.css,.sql,.csv"
+                        multiple
+                        onChange={handleSkillFileUpload}
+                        style={{ display: "none" }}
+                      />
+                    </label>
+                  </div>
+                  <textarea
+                    placeholder={"# My Skill\n\nDescribe what this skill does...\n\n## When to Use This Skill\n\n## Process\n\n### Step 1: ..."}
+                    value={newSkillContent}
+                    onChange={(e) => setNewSkillContent(e.target.value)}
+                    className="input"
+                    rows={8}
+                    style={{ width: "100%", fontSize: 12, resize: "vertical", fontFamily: "monospace", lineHeight: 1.5 }}
+                  />
+                  {skillExtraFiles.length > 0 && (
+                    <div style={{ marginTop: 8 }}>
+                      <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>Additional files:</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                        {skillExtraFiles.map((f) => (
+                          <span key={f.name} style={{
+                            fontSize: 11, fontFamily: "monospace", background: "#ffffff", padding: "2px 8px",
+                            borderRadius: "var(--radius-sm)", border: "1px solid var(--border)", display: "inline-flex", alignItems: "center", gap: 4,
+                          }}>
+                            {f.name}
+                            <button onClick={() => setSkillExtraFiles((prev) => prev.filter((p) => p.name !== f.name))} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, color: "var(--text-tertiary)", lineHeight: 1 }}>
+                              <X size={10} />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                className="btn-primary btn-sm"
+                onClick={handleInstallSkill}
+                disabled={skillSaving || !newSkillSlug.trim() || (installMode === "upload" && !newSkillContent.trim())}
+                style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
+              >
+                <Save size={12} /> {skillSaving ? "Installing..." : "Install"}
+              </button>
+              <button
+                className="btn-secondary btn-sm"
+                onClick={() => { setShowInstallSkill(false); setNewSkillSlug(""); setNewSkillContent(""); setSkillExtraFiles([]); setSkillNotice(null); }}
+                style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
+              >
+                <X size={12} /> Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Skills list */}
+        {skillsList.length === 0 && !showInstallSkill ? (
+          <div style={{ fontSize: 13, color: "var(--text-tertiary)", lineHeight: 1.6 }}>
+            No custom skills installed. Skills teach {employee.name} repeatable processes — install from ClawHub or upload your own SKILL.md files.
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {skillsList.map((skill) => (
+              <div key={skill.id} style={{
+                padding: "10px 12px", background: skill.enabled ? "#ffffff" : "var(--bg-secondary)", borderRadius: "var(--radius-md)",
+                border: "1px solid var(--border)",
+                opacity: skill.enabled ? 1 : 0.6,
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <Sparkles size={13} style={{ color: "var(--blue)" }} />
+                    <span style={{ fontSize: 13, fontWeight: 500, fontFamily: "monospace", color: "var(--text)" }}>{skill.skillSlug}</span>
+                    <span style={{ fontSize: 10, color: "var(--text-tertiary)", background: "var(--bg-secondary)", padding: "1px 6px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border)" }}>
+                      {skill.source}
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <button onClick={() => handleToggleSkill(skill)} style={{ background: "none", border: "none", cursor: "pointer", color: skill.enabled ? "var(--green)" : "var(--text-tertiary)", padding: 2 }} title={skill.enabled ? "Disable" : "Enable"}>
+                      {skill.enabled ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
+                    </button>
+                    <button onClick={() => handleUninstallSkill(skill.skillSlug)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", padding: 2 }} title="Uninstall">
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </div>
+                <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 4 }}>
+                  Installed {new Date(skill.createdAt).toLocaleDateString()}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ════════════════════════════════════════════════════════════ */}
       {/* TRIGGERS / WEBHOOKS SECTION */}
       {/* ════════════════════════════════════════════════════════════ */}
       <div className="card" style={{ padding: 20, marginBottom: 16, background: "#ffffff", border: "1px solid var(--border)" }}>
@@ -822,7 +1792,7 @@ export default function EmployeeDetailPage() {
         {/* New trigger form */}
         {showNewTrigger && (
           <div style={{ background: "var(--bg-secondary)", borderRadius: "var(--radius-md)", padding: 16, marginBottom: 16, display: "flex", flexDirection: "column", gap: 12, border: "1px solid var(--border)" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div className="emp-grid-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div>
                 <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Type</label>
                 <div style={{ position: "relative" }}>
@@ -965,7 +1935,7 @@ export default function EmployeeDetailPage() {
             <KeyRound size={14} style={{ color: "var(--text-tertiary)" }} />
             <p className="label" style={{ margin: 0 }}>Logins &amp; Passwords</p>
             <span style={{ fontSize: 11, color: "var(--text-tertiary)", background: "var(--bg-secondary)", padding: "2px 6px", borderRadius: "var(--radius-sm)" }}>
-              {credentialsList.length}
+              {credentialsList.filter((c) => c.type !== "api_key").length}
             </span>
           </div>
           {!showNewCred && (
@@ -999,7 +1969,7 @@ export default function EmployeeDetailPage() {
               <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Label</label>
               <input type="text" placeholder="e.g., Company CRM, GitHub, Trello" value={credLabel} onChange={(e) => setCredLabel(e.target.value)} className="input" style={{ width: "100%", fontSize: 13 }} />
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div className="emp-grid-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div>
                 <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Username / Email</label>
                 <input type="text" placeholder="username or email" value={credUsername} onChange={(e) => setCredUsername(e.target.value)} className="input" style={{ width: "100%", fontSize: 13 }} />
@@ -1046,13 +2016,13 @@ export default function EmployeeDetailPage() {
         )}
 
         {/* Credentials list */}
-        {credentialsList.length === 0 && !showNewCred ? (
+        {credentialsList.filter((c) => c.type !== "api_key").length === 0 && !showNewCred ? (
           <div style={{ fontSize: 13, color: "var(--text-tertiary)", lineHeight: 1.6 }}>
             No logins stored. Add usernames and passwords here so {employee.name} can log into websites and services on your behalf.
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {credentialsList.map((cred) => (
+            {credentialsList.filter((c) => c.type !== "api_key").map((cred) => (
               <div key={cred.id} style={{
                 padding: "10px 12px", background: "#ffffff", borderRadius: "var(--radius-md)",
                 border: "1px solid var(--border)",
@@ -1093,6 +2063,129 @@ export default function EmployeeDetailPage() {
 
         <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 10 }}>
           Credentials are securely stored and available to the employee for logging into websites and services.
+        </div>
+      </div>
+
+      {/* ════════════════════════════════════════════════════════════ */}
+      {/* API KEYS */}
+      {/* ════════════════════════════════════════════════════════════ */}
+      <div className="card" style={{ padding: 20, marginBottom: 16, background: "#ffffff", border: "1px solid var(--border)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Zap size={14} style={{ color: "var(--text-tertiary)" }} />
+            <p className="label" style={{ margin: 0 }}>API Keys</p>
+            <span style={{ fontSize: 11, color: "var(--text-tertiary)", background: "var(--bg-secondary)", padding: "2px 6px", borderRadius: "var(--radius-sm)" }}>
+              {credentialsList.filter((c) => c.type === "api_key").length}
+            </span>
+          </div>
+          {!showNewApiKey && (
+            <button
+              className="btn-secondary btn-sm"
+              onClick={() => { resetApiKeyForm(); setShowNewApiKey(true); }}
+              style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
+            >
+              <Plus size={12} /> Add API Key
+            </button>
+          )}
+        </div>
+
+        {apiKeyNotice && (
+          <div style={{
+            padding: "8px 12px", borderRadius: "var(--radius-sm)", marginBottom: 12, fontSize: 12,
+            background: apiKeyNotice.type === "success" ? "rgba(22, 163, 74, 0.06)" : "rgba(220, 38, 38, 0.06)",
+            color: apiKeyNotice.type === "success" ? "var(--green)" : "var(--red)",
+          }}>
+            {apiKeyNotice.message}
+          </div>
+        )}
+
+        {/* Add / edit API key form */}
+        {showNewApiKey && (
+          <div style={{ background: "var(--bg-secondary)", borderRadius: "var(--radius-md)", padding: 16, marginBottom: 16, display: "flex", flexDirection: "column", gap: 12, border: "1px solid var(--border)" }}>
+            <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 2, color: "var(--text)" }}>
+              {editingApiKeyId ? "Edit API Key" : "New API Key"}
+            </div>
+            <div>
+              <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Service Name</label>
+              <input type="text" placeholder="e.g., OpenAI, Stripe, GitHub, Twilio" value={apiKeyLabel} onChange={(e) => setApiKeyLabel(e.target.value)} className="input" style={{ width: "100%", fontSize: 13 }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>API Key</label>
+              <div style={{ position: "relative" }}>
+                <input
+                  type={showApiKeyValue ? "text" : "password"}
+                  placeholder={editingApiKeyId ? "Leave blank to keep current" : "sk-... or paste your API key"}
+                  value={apiKeyValue}
+                  onChange={(e) => setApiKeyValue(e.target.value)}
+                  className="input"
+                  style={{ width: "100%", fontSize: 13, paddingRight: 36, fontFamily: "monospace" }}
+                />
+                <button type="button" onClick={() => setShowApiKeyValue(!showApiKeyValue)} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", padding: 4 }}>
+                  {showApiKeyValue ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+            </div>
+            <div>
+              <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Notes (optional)</label>
+              <input type="text" placeholder="e.g., rate limit tier, expiration date" value={apiKeyNotes} onChange={(e) => setApiKeyNotes(e.target.value)} className="input" style={{ width: "100%", fontSize: 13 }} />
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                className="btn-primary btn-sm"
+                onClick={handleSaveApiKey}
+                disabled={apiKeySaving || !apiKeyLabel || (!apiKeyValue && !editingApiKeyId)}
+                style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
+              >
+                <Save size={12} /> {apiKeySaving ? "Saving..." : "Save"}
+              </button>
+              <button className="btn-secondary btn-sm" onClick={resetApiKeyForm} style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
+                <X size={12} /> Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* API Keys list */}
+        {credentialsList.filter((c) => c.type === "api_key").length === 0 && !showNewApiKey ? (
+          <div style={{ fontSize: 13, color: "var(--text-tertiary)", lineHeight: 1.6 }}>
+            No API keys stored. Add API keys for external services (OpenAI, Stripe, etc.) so {employee.name} can use them.
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {credentialsList.filter((c) => c.type === "api_key").map((cred) => (
+              <div key={cred.id} style={{
+                padding: "10px 12px", background: "#ffffff", borderRadius: "var(--radius-md)",
+                border: "1px solid var(--border)",
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <Zap size={13} style={{ color: "var(--blue)" }} />
+                    <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text)" }}>{cred.label}</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <button onClick={() => handleEditApiKey(cred)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", padding: 2 }} title="Edit">
+                      <Edit3 size={13} />
+                    </button>
+                    <button onClick={() => handleDeleteApiKey(cred.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", padding: 2 }} title="Delete">
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </div>
+                <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 6, display: "flex", flexWrap: "wrap", gap: "4px 16px" }}>
+                  <span><span style={{ color: "var(--text-tertiary)" }}>Key:</span> <code style={{ fontSize: 11, background: "var(--bg-secondary)", padding: "1px 4px", borderRadius: 3 }}>{cred.hasApiKey ? "••••••••••••" : "Not set"}</code></span>
+                </div>
+                {cred.notes && (
+                  <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 4, fontStyle: "italic" }}>
+                    {cred.notes}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 10 }}>
+          API keys are securely stored alongside credentials and synced to the employee&apos;s environment.
         </div>
       </div>
 

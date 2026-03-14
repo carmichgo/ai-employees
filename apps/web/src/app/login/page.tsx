@@ -57,7 +57,7 @@ export default function LoginPage() {
               marginBottom: 20,
             }}
           >
-            AI
+            B
           </div>
           <h1
             style={{
@@ -115,7 +115,20 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <label className="input-label">Password</label>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <label className="input-label">Password</label>
+                <Link
+                  href="/forgot-password"
+                  style={{
+                    fontSize: 12,
+                    color: "var(--text-secondary)",
+                    textDecoration: "none",
+                    fontWeight: 500,
+                  }}
+                >
+                  Forgot password?
+                </Link>
+              </div>
               <input
                 className="input"
                 type="password"
@@ -123,6 +136,20 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
               />
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: -4 }}>
+              <Link
+                href="/forgot-password"
+                style={{
+                  color: "var(--text-tertiary)",
+                  fontSize: 12,
+                  textDecoration: "none",
+                  fontWeight: 500,
+                }}
+              >
+                Forgot password?
+              </Link>
             </div>
 
             <button

@@ -1,4 +1,4 @@
-import type { EmployeeTier } from "./types/employee.js";
+import type { EmployeeTier, HostingMode } from "./types/employee.js";
 
 export const PLAN_LIMITS = {
   starter: { maxEmployees: 50, maxChannelsPerEmployee: 10 },
@@ -55,6 +55,23 @@ export const EMPLOYEE_TIERS: Record<EmployeeTier, EmployeeTierConfig> = {
 
 export const EMPLOYEE_TIER_OPTIONS: EmployeeTier[] = ["junior", "senior", "expert"];
 
+// ── BYOK (Bring Your Own Key) ────────────────────────
+// Users provide their own Anthropic + Gemini API keys.
+// They get model freedom and pay a flat infra-only fee.
+
+export const BYOK_PRICE_MONTHLY = 129; // $/mo per employee (infrastructure only)
+
+export const BYOK_MODEL_OPTIONS = [
+  { id: "anthropic/claude-opus-4-6", label: "Claude Opus 4.6", desc: "Most capable — deep reasoning, complex tasks", tier: "expert" },
+  { id: "anthropic/claude-sonnet-4-5-20250929", label: "Claude Sonnet 4.5", desc: "Balanced — fast and capable", tier: "senior" },
+  { id: "anthropic/claude-haiku-4-5-20251001", label: "Claude Haiku 4.5", desc: "Fast & affordable — simple tasks", tier: "junior" },
+] as const;
+
+export const HOSTING_MODE_OPTIONS: { id: HostingMode; label: string; desc: string }[] = [
+  { id: "managed", label: "Managed", desc: "We handle everything — API keys, billing, and credits included" },
+  { id: "byok", label: "Bring Your Own Key", desc: "Use your own Anthropic & Gemini API keys — flat $129/mo infrastructure fee" },
+];
+
 /** Get the model string for a given employee tier */
 export function getModelForTier(tier: EmployeeTier): string {
   return EMPLOYEE_TIERS[tier].model;
@@ -72,6 +89,108 @@ export const CONTAINER_RESOURCES = {
   enterprise: { memory: "8g", cpus: "4.0" },
 } as const;
 
+// ── Add-on Pricing ─────────────────────────────────────
+// Some channels, capabilities, and skills cost extra per month.
+// Higher tiers unlock some add-ons for free ("included").
+// "free" = included at no extra cost for that tier.
+// number = monthly add-on price for that tier.
+
+export type AddonPricing = Record<EmployeeTier, "free" | number>;
+
+export interface AddonConfig {
+  /** Map of item ID → per-tier pricing */
+  channels: Record<string, AddonPricing>;
+  capabilities: Record<string, AddonPricing>;
+  expertise: Record<string, AddonPricing>;
+}
+
+export const ADDON_PRICING: AddonConfig = {
+  channels: {
+    // Free for all tiers
+    slack:        { junior: "free", senior: "free", expert: "free" },
+    email:        { junior: "free", senior: "free", expert: "free" },
+    // Jr add-on, Sr+ included
+    telegram:     { junior: 9,      senior: "free", expert: "free" },
+    discord:      { junior: 9,      senior: "free", expert: "free" },
+    // Jr/Sr add-on, Expert included
+    whatsapp:     { junior: 19,     senior: 19,     expert: "free" },
+    teams:        { junior: 19,     senior: 19,     expert: "free" },
+    "google-chat":{ junior: 19,     senior: 19,     expert: "free" },
+    // Add-on for all tiers
+    signal:       { junior: 29,     senior: 29,     expert: 19 },
+    matrix:       { junior: 29,     senior: 29,     expert: 19 },
+  },
+  capabilities: {
+    // Free for all tiers
+    "web-browsing":    { junior: "free", senior: "free", expert: "free" },
+    "internet-search": { junior: "free", senior: "free", expert: "free" },
+    files:             { junior: "free", senior: "free", expert: "free" },
+    memory:            { junior: "free", senior: "free", expert: "free" },
+    // Jr add-on, Sr+ included
+    email:             { junior: 19,     senior: "free", expert: "free" },
+    "code-execution":  { junior: 19,     senior: "free", expert: "free" },
+    pdf:               { junior: 19,     senior: "free", expert: "free" },
+    // Jr/Sr add-on, Expert included
+    scheduling:        { junior: 29,     senior: 19,     expert: "free" },
+    // Add-on for all tiers (expensive resources)
+    "image-generation":{ junior: 29,     senior: 19,     expert: 9 },
+    "video-generation":{ junior: 49,     senior: 39,     expert: 29 },
+    "phone-calls":     { junior: 49,     senior: 39,     expert: 29 },
+  },
+  expertise: {
+    // Free for all tiers
+    "web-research":    { junior: "free", senior: "free", expert: "free" },
+    "email-outreach":  { junior: "free", senior: "free", expert: "free" },
+    writing:           { junior: "free", senior: "free", expert: "free" },
+    // Jr add-on, Sr+ included
+    "data-analytics":  { junior: 19,     senior: "free", expert: "free" },
+    "customer-support":{ junior: 19,     senior: "free", expert: "free" },
+    "file-documents":  { junior: 19,     senior: "free", expert: "free" },
+    // Jr/Sr add-on, Expert included
+    "code-engineering":{ junior: 29,     senior: 19,     expert: "free" },
+    "social-media":    { junior: 29,     senior: 19,     expert: "free" },
+    "project-management":{ junior: 29,   senior: 19,     expert: "free" },
+    // Add-on for all tiers
+    "sales-crm":       { junior: 39,     senior: 29,     expert: 19 },
+    "design-media":    { junior: 39,     senior: 29,     expert: 19 },
+    "scheduling-ops":  { junior: 39,     senior: 29,     expert: 19 },
+  },
+};
+
+/** Get the add-on price for an item, or "free" if included with the tier */
+export function getAddonPrice(
+  category: keyof AddonConfig,
+  itemId: string,
+  tier: EmployeeTier,
+): "free" | number {
+  const pricing = ADDON_PRICING[category][itemId];
+  if (!pricing) return "free";
+  return pricing[tier];
+}
+
+/** Calculate total monthly add-on cost for selected items */
+export function calculateAddonTotal(
+  tier: EmployeeTier,
+  channels: string[],
+  capabilities: string[],
+  expertise: string[],
+): number {
+  let total = 0;
+  for (const ch of channels) {
+    const price = getAddonPrice("channels", ch, tier);
+    if (price !== "free") total += price;
+  }
+  for (const cap of capabilities) {
+    const price = getAddonPrice("capabilities", cap, tier);
+    if (price !== "free") total += price;
+  }
+  for (const exp of expertise) {
+    const price = getAddonPrice("expertise", exp, tier);
+    if (price !== "free") total += price;
+  }
+  return total;
+}
+
 export const EMPLOYEE_STATUSES = [
   "provisioning",
   "onboarding",
@@ -88,6 +207,8 @@ export const CHANNEL_TYPES = [
   "whatsapp",
   "email",
   "webchat",
+  "voice-chat",
+  "phone",
   "signal",
   "teams",
   "google-chat",
@@ -111,13 +232,13 @@ export const CAPABILITY_OPTIONS: CapabilityOption[] = [
   { id: "web-browsing", label: "Browse websites", desc: "Visit websites, fill forms, extract data", toolsAllow: ["group:web", "browser", "web_fetch"] },
   { id: "internet-search", label: "Search the internet", desc: "Find information, news, and answers online", toolsAllow: ["web_search"] },
   { id: "email", label: "Send & receive emails", desc: "Read inbox, compose emails, manage threads", toolsAllow: ["group:messaging"], skills: ["himalaya"] },
-  { id: "files", label: "Create & edit files", desc: "Write documents, spreadsheets, and organize files", toolsAllow: ["group:fs"] },
+  { id: "files", label: "Create & edit files", desc: "Write documents, spreadsheets, PDFs, and organize files", toolsAllow: ["group:fs"], skills: ["nano-pdf"] },
   { id: "code-execution", label: "Write & run code", desc: "Execute scripts, install packages, use the terminal", toolsAllow: ["group:runtime"] },
   { id: "scheduling", label: "Schedule recurring tasks", desc: "Set up automated routines and reminders", toolsAllow: ["group:automation"] },
   { id: "memory", label: "Remember past work", desc: "Recall previous conversations, contacts, and context", toolsAllow: ["group:memory", "group:sessions"] },
-  { id: "images", label: "Create images & designs", desc: "Generate, edit, and analyze visual content", toolsAllow: ["image", "canvas"] },
+  { id: "image-generation", label: "AI Image Generation", desc: "Create images, illustrations, and designs on demand", toolsAllow: ["image", "canvas", "group:runtime"], skills: ["openai-image-gen", "gifgrep", "media-generation"] },
+  { id: "video-generation", label: "AI Video Generation", desc: "Generate video clips and animations from text prompts", toolsAllow: ["group:runtime"], skills: ["video-frames", "media-generation"] },
   { id: "phone-calls", label: "Make phone calls", desc: "Place and receive voice calls", toolsAllow: [], plugins: ["voice-call"] },
-  { id: "pdf", label: "Read & create PDFs", desc: "Generate reports, read documents, manipulate PDFs", toolsAllow: [], skills: ["nano-pdf"] },
 ];
 
 // ── Expertise Options ──────────────────────────────────
@@ -141,7 +262,5 @@ export const EXPERTISE_OPTIONS: ExpertiseOption[] = [
   { id: "project-management", label: "Project Management", desc: "Organize tasks, coordinate work, manage boards", skills: ["notion", "trello", "google"] },
   { id: "customer-support", label: "Customer Support", desc: "Handle tickets, write help docs, resolve issues", skills: ["himalaya", "summarize"] },
   { id: "sales-crm", label: "Sales & CRM", desc: "Find prospects, track deals, manage pipeline", skills: ["himalaya", "sag"] },
-  { id: "design-media", label: "Design & Media", desc: "Create images, edit videos, produce visual content", skills: ["openai-image-gen", "video-frames", "gifgrep"] },
   { id: "scheduling-ops", label: "Scheduling & Ops", desc: "Manage calendars, set reminders, automate workflows", skills: ["google"] },
-  { id: "file-documents", label: "Files & Documents", desc: "Read, write, organize files, create PDFs", skills: ["nano-pdf"] },
 ];
