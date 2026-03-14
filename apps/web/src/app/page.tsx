@@ -6,8 +6,6 @@ import {
   ArrowRight,
   Check,
   ChevronRight,
-  Download,
-  Chrome,
   Shield,
   Zap,
   Globe,
@@ -94,13 +92,37 @@ function Reveal({
       style={{
         opacity: visible ? 1 : 0,
         transform: visible ? "none" : transforms[direction],
-        transition: `opacity 0.7s cubic-bezier(0.16,1,0.3,1) ${delay}s, transform 0.7s cubic-bezier(0.16,1,0.3,1) ${delay}s`,
+        transition: `opacity 0.8s cubic-bezier(0.16,1,0.3,1) ${delay}s, transform 0.8s cubic-bezier(0.16,1,0.3,1) ${delay}s`,
         willChange: "opacity, transform",
       }}
     >
       {children}
     </div>
   );
+}
+
+/* ─── Animated gradient border ───────────────────── */
+function GradientBorder({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div className={`lp-gradient-border-wrap ${className}`}>
+      {children}
+    </div>
+  );
+}
+
+/* ─── Parallax mouse tracker for hero ────────────── */
+function useMouseParallax(intensity = 0.02) {
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      const x = (e.clientX - window.innerWidth / 2) * intensity;
+      const y = (e.clientY - window.innerHeight / 2) * intensity;
+      setOffset({ x, y });
+    };
+    window.addEventListener("mousemove", handler, { passive: true });
+    return () => window.removeEventListener("mousemove", handler);
+  }, [intensity]);
+  return offset;
 }
 
 /* ─── Animated counter ────────────────────────────── */
@@ -472,6 +494,7 @@ const USE_CASES = [
 export default function LandingPage() {
   const [navScrolled, setNavScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const mouseOffset = useMouseParallax(0.015);
 
   useEffect(() => {
     const h = () => setNavScrolled(window.scrollY > 20);
@@ -485,7 +508,7 @@ export default function LandingPage() {
       <nav className={`lp-nav ${navScrolled ? "lp-nav-scrolled" : ""}`}>
         <div className="lp-nav-inner">
           <Link href="/" className="lp-logo">
-            <div className="lp-logo-mark">B</div>
+            <div className="lp-logo-mark lp-logo-animated">B</div>
             <span className="lp-logo-text">Blitzer</span>
           </Link>
           <div className="lp-nav-links">
@@ -506,14 +529,6 @@ export default function LandingPage() {
             </a>
           </div>
           <div className="lp-nav-actions">
-            <a
-              href="/blitzer-chrome-extension.zip"
-              download
-              className="lp-nav-link"
-              style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
-            >
-              <Chrome size={14} /> Extension
-            </a>
             <Link href="/login" className="lp-nav-link">
               Sign In
             </Link>
@@ -547,7 +562,9 @@ export default function LandingPage() {
 
       {/* ── Hero ──────────────────────────────── */}
       <section className="lp-hero">
-        <div className="lp-hero-glow" />
+        <div className="lp-hero-glow" style={{ transform: `translate(calc(-50% + ${mouseOffset.x * 2}px), ${mouseOffset.y * 2}px)` }} />
+        <div className="lp-hero-orb lp-hero-orb-1" />
+        <div className="lp-hero-orb lp-hero-orb-2" />
         <div className="lp-hero-grid" />
         <div className="lp-hero-content">
           <Reveal delay={0}>
@@ -557,7 +574,7 @@ export default function LandingPage() {
             </div>
           </Reveal>
           <Reveal delay={0.1}>
-            <h1 className="lp-hero-title">
+            <h1 className="lp-hero-title lp-shimmer-text">
               Hire an AI
               <br />
               <TypingText
@@ -598,9 +615,9 @@ export default function LandingPage() {
         </div>
 
         {/* Floating role cards */}
-        <div className="lp-hero-float">
+        <div className="lp-hero-float" style={{ transform: `translate(${mouseOffset.x * 0.5}px, ${mouseOffset.y * 0.5}px)` }}>
           <Reveal delay={0.5} direction="scale">
-            <div className="lp-float-card lp-float-1">
+            <div className="lp-float-card lp-float-1 lp-glass-card">
               <div className="lp-float-icon-wrap" style={{ background: "var(--purple-muted)", color: "var(--purple)" }}>
                 <Megaphone size={18} />
               </div>
@@ -614,7 +631,7 @@ export default function LandingPage() {
             </div>
           </Reveal>
           <Reveal delay={0.6} direction="scale">
-            <div className="lp-float-card lp-float-2">
+            <div className="lp-float-card lp-float-2 lp-glass-card">
               <div className="lp-float-icon-wrap" style={{ background: "rgba(10,10,10,0.06)", color: "var(--text)" }}>
                 <Code size={18} />
               </div>
@@ -628,7 +645,7 @@ export default function LandingPage() {
             </div>
           </Reveal>
           <Reveal delay={0.7} direction="scale">
-            <div className="lp-float-card lp-float-3">
+            <div className="lp-float-card lp-float-3 lp-glass-card">
               <div className="lp-float-icon-wrap" style={{ background: "var(--green-muted)", color: "var(--green)" }}>
                 <TrendingUp size={18} />
               </div>
@@ -652,19 +669,27 @@ export default function LandingPage() {
           </p>
         </Reveal>
         <Reveal delay={0.1}>
-          <div className="lp-proof-logos">
-            {[
-              "Meridian Labs",
-              "Vantage Growth",
-              "SecureFlow",
-              "NovaTech",
-              "Apex Digital",
-              "Stratos AI",
-            ].map((name) => (
-              <div key={name} className="lp-proof-logo">
-                {name}
-              </div>
-            ))}
+          <div className="lp-marquee-wrap">
+            <div className="lp-marquee">
+              {[
+                "Meridian Labs",
+                "Vantage Growth",
+                "SecureFlow",
+                "NovaTech",
+                "Apex Digital",
+                "Stratos AI",
+                "Meridian Labs",
+                "Vantage Growth",
+                "SecureFlow",
+                "NovaTech",
+                "Apex Digital",
+                "Stratos AI",
+              ].map((name, i) => (
+                <div key={`${name}-${i}`} className="lp-proof-logo">
+                  {name}
+                </div>
+              ))}
+            </div>
           </div>
         </Reveal>
       </section>
@@ -716,11 +741,12 @@ export default function LandingPage() {
               desc: "Your AI employee gets their own isolated workstation and starts working immediately. Add more employees anytime — billing adjusts automatically.",
             },
           ].map((step, i) => (
-            <Reveal key={step.num} delay={i * 0.15} className="lp-step">
-              <div className="lp-step-icon">{step.icon}</div>
+            <Reveal key={step.num} delay={i * 0.15} className="lp-step lp-step-animated">
+              <div className="lp-step-icon lp-step-icon-animated">{step.icon}</div>
               <div className="lp-step-num">{step.num}</div>
               <h3 className="lp-step-title">{step.title}</h3>
               <p className="lp-step-desc">{step.desc}</p>
+              {i < 2 && <div className="lp-step-connector" />}
             </Reveal>
           ))}
         </div>
@@ -751,7 +777,7 @@ export default function LandingPage() {
               <div className="lp-use-case-icon">{uc.icon}</div>
               <h3 className="lp-use-case-title">{uc.title}</h3>
               <p className="lp-use-case-desc">{uc.desc}</p>
-              <div className="lp-use-case-stat">
+              <div className="lp-use-case-stat lp-stat-shimmer">
                 <Zap size={14} />
                 {uc.stats}
               </div>
@@ -1132,7 +1158,7 @@ export default function LandingPage() {
               direction="up"
               className="lp-security-card"
             >
-              <div className="lp-security-icon">{item.icon}</div>
+              <div className="lp-security-icon lp-icon-hover-rotate">{item.icon}</div>
               <h3 className="lp-security-title">{item.title}</h3>
               <p className="lp-security-desc">{item.desc}</p>
             </Reveal>
@@ -1206,7 +1232,7 @@ export default function LandingPage() {
               key={tier.name}
               delay={i * 0.12}
               direction="up"
-              className={`lp-price-card ${tier.popular ? "lp-price-popular" : ""}`}
+              className={`lp-price-card ${tier.popular ? "lp-price-popular lp-glow-border" : ""}`}
             >
               {tier.popular && (
                 <div className="lp-price-badge">Most Popular</div>
@@ -1407,101 +1433,6 @@ export default function LandingPage() {
         </Reveal>
       </section>
 
-      {/* ── Chrome Extension ──────────────────── */}
-      <section className="lp-section lp-section-alt" id="extension">
-        <div className="lp-feature-split">
-          <Reveal direction="left" className="lp-feature-text">
-            <span className="lp-section-label">Chrome Extension</span>
-            <h2 className="lp-feature-title">Connect your real browser</h2>
-            <p className="lp-feature-desc">
-              Install the Blitzer AI Chrome extension to let your AI employees
-              browse the web using your real browser session. They can bypass bot
-              detection, use your logged-in accounts, and interact with any
-              website — just like you would.
-            </p>
-            <ul className="lp-feature-list">
-              <li>
-                <Check size={16} /> Uses your real Chrome session
-              </li>
-              <li>
-                <Check size={16} /> Bypasses bot detection &amp; CAPTCHAs
-              </li>
-              <li>
-                <Check size={16} /> Access sites behind your logins
-              </li>
-              <li>
-                <Check size={16} /> One-click connect from the dashboard
-              </li>
-            </ul>
-            <div style={{ marginTop: 24 }}>
-              <a
-                href="/blitzer-chrome-extension.zip"
-                download
-                className="lp-btn-primary lp-btn-lg"
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 8,
-                }}
-              >
-                <Download size={16} /> Download Extension
-              </a>
-            </div>
-          </Reveal>
-          <Reveal direction="right" delay={0.2} className="lp-feature-visual">
-            <div className="lp-terminal">
-              <div className="lp-terminal-bar">
-                <span className="lp-terminal-dot lp-dot-red" />
-                <span className="lp-terminal-dot lp-dot-yellow" />
-                <span className="lp-terminal-dot lp-dot-green" />
-                <span className="lp-terminal-title">Chrome Extension</span>
-              </div>
-              <div className="lp-terminal-body">
-                <div className="lp-terminal-line">
-                  <span className="lp-t-prompt">1.</span> Download the extension
-                  (.zip)
-                </div>
-                <div className="lp-terminal-line">
-                  <span className="lp-t-prompt">2.</span> Unzip and open{" "}
-                  <span className="lp-t-success">chrome://extensions</span>
-                </div>
-                <div className="lp-terminal-line">
-                  <span className="lp-t-prompt">3.</span> Enable &quot;Developer
-                  mode&quot;
-                </div>
-                <div className="lp-terminal-line">
-                  <span className="lp-t-prompt">4.</span> Click &quot;Load
-                  unpacked&quot; → select folder
-                </div>
-                <div className="lp-terminal-line">
-                  <span className="lp-t-prompt">5.</span> Copy the Extension ID
-                </div>
-                <div
-                  className="lp-terminal-line lp-t-dim"
-                  style={{ marginTop: 8 }}
-                >
-                  Then in the dashboard:
-                </div>
-                <div className="lp-terminal-line">
-                  <span className="lp-t-prompt">6.</span> Go to employee →
-                  Browser Relay
-                </div>
-                <div className="lp-terminal-line">
-                  <span className="lp-t-prompt">7.</span> Click &quot;Connect
-                  Chrome Extension&quot;
-                </div>
-                <div
-                  className="lp-terminal-line lp-t-success"
-                  style={{ marginTop: 8 }}
-                >
-                  &nbsp;&nbsp;✓ Connected — browsing with your session
-                </div>
-              </div>
-            </div>
-          </Reveal>
-        </div>
-      </section>
-
       {/* ── FAQ ───────────────────────────────── */}
       <section className="lp-section" id="faq">
         <Reveal>
@@ -1529,6 +1460,8 @@ export default function LandingPage() {
       {/* ── Final CTA ─────────────────────────── */}
       <section className="lp-cta">
         <div className="lp-cta-glow" />
+        <div className="lp-cta-orb lp-cta-orb-1" />
+        <div className="lp-cta-orb lp-cta-orb-2" />
         <Reveal>
           <h2 className="lp-cta-title">Ready to build your AI team?</h2>
         </Reveal>
@@ -1583,7 +1516,7 @@ export default function LandingPage() {
               <a href="#roles">Roles</a>
               <a href="#capabilities">Capabilities</a>
               <a href="#pricing">Pricing</a>
-              <a href="#extension">Chrome Extension</a>
+              <a href="#security">Security</a>
             </div>
             <div className="lp-footer-col">
               <div className="lp-footer-heading">Resources</div>

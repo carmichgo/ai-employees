@@ -614,12 +614,12 @@ html {
   position: absolute;
   top: -200px;
   left: 50%;
-  transform: translateX(-50%);
-  width: 800px;
-  height: 600px;
-  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.04) 0%, rgba(0, 0, 0, 0.02) 40%, transparent 70%);
+  width: 900px;
+  height: 700px;
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.05) 0%, rgba(0, 0, 0, 0.02) 40%, transparent 70%);
   pointer-events: none;
   animation: lp-glow-pulse 8s ease-in-out infinite;
+  transition: transform 0.3s ease-out;
 }
 
 .lp-hero-grid {
@@ -1535,9 +1535,10 @@ html {
 /* ── CTA ──────────────────────────────────── */
 .lp-cta {
   position: relative;
-  padding: 120px 24px;
+  padding: 140px 24px;
   text-align: center;
   overflow: hidden;
+  background: linear-gradient(180deg, #fafafa 0%, #f0f0f0 50%, #fafafa 100%);
 }
 
 .lp-cta-glow {
@@ -1666,23 +1667,346 @@ html {
 
 /* ── Animations ───────────────────────────── */
 @keyframes lp-glow-pulse {
-  0%, 100% { opacity: 0.6; transform: translateX(-50%) scale(1); }
-  50% { opacity: 1; transform: translateX(-50%) scale(1.05); }
+  0%, 100% { opacity: 0.6; scale: 1; }
+  50% { opacity: 1; scale: 1.08; }
 }
 
 @keyframes lp-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.95); }
 }
 
 @keyframes lp-float {
   0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-8px); }
+  50% { transform: translateY(-10px); }
 }
 
 @keyframes lp-blink-cursor {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
+}
+
+@keyframes lp-shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+@keyframes lp-orb-drift-1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(60px, -40px) scale(1.1); }
+  50% { transform: translate(-30px, -80px) scale(0.95); }
+  75% { transform: translate(-60px, -20px) scale(1.05); }
+}
+
+@keyframes lp-orb-drift-2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(-50px, 30px) scale(0.9); }
+  50% { transform: translate(40px, 60px) scale(1.1); }
+  75% { transform: translate(70px, -10px) scale(0.95); }
+}
+
+@keyframes lp-marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+@keyframes lp-gradient-rotate {
+  0% { --angle: 0deg; }
+  100% { --angle: 360deg; }
+}
+
+@keyframes lp-border-glow {
+  0%, 100% { box-shadow: 0 0 20px rgba(10, 10, 10, 0.06), 0 0 40px rgba(10, 10, 10, 0.03); }
+  50% { box-shadow: 0 0 30px rgba(10, 10, 10, 0.1), 0 0 60px rgba(10, 10, 10, 0.05); }
+}
+
+@keyframes lp-stat-count-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes lp-step-line {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@keyframes lp-icon-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+/* ── Shimmer text effect ──────────────────── */
+.lp-shimmer-text {
+  background: linear-gradient(
+    90deg,
+    var(--text) 0%,
+    var(--text) 40%,
+    var(--text-secondary) 50%,
+    var(--text) 60%,
+    var(--text) 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: lp-shimmer 4s linear infinite;
+}
+
+/* ── Hero animated orbs ──────────────────── */
+.lp-hero-orb {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  filter: blur(80px);
+  opacity: 0.4;
+}
+
+.lp-hero-orb-1 {
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(124, 58, 237, 0.15), transparent 70%);
+  top: 10%;
+  right: 10%;
+  animation: lp-orb-drift-1 20s ease-in-out infinite;
+}
+
+.lp-hero-orb-2 {
+  width: 350px;
+  height: 350px;
+  background: radial-gradient(circle, rgba(37, 99, 235, 0.12), transparent 70%);
+  bottom: 20%;
+  left: 10%;
+  animation: lp-orb-drift-2 25s ease-in-out infinite;
+}
+
+/* ── Glass card effect ───────────────────── */
+.lp-glass-card {
+  background: rgba(255, 255, 255, 0.7) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.5) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.6) !important;
+}
+
+/* ── Marquee scroll ──────────────────────── */
+.lp-marquee-wrap {
+  overflow: hidden;
+  mask-image: linear-gradient(to right, transparent 0%, black 10%, black 90%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, black 10%, black 90%, transparent 100%);
+}
+
+.lp-marquee {
+  display: flex;
+  align-items: center;
+  gap: 48px;
+  width: max-content;
+  animation: lp-marquee 30s linear infinite;
+}
+
+.lp-marquee:hover {
+  animation-play-state: paused;
+}
+
+/* ── Animated logo ───────────────────────── */
+.lp-logo-animated {
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+}
+
+.lp-logo-animated:hover {
+  transform: scale(1.08) rotate(-3deg);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+/* ── Step connector ──────────────────────── */
+.lp-step-animated {
+  position: relative;
+}
+
+.lp-step-connector {
+  display: none;
+}
+
+@media (min-width: 901px) {
+  .lp-step-connector {
+    display: block;
+    position: absolute;
+    right: -16px;
+    top: 50%;
+    width: 32px;
+    height: 2px;
+    background: linear-gradient(90deg, var(--border-hover), var(--border));
+    transform-origin: left;
+    animation: lp-step-line 1s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    animation-delay: 0.5s;
+    opacity: 0.5;
+  }
+}
+
+/* ── Step icon animation ─────────────────── */
+.lp-step-icon-animated {
+  width: 64px;
+  height: 64px;
+  border-radius: 18px;
+  background: var(--bg-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 16px;
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  color: var(--text);
+}
+
+.lp-step-animated:hover .lp-step-icon-animated {
+  background: var(--text);
+  color: #fff;
+  transform: scale(1.08) translateY(-4px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.15);
+}
+
+/* ── Glow border for popular pricing ─────── */
+.lp-glow-border {
+  position: relative;
+  animation: lp-border-glow 3s ease-in-out infinite;
+}
+
+.lp-glow-border::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgba(10, 10, 10, 0.2), transparent, rgba(10, 10, 10, 0.1));
+  z-index: -1;
+  opacity: 0.5;
+}
+
+/* ── Security card icon hover ────────────── */
+.lp-icon-hover-rotate {
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.lp-security-card:hover .lp-icon-hover-rotate {
+  transform: scale(1.1) rotate(-5deg);
+}
+
+/* ── Stat shimmer on use case cards ──────── */
+.lp-stat-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+
+.lp-stat-shimmer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+  transition: left 0.6s ease;
+}
+
+.lp-use-case-card:hover .lp-stat-shimmer::after {
+  left: 100%;
+}
+
+/* ── CTA section orbs ────────────────────── */
+.lp-cta-orb {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  filter: blur(60px);
+}
+
+.lp-cta-orb-1 {
+  width: 300px;
+  height: 300px;
+  background: radial-gradient(circle, rgba(124, 58, 237, 0.1), transparent 70%);
+  top: -50px;
+  left: 10%;
+  animation: lp-orb-drift-1 15s ease-in-out infinite;
+}
+
+.lp-cta-orb-2 {
+  width: 250px;
+  height: 250px;
+  background: radial-gradient(circle, rgba(37, 99, 235, 0.08), transparent 70%);
+  bottom: -30px;
+  right: 15%;
+  animation: lp-orb-drift-2 18s ease-in-out infinite;
+}
+
+/* ── Enhanced button hover glow ──────────── */
+.lp-btn-primary:hover {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15), 0 0 40px rgba(0, 0, 0, 0.05);
+}
+
+.lp-btn-xl:hover {
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2), 0 0 60px rgba(0, 0, 0, 0.06);
+  transform: translateY(-2px) scale(1.02);
+}
+
+/* ── Enhanced terminal glow ──────────────── */
+.lp-terminal {
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.lp-terminal:hover {
+  box-shadow: 0 25px 70px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  transform: translateY(-4px);
+}
+
+/* ── Enhanced role card hover ────────────── */
+.lp-role-card {
+  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.lp-role-card:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.08);
+}
+
+.lp-role-card:hover .lp-role-icon {
+  animation: lp-icon-bounce 0.5s ease;
+}
+
+/* ── Capability card icon ────────────────── */
+.lp-cap-card:hover .lp-cap-icon {
+  transform: scale(1.1) rotate(-3deg);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── Enhanced testimonial card ───────────── */
+.lp-testimonial-card {
+  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.lp-testimonial-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.06);
+}
+
+/* ── Smooth gradient border wrap ─────────── */
+.lp-gradient-border-wrap {
+  position: relative;
+  border-radius: 16px;
+  padding: 1px;
+  background: linear-gradient(135deg, var(--border), var(--border-hover), var(--border));
+}
+
+/* ── Clock ring spin ─────────────────────── */
+.lp-clock-glow {
+  animation: lp-glow-pulse 4s ease-in-out infinite;
+}
+
+/* ── Dashboard preview hover ─────────────── */
+.lp-dashboard-preview {
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.lp-dashboard-preview:hover {
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1), 0 0 0 1px var(--border);
+  transform: translateY(-4px);
 }
 
 /* ── Responsive ───────────────────────────── */
@@ -1837,8 +2161,9 @@ html {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 40px;
-  flex-wrap: wrap;
+  gap: 48px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
 
 .lp-proof-logo {
