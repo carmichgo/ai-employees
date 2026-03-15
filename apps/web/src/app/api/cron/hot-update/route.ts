@@ -3,7 +3,6 @@ import { and, isNotNull, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { employees } from "@/lib/schema";
 import { createBackendClient } from "@/lib/backend";
-import { execSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
@@ -12,31 +11,35 @@ export const maxDuration = 300;
 const CRON_SECRET = process.env.CRON_SECRET;
 
 /**
- * Build a tarball of the project source code from the current deployment.
- * This allows pushing code to droplets even when the GitHub repo is private.
+ * Read the pre-built source tarball created during `next build`.
+ * At Vercel runtime the full source tree is NOT available, so we rely on
+ * the tarball that `scripts/package-source.js` created at build time and
+ * placed in `public/hot-update-source.tar.gz`.
  */
 function buildTarball(): string | null {
-  // In Vercel, the project files are at process.cwd() during build
-  // but at runtime we need to find the source
-  const projectRoot = path.resolve(process.cwd(), "../..");
-  const tarPath = "/tmp/hot-update-push.tar.gz";
+  // The public dir is served from the .next build output
+  // Try several known locations for the pre-built tarball
+  const candidates = [
+    path.join(process.cwd(), "public", "hot-update-source.tar.gz"),
+    path.join(process.cwd(), ".next", "static", "hot-update-source.tar.gz"),
+    path.resolve(process.cwd(), "../..", "public", "hot-update-source.tar.gz"),
+  ];
 
-  try {
-    // Build tarball excluding build artifacts and large directories
-    execSync(
-      `tar czf ${tarPath} --exclude='node_modules' --exclude='.next' --exclude='.git' --exclude='dist' --exclude='.turbo' --exclude='.cache' --exclude='.vercel' -C "${projectRoot}" .`,
-      { timeout: 30000 },
-    );
-
-    if (existsSync(tarPath)) {
-      const data = readFileSync(tarPath);
-      // Clean up
-      try { execSync(`rm -f ${tarPath}`, { timeout: 5000 }); } catch {}
-      return data.toString("base64");
+  for (const tarPath of candidates) {
+    try {
+      if (existsSync(tarPath)) {
+        const data = readFileSync(tarPath);
+        if (data.length > 0) {
+          console.log(`[hot-update] Found pre-built tarball at ${tarPath} (${(data.length / 1024 / 1024).toFixed(1)}MB)`);
+          return data.toString("base64");
+        }
+      }
+    } catch (err: any) {
+      console.error(`[hot-update] Error reading ${tarPath}:`, err.message);
     }
-  } catch (err: any) {
-    console.error("[hot-update] Failed to build tarball:", err.message);
   }
+
+  console.error("[hot-update] Pre-built tarball not found at any candidate path");
   return null;
 }
 
