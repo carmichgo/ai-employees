@@ -8,7 +8,7 @@ import path from "node:path";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, symlinkSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { eq, and, or, inArray, sql } from "drizzle-orm";
-import { db, employees, companies, users, chatMessages } from "@ai-employees/db";
+import { db, employees, companies, users, chatMessages, channelConnections } from "@ai-employees/db";
 import { getJobTemplate, PLAN_LIMITS, type PlanTier, getModelForTier, type EmployeeTier } from "@ai-employees/shared";
 import { regenerateChannelConfig, type ChannelInput } from "@ai-employees/openclaw-config";
 import { getProvisionQueue } from "../queues.js";
@@ -157,24 +157,41 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       return reply.status(400).send({ error: `Employee is ${employee.status}, cannot reprovision` });
     }
 
-    // Check if a container already exists for this employee
-    if (employee.containerHost && employee.containerPort) {
-      return reply.status(400).send({ error: "Employee already has a container" });
-    }
-
-    // Reset status to provisioning so the provision worker can proceed
+    // Reset status and clear stale container info so the provision worker
+    // starts fresh. Previous failed provisioning may have set containerHost
+    // before the error — clearing it here ensures re-provisioning works.
     await db
       .update(employees)
-      .set({ status: "provisioning", errorMessage: null, updatedAt: new Date() })
+      .set({
+        status: "provisioning",
+        errorMessage: null,
+        containerHost: null,
+        containerPort: null,
+        containerId: null,
+        updatedAt: new Date(),
+      })
       .where(eq(employees.id, id));
+
+    // Fetch the employee's channel connections so they're included in the provision job
+    // (previously always sent [], losing channel integrations on initial + re-provisioning)
+    const connections = await db.query.channelConnections.findMany({
+      where: eq(channelConnections.employeeId, id),
+    });
+    const channels = connections.map((c) => c.channelType);
+    const channelCreds: Record<string, Record<string, unknown>> = {};
+    for (const conn of connections) {
+      if (conn.credentials && typeof conn.credentials === "object" && Object.keys(conn.credentials as object).length > 0) {
+        channelCreds[conn.channelType] = conn.credentials as Record<string, unknown>;
+      }
+    }
 
     // Queue the provision job
     const queue = getProvisionQueue();
     await queue.add("provision-employee", {
       employeeId: employee.id,
       companyId: employee.companyId,
-      channels: [],
-      channelCredentials: {},
+      channels,
+      channelCredentials: channelCreds,
       skills: [],
     });
 

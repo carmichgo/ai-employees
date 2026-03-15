@@ -230,6 +230,26 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     writeFileSync(`${configDir}/generate-image.sh`, generateImageScript(), { mode: 0o755 });
     writeFileSync(`${configDir}/generate-video.sh`, generateVideoScript(), { mode: 0o755 });
 
+    // Write relay tunnel script — TCP proxy (0.0.0.0:18793 → 127.0.0.1:18792) so the
+    // API server proxy can reach the relay listener (which only binds to localhost).
+    // The container Cmd starts this as a background process on every boot.
+    writeFileSync(`${configDir}/relay-tunnel.cjs`, `#!/usr/bin/env node
+const net = require('net');
+const server = net.createServer(client => {
+  const upstream = net.connect(18792, '127.0.0.1', () => {
+    client.pipe(upstream);
+    upstream.pipe(client);
+  });
+  upstream.on('error', () => client.destroy());
+  client.on('error', () => upstream.destroy());
+});
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') process.exit(0); // already running
+  console.error('tunnel error:', err.message);
+});
+server.listen(18793, '0.0.0.0', () => console.log('relay tunnel listening on 18793'));
+`, { mode: 0o755 });
+
     // Fix permissions for the node user (uid 1000) inside the container
     execSync(`chown -R 1000:1000 ${configDir}`);
 
@@ -365,8 +385,20 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
     // This installs Chromium, GitHub CLI, himalaya, credential manager, etc.
     // The container is restarted at the end to pick up Chromium, so we need
     // to re-fetch the IP and wait for the gateway after this step.
+    // Refresh updatedAt so the health-poll worker doesn't mark this employee
+    // as "error" during the long CLI tools installation (health-poll skips
+    // provisioning employees whose updatedAt is within the last 3 minutes).
+    await db
+      .update(employees)
+      .set({ updatedAt: new Date() })
+      .where(eq(employees.id, employeeId));
     console.log(`[provision] Installing CLI tools for ${employee.name}...`);
     installCliTools(employee.containerName!);
+    // Refresh updatedAt again after CLI tools (installation can take 5+ minutes)
+    await db
+      .update(employees)
+      .set({ updatedAt: new Date() })
+      .where(eq(employees.id, employeeId));
 
     // After installCliTools restarts the container, poll until Docker reports it
     // as "running" before checking IP — Docker needs a moment to assign the
@@ -452,11 +484,17 @@ export async function provisionEmployee(data: ProvisionJobData): Promise<void> {
 
     // Store full error including container diagnostics (truncate to 4000 chars for DB)
     const fullError = error instanceof Error ? error.message : String(error);
+    // Clear containerHost/containerPort so the reprovision endpoint's guard
+    // ("Employee already has a container") doesn't block retry attempts.
+    // Without this, a failed provisioning that got far enough to set containerHost
+    // would permanently prevent re-provisioning.
     await db
       .update(employees)
       .set({
         status: "error",
         errorMessage: fullError.slice(0, 4000),
+        containerHost: null,
+        containerPort: null,
         updatedAt: new Date(),
       })
       .where(eq(employees.id, employeeId));
