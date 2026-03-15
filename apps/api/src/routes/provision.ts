@@ -1169,8 +1169,21 @@ server.listen(18793, '0.0.0.0', () => console.log('relay tunnel listening on 187
             ).toString().trim();
             const updates: Record<string, unknown> = { updatedAt: new Date() };
             if (newIp) updates.containerHost = newIp;
-            // If the employee was in "error" state, move back to "active" after successful config regen
-            if (emp.status === "error") updates.status = "active";
+            // Only move from "error" to "active" if the gateway is actually responding
+            if (emp.status === "error" && newIp) {
+              let gatewayReady = false;
+              for (let attempt = 0; attempt < 15; attempt++) {
+                try {
+                  const ctrl = new AbortController();
+                  const t = setTimeout(() => ctrl.abort(), 3000);
+                  const res = await fetch(`http://${newIp}:18789/v1/models`, { signal: ctrl.signal });
+                  clearTimeout(t);
+                  if (res.ok) { gatewayReady = true; break; }
+                } catch { /* retry */ }
+                await new Promise((r) => setTimeout(r, 2000));
+              }
+              if (gatewayReady) updates.status = "active";
+            }
             await db.update(employees).set(updates).where(eq(employees.id, emp.id));
           } catch { /* non-fatal */ }
         }

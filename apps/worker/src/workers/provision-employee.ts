@@ -553,12 +553,18 @@ export async function startEmployee(employeeId: string): Promise<void> {
   if (ip) {
     await db.update(employees).set({ containerHost: ip, updatedAt: new Date() }).where(eq(employees.id, employeeId));
     try {
-      const result = await waitForGateway(ip, 18789, 30_000, employee.containerName || undefined);
+      const result = await waitForGateway(ip, 18789, 120_000, employee.containerName || undefined);
       if (result.host !== ip) {
         await db.update(employees).set({ containerHost: result.host, updatedAt: new Date() }).where(eq(employees.id, employeeId));
       }
-    } catch {
-      console.log(`[start] Gateway not ready for ${employeeId} after restart, marking active anyway (container is running)`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[start] Gateway not ready for ${employeeId} after restart: ${msg}`);
+      await db
+        .update(employees)
+        .set({ status: "error", errorMessage: `Gateway failed to start: ${msg.slice(0, 4000)}`, updatedAt: new Date() })
+        .where(eq(employees.id, employeeId));
+      return;
     }
   }
 
