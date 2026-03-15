@@ -4,7 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Blitzer — Hire Your AI Workforce",
   description:
-    "Hire AI employees that work 24/7. Each employee gets their own computer, email, Slack, and more. Powered by OpenClaw.",
+    "Hire AI employees that work 24/7. Each employee gets their own computer, email, Slack, and more. Powered by Blitzer AI.",
 };
 
 export default function RootLayout({

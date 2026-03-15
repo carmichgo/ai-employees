@@ -434,7 +434,7 @@ const FAQS = [
   {
     question: "What exactly is an AI employee?",
     answer:
-      "An AI employee is a fully autonomous AI agent that gets its own isolated workstation — complete with email, browser, Slack, terminal, and file system. It works 24/7, learns your business context, and performs real tasks just like a human employee would. Each employee is powered by Anthropic's Claude models and runs on our OpenClaw isolation platform.",
+      "An AI employee is a fully autonomous AI agent that gets its own isolated workstation — complete with email, browser, Slack, terminal, and file system. It works 24/7, learns your business context, and performs real tasks just like a human employee would. Each employee is powered by advanced AI models and runs on our secure isolation platform.",
   },
   {
     question: "How is this different from ChatGPT or other AI tools?",
@@ -570,7 +570,7 @@ export default function LandingPage() {
           <Reveal delay={0}>
             <div className="lp-badge">
               <span className="lp-badge-dot" />
-              Now available &middot; Powered by OpenClaw
+              Now available &middot; Powered by Blitzer AI
             </div>
           </Reveal>
           <Reveal delay={0.1}>
@@ -1148,7 +1148,7 @@ export default function LandingPage() {
             },
             {
               icon: <Cpu size={24} />,
-              title: "Powered by OpenClaw",
+              title: "Secure Isolation",
               desc: "Our custom isolation runtime ensures each AI employee operates in a fully contained environment.",
             },
           ].map((item, i) => (
@@ -1507,7 +1507,7 @@ export default function LandingPage() {
               <br />
               Hire autonomous employees that work 24/7.
               <br />
-              Powered by OpenClaw.
+              Powered by Blitzer AI.
             </p>
           </div>
           <div className="lp-footer-links">
