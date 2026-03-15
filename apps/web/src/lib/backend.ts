@@ -243,12 +243,13 @@ export function createBackendClient(config: BackendConfig) {
       }
     },
 
-    async hotUpdate(branch?: string, tarball?: string) {
+    async hotUpdate(branch?: string, tarball?: string, tarballUrl?: string) {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 300000); // 5 min timeout
       try {
         const payload: Record<string, string> = { branch: branch || "main" };
         if (tarball) payload.tarball = tarball;
+        if (tarballUrl) payload.tarballUrl = tarballUrl;
         const res = await fetch(`${config.url}/internal/hot-update`, {
           method: "POST",
           signal: controller.signal,

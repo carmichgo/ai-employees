@@ -628,9 +628,9 @@ export async function provisionRoutes(fastify: FastifyInstance) {
   });
 
   // POST /internal/hot-update — pull latest code, rebuild, restart services + regenerate employee configs
-  // Accepts optional { tarball: "<base64>" } to push code directly (for private repos)
+  // Accepts optional { tarball: "<base64>", tarballUrl: "<url>" } to push code directly (for private repos)
   fastify.post("/internal/hot-update", { bodyLimit: 100 * 1024 * 1024 }, async (request, reply) => {
-    const body = request.body as { branch?: string; tarball?: string } | undefined;
+    const body = request.body as { branch?: string; tarball?: string; tarballUrl?: string } | undefined;
     const branch = body?.branch || "main";
 
     const steps: string[] = [];
@@ -672,15 +672,37 @@ export async function provisionRoutes(fastify: FastifyInstance) {
           return reply.status(500).send({ error: "Git pull failed", steps, errors });
         }
       } else {
-        // No git repo — download tarball (use GITHUB_TOKEN for private repos)
+        // No git repo — try tarballUrl first, then platform URL, then GitHub
         errors.length = 0;
-        const ghToken = process.env.GITHUB_TOKEN || "";
-        const authHeader = ghToken ? `-H "Authorization: token ${ghToken}"` : "";
-        const tarballUrl = ghToken
-          ? `https://api.github.com/repos/carmichgo/ai-employees/tarball/${branch}`
-          : `https://github.com/carmichgo/ai-employees/archive/refs/heads/${branch}.tar.gz`;
-        if (!run("download tarball", `curl -sL ${authHeader} "${tarballUrl}" -o /tmp/hot-update.tar.gz`, 60_000)) {
-          return reply.status(500).send({ error: "Code download failed — set GITHUB_TOKEN for private repos", steps, errors });
+        let downloaded = false;
+
+        // Method 1: Download from tarballUrl if provided
+        if (body?.tarballUrl) {
+          downloaded = run("download tarball (url)", `curl -sL "${body.tarballUrl}" -o /tmp/hot-update.tar.gz`, 60_000);
+        }
+
+        // Method 2: Download from platform's pre-built tarball
+        if (!downloaded) {
+          const platformUrl = process.env.PLATFORM_URL || process.env.NEXT_PUBLIC_APP_URL || "";
+          if (platformUrl) {
+            errors.length = 0;
+            downloaded = run("download tarball (platform)", `curl -sL "${platformUrl}/hot-update-source.tar.gz" -o /tmp/hot-update.tar.gz`, 60_000);
+          }
+        }
+
+        // Method 3: Download from GitHub (needs GITHUB_TOKEN for private repos)
+        if (!downloaded) {
+          errors.length = 0;
+          const ghToken = process.env.GITHUB_TOKEN || "";
+          const authHeader = ghToken ? `-H "Authorization: token ${ghToken}"` : "";
+          const tarballUrl = ghToken
+            ? `https://api.github.com/repos/carmichgo/ai-employees/tarball/${branch}`
+            : `https://github.com/carmichgo/ai-employees/archive/refs/heads/${branch}.tar.gz`;
+          downloaded = run("download tarball (github)", `curl -sL ${authHeader} "${tarballUrl}" -o /tmp/hot-update.tar.gz`, 60_000);
+        }
+
+        if (!downloaded) {
+          return reply.status(500).send({ error: "Code download failed — no download method succeeded", steps, errors });
         }
         if (!run("extract tarball", `tar xzf /tmp/hot-update.tar.gz --strip-components=1 -C /opt/ai-employees/app && rm -f /tmp/hot-update.tar.gz`, 30_000)) {
           return reply.status(500).send({ error: "Code extraction failed", steps, errors });

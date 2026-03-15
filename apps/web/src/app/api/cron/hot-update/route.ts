@@ -95,6 +95,10 @@ export async function POST(request: NextRequest) {
       ),
     );
 
+  // Public URL for the pre-built tarball — old droplets can curl this directly
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://www.blitzerai.com";
+  const tarballUrl = `${appUrl}/hot-update-source.tar.gz`;
+
   // Dedupe by dropletIp — multiple employees may share a droplet
   const seen = new Set<string>();
   const results = [];
@@ -107,15 +111,30 @@ export async function POST(request: NextRequest) {
     }
     seen.add(emp.dropletIp);
 
+    const backend = createBackendClient({
+      url: `http://${emp.dropletIp}:3001`,
+      secret: emp.interserviceSecret,
+    });
+
     try {
-      const backend = createBackendClient({
-        url: `http://${emp.dropletIp}:3001`,
-        secret: emp.interserviceSecret,
-      });
-      const result = await backend.hotUpdate(branch, tarball || undefined);
+      // Try inline tarball first (fastest, works with new droplet code)
+      const result = await backend.hotUpdate(branch, tarball || undefined, tarballUrl);
       results.push({ id: emp.id, name: emp.name, status: "ok", result });
     } catch (err: any) {
-      results.push({ id: emp.id, name: emp.name, status: "error", error: err.message });
+      // If inline tarball failed (old droplets), retry without tarball but with URL
+      // Old droplets ignore tarballUrl, but their code downloads from GitHub.
+      // For old droplets with private repos, this will still fail — they need
+      // a one-time manual update or reprovision.
+      if (tarball && err.message?.includes("extraction failed")) {
+        try {
+          const result = await backend.hotUpdate(branch, undefined, tarballUrl);
+          results.push({ id: emp.id, name: emp.name, status: "ok", result, note: "retried without inline tarball" });
+        } catch (retryErr: any) {
+          results.push({ id: emp.id, name: emp.name, status: "error", error: retryErr.message });
+        }
+      } else {
+        results.push({ id: emp.id, name: emp.name, status: "error", error: err.message });
+      }
     }
   }
 

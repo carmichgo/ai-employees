@@ -262,22 +262,35 @@ SLACK_SIGNING_SECRET=${params.slackSigningSecret}
 RESEND_API_KEY=${params.resendApiKey}
 ENVEOF
 
-# Download repo — try tarball first, then git clone as fallback
-TARBALL_URL="https://github.com/carmichgo/ai-employees/archive/refs/heads/${params.repoBranch}.tar.gz"
-echo "Downloading from: \$TARBALL_URL"
+# Download repo — try platform tarball first, then GitHub, then git clone
+PLATFORM_TARBALL="${params.platformUrl}/hot-update-source.tar.gz"
+GITHUB_TARBALL="https://github.com/carmichgo/ai-employees/archive/refs/heads/${params.repoBranch}.tar.gz"
 
 mkdir -p /opt/ai-employees/app
 DOWNLOAD_OK=false
 
-# Method 1: curl tarball (verbose error reporting)
-HTTP_CODE=\$(curl -sL -w "%{http_code}" "\$TARBALL_URL" -o /tmp/repo.tar.gz 2>/dev/null)
-echo "Tarball download HTTP code: \$HTTP_CODE"
+# Method 1: Download pre-built tarball from platform (works for private repos)
+echo "Trying platform tarball: \$PLATFORM_TARBALL"
+HTTP_CODE=\$(curl -sL -w "%{http_code}" "\$PLATFORM_TARBALL" -o /tmp/repo.tar.gz 2>/dev/null)
+echo "Platform tarball HTTP code: \$HTTP_CODE"
 if [ "\$HTTP_CODE" = "200" ] && [ -s /tmp/repo.tar.gz ]; then
   tar xzf /tmp/repo.tar.gz --strip-components=1 -C /opt/ai-employees/app && DOWNLOAD_OK=true
   rm -f /tmp/repo.tar.gz
 fi
 
-# Method 2: git clone if tarball failed
+# Method 2: curl GitHub tarball
+if [ "\$DOWNLOAD_OK" = "false" ]; then
+  echo "Trying GitHub tarball: \$GITHUB_TARBALL"
+  rm -f /tmp/repo.tar.gz
+  HTTP_CODE=\$(curl -sL -w "%{http_code}" "\$GITHUB_TARBALL" -o /tmp/repo.tar.gz 2>/dev/null)
+  echo "GitHub tarball HTTP code: \$HTTP_CODE"
+  if [ "\$HTTP_CODE" = "200" ] && [ -s /tmp/repo.tar.gz ]; then
+    tar xzf /tmp/repo.tar.gz --strip-components=1 -C /opt/ai-employees/app && DOWNLOAD_OK=true
+    rm -f /tmp/repo.tar.gz
+  fi
+fi
+
+# Method 3: git clone if tarball failed
 if [ "\$DOWNLOAD_OK" = "false" ]; then
   echo "Tarball failed, trying git clone..."
   rm -f /tmp/repo.tar.gz
@@ -286,15 +299,6 @@ if [ "\$DOWNLOAD_OK" = "false" ]; then
     cp -r /tmp/repo-clone/.* /opt/ai-employees/app/ 2>/dev/null || true
     rm -rf /tmp/repo-clone
     DOWNLOAD_OK=true
-  fi
-fi
-
-# Method 3: wget if both failed
-if [ "\$DOWNLOAD_OK" = "false" ]; then
-  echo "Git clone failed too, trying wget..."
-  if wget -q "\$TARBALL_URL" -O /tmp/repo.tar.gz 2>&1; then
-    tar xzf /tmp/repo.tar.gz --strip-components=1 -C /opt/ai-employees/app && DOWNLOAD_OK=true
-    rm -f /tmp/repo.tar.gz
   fi
 fi
 
@@ -573,19 +577,33 @@ OPENCLAW_IMAGE=ghcr.io/carmichgo/openclaw:latest
 OPENCLAW_NETWORK=ai-employees-internal
 ENVEOF
 
-# Download repo
-TARBALL_URL="https://github.com/carmichgo/ai-employees/archive/refs/heads/${params.repoBranch}.tar.gz"
-echo "Downloading from: \$TARBALL_URL"
+# Download repo — try platform tarball first, then GitHub
+PLATFORM_TARBALL="${params.platformUrl}/hot-update-source.tar.gz"
+GITHUB_TARBALL="https://github.com/carmichgo/ai-employees/archive/refs/heads/${params.repoBranch}.tar.gz"
 
 mkdir -p /opt/ai-employees/app
 DOWNLOAD_OK=false
 
-HTTP_CODE=\$(curl -sL -w "%{http_code}" "\$TARBALL_URL" -o /tmp/repo.tar.gz 2>/dev/null)
+# Method 1: Platform tarball (works for private repos)
+echo "Trying platform tarball: \$PLATFORM_TARBALL"
+HTTP_CODE=\$(curl -sL -w "%{http_code}" "\$PLATFORM_TARBALL" -o /tmp/repo.tar.gz 2>/dev/null)
 if [ "\$HTTP_CODE" = "200" ] && [ -s /tmp/repo.tar.gz ]; then
   tar xzf /tmp/repo.tar.gz --strip-components=1 -C /opt/ai-employees/app && DOWNLOAD_OK=true
   rm -f /tmp/repo.tar.gz
 fi
 
+# Method 2: GitHub tarball
+if [ "\$DOWNLOAD_OK" = "false" ]; then
+  echo "Trying GitHub tarball: \$GITHUB_TARBALL"
+  rm -f /tmp/repo.tar.gz
+  HTTP_CODE=\$(curl -sL -w "%{http_code}" "\$GITHUB_TARBALL" -o /tmp/repo.tar.gz 2>/dev/null)
+  if [ "\$HTTP_CODE" = "200" ] && [ -s /tmp/repo.tar.gz ]; then
+    tar xzf /tmp/repo.tar.gz --strip-components=1 -C /opt/ai-employees/app && DOWNLOAD_OK=true
+    rm -f /tmp/repo.tar.gz
+  fi
+fi
+
+# Method 3: git clone
 if [ "\$DOWNLOAD_OK" = "false" ]; then
   echo "Tarball failed, trying git clone..."
   rm -f /tmp/repo.tar.gz
