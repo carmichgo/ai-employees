@@ -453,22 +453,56 @@ server.listen(18793, '0.0.0.0', () => console.log('relay tunnel listening on 187
     // Wait for the OpenClaw gateway to be ready before marking active.
     // 300s timeout accounts for heavy containers after CLI tool installs
     // (Chromium, LibreOffice, pandoc add significant startup weight).
-    if (containerIp) {
-      const result = await waitForGateway(containerIp, 18789, 300_000, employee.containerName!);
-      // Update DB if the IP changed during gateway polling (e.g. after container restart)
-      if (result.host !== containerIp) {
-        containerIp = result.host;
-        await db
-          .update(employees)
-          .set({ containerHost: containerIp, updatedAt: new Date() })
-          .where(eq(employees.id, employeeId));
-        console.log(`[provision] Updated container IP after gateway ready: ${containerIp}`);
-      }
+    if (!containerIp) {
+      // Re-inspect one more time to try to get the IP
+      try {
+        const lastInspect = await container.inspect();
+        containerIp = lastInspect.NetworkSettings.Networks?.[OPENCLAW_NETWORK]?.IPAddress || null;
+        if (containerIp) {
+          await db
+            .update(employees)
+            .set({ containerHost: containerIp, updatedAt: new Date() })
+            .where(eq(employees.id, employeeId));
+          console.log(`[provision] Recovered container IP on final inspect: ${containerIp}`);
+        }
+      } catch { /* will fail below */ }
+    }
+
+    if (!containerIp) {
+      throw new Error("Container has no IP address — cannot verify gateway readiness");
+    }
+
+    const result = await waitForGateway(containerIp, 18789, 300_000, employee.containerName!);
+    // Update DB if the IP changed during gateway polling (e.g. after container restart)
+    if (result.host !== containerIp) {
+      containerIp = result.host;
+      await db
+        .update(employees)
+        .set({ containerHost: containerIp, updatedAt: new Date() })
+        .where(eq(employees.id, employeeId));
+      console.log(`[provision] Updated container IP after gateway ready: ${containerIp}`);
+    }
+
+    // Final verification: confirm the gateway responds at the IP we're about to commit
+    let finalVerified = false;
+    for (let i = 0; i < 3; i++) {
+      try {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 5000);
+        const res = await fetch(`http://${containerIp}:18789/v1/models`, { signal: ctrl.signal });
+        clearTimeout(t);
+        if (res.ok) { finalVerified = true; break; }
+      } catch { /* retry */ }
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+
+    if (!finalVerified) {
+      console.log(`[provision] WARNING: Final gateway verification failed at ${containerIp}:18789 — marking active anyway`);
     }
 
     await db
       .update(employees)
-      .set({ status: "active", updatedAt: new Date() })
+      .set({ status: "active", containerHost: containerIp, updatedAt: new Date() })
       .where(eq(employees.id, employeeId));
 
     console.log(
