@@ -1041,7 +1041,8 @@ function installCliTools(containerName: string): void {
       name: "himalaya email CLI",
       cmd: `docker exec -u root ${containerName} bash -c '
         curl -fsSL https://raw.githubusercontent.com/pimalaya/himalaya/master/install.sh | sh 2>/dev/null &&
-        mv /root/.local/bin/himalaya /usr/local/bin/himalaya 2>/dev/null || true
+        mv /root/.local/bin/himalaya /usr/local/bin/himalaya 2>/dev/null &&
+        himalaya --version
       '`,
       timeout: 60_000,
     },
@@ -1059,15 +1060,17 @@ CREDEOF
     {
       name: "2captcha CLI (solve-captcha)",
       cmd: `docker exec -u root ${containerName} bash -c '
-        curl -fsSL https://github.com/2captcha/cli/releases/latest/download/solve-captcha-linux-amd64 -o /usr/local/bin/solve-captcha 2>/dev/null &&
-        chmod +x /usr/local/bin/solve-captcha || true
+        curl -fsSL https://github.com/2captcha/cli/releases/latest/download/solve-captcha-linux-amd64 -o /usr/local/bin/solve-captcha &&
+        chmod +x /usr/local/bin/solve-captcha &&
+        solve-captcha --version
       '`,
       timeout: 30_000,
     },
     {
       name: "oathtool (TOTP 2FA)",
       cmd: `docker exec -u root ${containerName} bash -c '
-        apt-get install -y -qq oathtool 2>/dev/null || true
+        apt-get install -y -qq oathtool &&
+        oathtool --version
       '`,
       timeout: 30_000,
     },
@@ -1083,7 +1086,8 @@ CREDEOF
     {
       name: "Python deps for media generation",
       cmd: `docker exec ${containerName} bash -c '
-        pip3 install -q --break-system-packages google-genai Pillow 2>/dev/null || true
+        pip3 install -q --break-system-packages google-genai Pillow &&
+        python3 -c "import google.genai; import PIL; print(\"Python deps OK\")"
       '`,
       timeout: 60_000,
     },
@@ -1092,20 +1096,20 @@ CREDEOF
       cmd: `docker exec -u root ${containerName} bash -c '
         ${generateDocxInstallScript()}
       ' && docker exec ${containerName} bash -c '
-        npm install -g docx 2>/dev/null || true
+        npm install -g docx
       '`,
       timeout: 180_000,
     },
     {
       name: "gogcli (Google Workspace CLI)",
       cmd: `docker exec -u root ${containerName} bash -c '
-        GOG_VERSION=$(curl -fsSL https://api.github.com/repos/steipete/gogcli/releases/latest 2>/dev/null | grep -o "\"tag_name\":\"[^\"]*\"" | head -1 | cut -d"\"" -f4 | sed "s/^v//") &&
-        if [ -n "$GOG_VERSION" ]; then
-          curl -fsSL "https://github.com/steipete/gogcli/releases/download/v$GOG_VERSION/gogcli_\${GOG_VERSION}_linux_amd64.tar.gz" -o /tmp/gogcli.tar.gz &&
-          tar xzf /tmp/gogcli.tar.gz -C /usr/local/bin &&
-          rm -f /tmp/gogcli.tar.gz &&
-          chmod +x /usr/local/bin/gog
-        fi
+        GOG_VERSION=$(curl -fsSL https://api.github.com/repos/steipete/gogcli/releases/latest | grep -o "\"tag_name\":\"[^\"]*\"" | head -1 | cut -d"\"" -f4 | sed "s/^v//") &&
+        if [ -z "$GOG_VERSION" ]; then echo "Failed to fetch gogcli version"; exit 1; fi &&
+        curl -fsSL "https://github.com/steipete/gogcli/releases/download/v\${GOG_VERSION}/gogcli_\${GOG_VERSION}_linux_amd64.tar.gz" -o /tmp/gogcli.tar.gz &&
+        tar xzf /tmp/gogcli.tar.gz -C /usr/local/bin &&
+        rm -f /tmp/gogcli.tar.gz &&
+        chmod +x /usr/local/bin/gog &&
+        gog --version
       '`,
       timeout: 60_000,
     },
@@ -1122,20 +1126,38 @@ SENDEMAILEOF
     },
   ];
 
+  const MAX_RETRIES = 2;
+  const failedSteps: string[] = [];
+
   for (const step of steps) {
-    try {
-      const output = execSync(step.cmd, { timeout: step.timeout, stdio: "pipe" });
-      const out = output.toString().trim();
-      if (out) console.log(`[cli-tools] ${out.split("\n").pop()}`);
-      console.log(`[cli-tools] ✓ ${step.name}`);
-    } catch (err: unknown) {
-      // Log stderr so we can diagnose failures — but don't abort provisioning
-      const execErr = err as { stderr?: Buffer; message?: string };
-      const stderr = execErr.stderr?.toString().trim().slice(0, 300) || "";
-      const msg = execErr.message?.slice(0, 200) || String(err).slice(0, 200);
-      console.log(`[cli-tools] ✗ ${step.name} failed: ${msg}`);
-      if (stderr) console.log(`[cli-tools]   stderr: ${stderr}`);
+    let succeeded = false;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const output = execSync(step.cmd, { timeout: step.timeout, stdio: "pipe" });
+        const out = output.toString().trim();
+        if (out) console.log(`[cli-tools] ${out.split("\n").pop()}`);
+        console.log(`[cli-tools] ✓ ${step.name}`);
+        succeeded = true;
+        break;
+      } catch (err: unknown) {
+        const execErr = err as { stderr?: Buffer; message?: string };
+        const stderr = execErr.stderr?.toString().trim().slice(0, 300) || "";
+        const msg = execErr.message?.slice(0, 200) || String(err).slice(0, 200);
+        if (attempt < MAX_RETRIES) {
+          console.log(`[cli-tools] ✗ ${step.name} failed (attempt ${attempt}/${MAX_RETRIES}), retrying in 5s: ${msg}`);
+          if (stderr) console.log(`[cli-tools]   stderr: ${stderr}`);
+          try { execSync("sleep 5"); } catch {}
+        } else {
+          console.log(`[cli-tools] ✗ ${step.name} failed after ${MAX_RETRIES} attempts: ${msg}`);
+          if (stderr) console.log(`[cli-tools]   stderr: ${stderr}`);
+        }
+      }
     }
+    if (!succeeded) failedSteps.push(step.name);
+  }
+
+  if (failedSteps.length > 0) {
+    console.log(`[cli-tools] WARNING: ${failedSteps.length} tool(s) failed to install: ${failedSteps.join(", ")}`);
   }
 
   // Restart container so the gateway picks up Chromium and other new binaries.
