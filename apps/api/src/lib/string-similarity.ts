@@ -57,9 +57,34 @@ export function jaroWinkler(s1: string, s2: string): number {
   return jaroScore + prefix * 0.1 * (1 - jaroScore);
 }
 
+/** Tokenize a string into meaningful words, stripping common stop words. */
+function tokenize(s: string): Set<string> {
+  const stopWords = new Set([
+    "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
+    "of", "with", "by", "from", "is", "it", "this", "that", "my", "our",
+  ]);
+  const words = s.toLowerCase().replace(/[^a-z0-9\s]/g, "").split(/\s+/).filter(Boolean);
+  return new Set(words.filter((w) => !stopWords.has(w) && w.length > 1));
+}
+
+/** Jaccard similarity between two token sets (0.0 – 1.0). */
+function tokenOverlap(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 && b.size === 0) return 1.0;
+  let intersection = 0;
+  for (const token of a) {
+    if (b.has(token)) intersection++;
+  }
+  const union = a.size + b.size - intersection;
+  return union === 0 ? 1.0 : intersection / union;
+}
+
 /**
  * Check if a new task title is a near-duplicate of any existing task title.
  * Returns the matching task or undefined.
+ *
+ * Uses both character-level (Jaro-Winkler) and token-level (Jaccard) similarity
+ * to avoid false positives on structurally similar but semantically different tasks
+ * like "Publish blog about AI" vs "Publish blog about marketing".
  */
 export function findDuplicateTask<T extends { title: string }>(
   newTitle: string,
@@ -67,9 +92,19 @@ export function findDuplicateTask<T extends { title: string }>(
   threshold = 0.85,
 ): T | undefined {
   const normalized = newTitle.trim().toLowerCase();
+  const newTokens = tokenize(normalized);
+
   for (const task of existingTasks) {
     const existing = task.title.trim().toLowerCase();
-    if (existing === normalized || jaroWinkler(existing, normalized) > threshold) {
+
+    // Exact match — always deduplicate
+    if (existing === normalized) return task;
+
+    const charSimilarity = jaroWinkler(existing, normalized);
+    const wordOverlap = tokenOverlap(newTokens, tokenize(existing));
+
+    // Require both high character similarity AND high word overlap
+    if (charSimilarity > threshold && wordOverlap >= 0.6) {
       return task;
     }
   }
