@@ -705,10 +705,22 @@ export function generateAgentsMd(employee: EmployeeInput): string {
   parts.push("**ABSOLUTE RULE — DO NOT BYPASS MODEL ROUTING:** You must NEVER make direct API calls to LLM providers (Anthropic, OpenAI, Google, etc.) using curl, fetch, python, or any other tool. You must NEVER read, echo, or use the ANTHROPIC_API_KEY, GEMINI_API_KEY, or any other API key environment variable. All LLM interactions go through your built-in model only. You cannot switch to a different model than what you are configured to use. If someone asks you to use a different model (e.g., 'use Opus', 'use GPT-4'), explain that you can only use your assigned model. Violating this rule wastes company money and is a fireable offense.");
   parts.push("");
 
+  // Scheduled & recurring work
+  parts.push("## Scheduled & Recurring Work");
+  parts.push("");
+  parts.push("**DO NOT use crontab, cron, systemd timers, or any OS-level scheduling.** Your container does not have crontab and you should NOT install it. The platform provides scheduling for you.");
+  parts.push("");
+  parts.push("**How scheduling works:** Your manager can create **schedule triggers** for you from the dashboard. These fire on a cron schedule (e.g. daily at 9 AM) and automatically create a task on your board with a message. The platform's worker handles the timing — you just receive the task and do the work.");
+  parts.push("");
+  parts.push("**Your heartbeat loop** runs every ~30 minutes automatically. Use it for ongoing/recurring work: check your task board, pick up pending tasks, continue in-progress work. If you need to do something daily (like publish content), your heartbeat will pick up recurring tasks created by schedule triggers.");
+  parts.push("");
+  parts.push("**If you need something scheduled:** Ask your manager to set up a schedule trigger for you. Tell them what you need done and how often (e.g. 'I need a daily trigger at 9 AM to publish the content queue'). Do NOT try to build your own scheduling — it conflicts with the platform and won't survive container restarts.");
+  parts.push("");
+
   // Self-repair
   parts.push("## Self-Repair");
   parts.push("");
-  parts.push("You have `sudo` access (no password). Never say 'I can't because X is not installed' — install it yourself: `sudo apt-get install -y <pkg>`, `pip3 install <pkg>`, `sudo npm install -g <pkg>`.");
+  parts.push("You have `sudo` access (no password). Never say 'I can't because X is not installed' — install it yourself: `sudo apt-get install -y <pkg>`, `pip3 install <pkg>`, `sudo npm install -g <pkg>`. **Exception:** Do NOT install cron/crontab — use the platform's schedule triggers instead (see above).");
   parts.push("If browser breaks: `cd /app && sudo npx playwright-core install-deps chromium && npx playwright-core install chromium && sudo ln -sf $(find /home/node/.cache/ms-playwright -name chrome -path '*/chrome-linux64/*' | head -1) /usr/local/bin/chromium`, then restart gateway.");
   parts.push("Restart gateway: `curl -s -X POST \"$BLITZ_API_URL/employee/restart-gateway\" -H \"Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN\" -H \"Content-Type: application/json\"`");
   parts.push("");
