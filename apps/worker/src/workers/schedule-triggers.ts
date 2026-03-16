@@ -8,7 +8,7 @@
  *   3. Updates the trigger's lastRunAt timestamp
  */
 
-import { eq, and, sql, lt } from "drizzle-orm";
+import { eq, and, sql, lt, inArray } from "drizzle-orm";
 import { db, employees, triggers, tasks, recordTokenUsage, extractUsage } from "@ai-employees/db";
 import { networkInterfaces } from "os";
 
@@ -159,20 +159,39 @@ export async function checkScheduleTriggers(): Promise<void> {
 
       const message = config.message || "Recurring task triggered.";
 
-      // 1. Create a task record linked to this trigger
-      const [createdTask] = await db.insert(tasks).values({
-        employeeId: trigger.employeeId,
-        companyId: trigger.companyId,
-        title: trigger.name,
-        description: message,
-        status: "in_progress",
-        priority: "medium",
-        source: "system",
-        category: "recurring",
-        triggerId: trigger.id,
-      }).returning({ id: tasks.id });
+      // 1. Check for existing active task for this trigger before creating a new one
+      const existingTriggerTask = await db
+        .select({ id: tasks.id, status: tasks.status })
+        .from(tasks)
+        .where(
+          and(
+            eq(tasks.employeeId, trigger.employeeId),
+            eq(tasks.triggerId, trigger.id),
+            inArray(tasks.status, ["pending", "in_progress", "blocked"]),
+          ),
+        )
+        .limit(1);
 
-      const taskId = createdTask?.id || "unknown";
+      let taskId: string;
+      if (existingTriggerTask.length > 0) {
+        // Reuse existing active task instead of creating a duplicate
+        taskId = existingTriggerTask[0].id;
+        console.log(`[schedule] Reusing existing task ${taskId} for trigger "${trigger.name}"`);
+      } else {
+        const [createdTask] = await db.insert(tasks).values({
+          employeeId: trigger.employeeId,
+          companyId: trigger.companyId,
+          title: trigger.name,
+          description: message,
+          status: "in_progress",
+          priority: "medium",
+          source: "system",
+          category: "recurring",
+          triggerId: trigger.id,
+        }).returning({ id: tasks.id });
+
+        taskId = createdTask?.id || "unknown";
+      }
 
       // 2. Send the message to the employee's container
       try {

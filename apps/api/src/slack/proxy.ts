@@ -18,8 +18,8 @@
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { eq, and } from "drizzle-orm";
-import { db, employees, companies } from "@ai-employees/db";
+import { eq, and, inArray } from "drizzle-orm";
+import { db, employees, companies, tasks } from "@ai-employees/db";
 import { recordTokenUsage, extractUsage } from "../usage.js";
 
 // Types we reference — kept minimal so we don't need the Slack packages at compile time
@@ -563,11 +563,33 @@ export class SlackProxy {
       }
     }
 
-    // Build messages array: memory context + history + current message (with authority tag)
+    // Fetch employee's active tasks so they don't create duplicates from Slack messages
+    let taskBoardContext = "";
+    try {
+      const activeTasks = await db
+        .select({ id: tasks.id, title: tasks.title, status: tasks.status })
+        .from(tasks)
+        .where(
+          and(
+            eq(tasks.employeeId, employee.id),
+            inArray(tasks.status, ["pending", "in_progress", "blocked"]),
+          ),
+        )
+        .limit(10);
+
+      if (activeTasks.length > 0) {
+        const lines = activeTasks.map((t) => `- [${t.status}] "${t.title}" (id:${t.id.slice(0, 8)})`);
+        taskBoardContext = `\n\n[Your current task board — do NOT create duplicate tasks for work already listed here]\n${lines.join("\n")}`;
+      }
+    } catch {
+      // Non-fatal — tasks table may not exist yet
+    }
+
+    // Build messages array: memory context + history + current message (with authority tag + task context)
     const messages = [
       ...systemMessages,
       ...history,
-      { role: "user" as const, content: taggedText },
+      { role: "user" as const, content: taggedText + taskBoardContext },
     ];
 
     const sendToContainer = (host: string) => {

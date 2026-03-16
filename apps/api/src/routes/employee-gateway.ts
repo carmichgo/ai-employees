@@ -7,9 +7,10 @@
  */
 import type { FastifyInstance } from "fastify";
 import { execSync } from "node:child_process";
-import { eq, and, ne, desc, sql } from "drizzle-orm";
+import { eq, and, ne, desc, sql, inArray } from "drizzle-orm";
 import { db, employees, tasks, taskComments, chatMessages, users, companies, spreadsheetBases, spreadsheetTables, spreadsheetColumns, spreadsheetRows, employeeApps } from "@ai-employees/db";
 import { recordTokenUsage, extractUsage } from "../usage.js";
+import { findDuplicateTask } from "../lib/string-similarity.js";
 
 /** Authenticate an employee by their gateway token. Returns the employee or sends an error. */
 async function authenticateEmployee(request: { headers: { authorization?: string } }, reply: { status: (code: number) => { send: (body: unknown) => unknown } }) {
@@ -143,8 +144,27 @@ export async function employeeGatewayRoutes(fastify: FastifyInstance) {
       return reply.status(400).send({ error: `${target.name} is not online` });
     }
 
+    // Fetch target's active tasks so the receiving agent has task board context
+    // and doesn't create duplicate tasks from the incoming message.
+    const targetActiveTasks = await db
+      .select({ id: tasks.id, title: tasks.title, status: tasks.status })
+      .from(tasks)
+      .where(
+        and(
+          eq(tasks.employeeId, target.id),
+          inArray(tasks.status, ["pending", "in_progress", "blocked"]),
+        ),
+      )
+      .limit(10);
+
+    let taskBoardContext = "";
+    if (targetActiveTasks.length > 0) {
+      const lines = targetActiveTasks.map((t) => `- [${t.status}] "${t.title}" (id:${t.id.slice(0, 8)})`);
+      taskBoardContext = `\n\n[Your current task board — do NOT create duplicate tasks for work already listed here]\n${lines.join("\n")}`;
+    }
+
     // Prefix the message so the recipient knows it's from a teammate, not a human
-    const framedMessage = `[Inter-team message from ${sender.name}, ${sender.jobTitle}]\n\n${body.message}`;
+    const framedMessage = `[Inter-team message from ${sender.name}, ${sender.jobTitle}]\n\n${body.message}${taskBoardContext}`;
 
     // Send to the target's OpenClaw container via chat completions
     const sendToTarget = async (host: string) => {
@@ -304,6 +324,22 @@ export async function employeeGatewayRoutes(fastify: FastifyInstance) {
 
     if (!body.title) {
       return reply.status(400).send({ error: "title is required" });
+    }
+
+    // Server-side deduplication: check for similar active tasks before creating
+    const activeTasks = await db
+      .select({ id: tasks.id, title: tasks.title, status: tasks.status })
+      .from(tasks)
+      .where(
+        and(
+          eq(tasks.employeeId, employee.id),
+          inArray(tasks.status, ["pending", "in_progress", "blocked"]),
+        ),
+      );
+
+    const duplicate = findDuplicateTask(body.title, activeTasks);
+    if (duplicate) {
+      return { task: duplicate, deduplicated: true };
     }
 
     const [task] = await db

@@ -5,8 +5,9 @@
  * The API looks up the employee by token and scopes all task operations to that employee.
  */
 import type { FastifyInstance } from "fastify";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import { db, employees, tasks, taskComments } from "@ai-employees/db";
+import { findDuplicateTask } from "../lib/string-similarity.js";
 
 /** Resolve employee from gateway token in Authorization header */
 async function resolveEmployee(authHeader: string | undefined) {
@@ -52,6 +53,22 @@ export async function taskRoutes(fastify: FastifyInstance) {
 
     if (!body.title) {
       return reply.status(400).send({ error: "title is required" });
+    }
+
+    // Server-side deduplication: check for similar active tasks before creating
+    const activeTasks = await db
+      .select({ id: tasks.id, title: tasks.title, status: tasks.status })
+      .from(tasks)
+      .where(
+        and(
+          eq(tasks.employeeId, employee.id),
+          inArray(tasks.status, ["pending", "in_progress", "blocked"]),
+        ),
+      );
+
+    const duplicate = findDuplicateTask(body.title, activeTasks);
+    if (duplicate) {
+      return reply.status(200).send({ task: duplicate, deduplicated: true });
     }
 
     const [task] = await db
